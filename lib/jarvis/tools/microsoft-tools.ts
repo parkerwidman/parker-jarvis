@@ -121,6 +121,23 @@ export type CreateOutlookDraftResult =
   | { success: false; needsReconnect: true }
   | { success: false; error: string };
 
+export type CreateOutlookCalendarEventResult =
+  | {
+      success: true;
+      eventId: string;
+      subject: string;
+      start: string;
+      end: string;
+      webLink: string | null;
+    }
+  | { success: false; needsConnection: true }
+  | { success: false; needsReconnect: true }
+  | { success: false; error: string };
+
+const MAX_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
+const MAX_LOCATION_LENGTH = 500;
+const MAX_NOTES_LENGTH = 5000;
+
 function mapGraphResult<T extends { needsConnection?: true; needsReconnect?: true; error?: string }>(
   result:
     | { success: true; data: unknown }
@@ -542,5 +559,153 @@ export async function createOutlookDraft(
     ccRecipients,
     webLink: typeof payload.webLink === "string" ? payload.webLink : null,
     savedToDrafts: true,
+  };
+}
+
+function toUtcGraphDateTime(isoString: string): string {
+  return new Date(isoString).toISOString().slice(0, 19);
+}
+
+export async function createOutlookCalendarEvent(
+  supabase: SupabaseClient,
+  userId: string,
+  input: {
+    actionRequestId: string;
+    subject: string;
+    startDateTime: string;
+    endDateTime: string;
+    locationName: string | null;
+    notes: string | null;
+  },
+): Promise<CreateOutlookCalendarEventResult> {
+  const subject = input.subject.trim();
+
+  if (subject.length === 0) {
+    return { success: false, error: "Subject is required." };
+  }
+
+  if (subject.length > MAX_SUBJECT_LENGTH) {
+    return {
+      success: false,
+      error: `Subject cannot exceed ${MAX_SUBJECT_LENGTH} characters.`,
+    };
+  }
+
+  const { startDateTime, endDateTime } = input;
+
+  if (!isValidIso8601WithOffset(startDateTime)) {
+    return {
+      success: false,
+      error:
+        "startDateTime must be a valid ISO 8601 string with Z or an explicit numeric offset.",
+    };
+  }
+
+  if (!isValidIso8601WithOffset(endDateTime)) {
+    return {
+      success: false,
+      error:
+        "endDateTime must be a valid ISO 8601 string with Z or an explicit numeric offset.",
+    };
+  }
+
+  const start = new Date(startDateTime);
+  const end = new Date(endDateTime);
+
+  if (end <= start) {
+    return {
+      success: false,
+      error: "endDateTime must be after startDateTime.",
+    };
+  }
+
+  if (end.getTime() - start.getTime() > MAX_EVENT_DURATION_MS) {
+    return {
+      success: false,
+      error: "The event cannot exceed 24 hours.",
+    };
+  }
+
+  const locationName =
+    typeof input.locationName === "string" && input.locationName.trim().length > 0
+      ? input.locationName.trim()
+      : null;
+
+  const notes =
+    typeof input.notes === "string" && input.notes.trim().length > 0
+      ? input.notes.trim()
+      : null;
+
+  if (locationName && locationName.length > MAX_LOCATION_LENGTH) {
+    return {
+      success: false,
+      error: `locationName cannot exceed ${MAX_LOCATION_LENGTH} characters.`,
+    };
+  }
+
+  if (notes && notes.length > MAX_NOTES_LENGTH) {
+    return {
+      success: false,
+      error: `notes cannot exceed ${MAX_NOTES_LENGTH} characters.`,
+    };
+  }
+
+  const utcStart = toUtcGraphDateTime(startDateTime);
+  const utcEnd = toUtcGraphDateTime(endDateTime);
+
+  const eventBody: Record<string, unknown> = {
+    subject,
+    start: {
+      dateTime: utcStart,
+      timeZone: "UTC",
+    },
+    end: {
+      dateTime: utcEnd,
+      timeZone: "UTC",
+    },
+    transactionId: input.actionRequestId,
+  };
+
+  if (locationName) {
+    eventBody.location = { displayName: locationName };
+  }
+
+  if (notes) {
+    eventBody.body = {
+      contentType: "Text",
+      content: notes,
+    };
+  }
+
+  const graphResult = await microsoftGraphPost(
+    supabase,
+    userId,
+    "/v1.0/me/events",
+    eventBody,
+  );
+
+  const graphError =
+    mapGraphResult<CreateOutlookCalendarEventResult>(graphResult);
+  if (graphError) {
+    return graphError;
+  }
+
+  if (!graphResult.success) {
+    return { success: false, error: "Could not create Outlook calendar event." };
+  }
+
+  const payload = graphResult.data as GraphEvent;
+
+  if (typeof payload.id !== "string") {
+    return { success: false, error: "Could not create Outlook calendar event." };
+  }
+
+  return {
+    success: true,
+    eventId: payload.id,
+    subject,
+    start: utcStart,
+    end: utcEnd,
+    webLink: typeof payload.webLink === "string" ? payload.webLink : null,
   };
 }
