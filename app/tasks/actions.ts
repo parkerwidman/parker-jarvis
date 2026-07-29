@@ -28,3 +28,41 @@ export async function createTask(formData: FormData) {
   revalidatePath("/tasks");
   redirect("/tasks");
 }
+
+export async function completeTask(formData: FormData) {
+  const taskId = (formData.get("taskId") as string) ?? "";
+
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      taskId,
+    )
+  ) {
+    redirect("/tasks");
+  }
+
+  const supabase = await createClient();
+
+  const { data, error: authError } = await supabase.auth.getClaims();
+
+  if (authError || !data?.claims) {
+    redirect("/login");
+  }
+
+  const now = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status: "done",
+      completed_at: now,
+      updated_at: now,
+    })
+    .eq("id", taskId);
+
+  if (error) {
+    redirect("/tasks?error=Could not complete task");
+  }
+
+  revalidatePath("/tasks");
+  redirect("/tasks");
+}

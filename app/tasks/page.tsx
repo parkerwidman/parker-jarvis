@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { createTask } from "./actions";
+import { completeTask, createTask } from "./actions";
 
 export default async function TasksPage({
   searchParams,
@@ -69,16 +69,34 @@ export default async function TasksPage({
                 key={task.id}
                 className="flex items-center justify-between gap-4 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-4"
               >
-                <h2 className="text-sm font-medium text-[var(--foreground)]">
+                <h2
+                  className={
+                    task.status === "done"
+                      ? "text-sm font-medium text-[var(--navy-muted)] line-through"
+                      : "text-sm font-medium text-[var(--foreground)]"
+                  }
+                >
                   {task.title}
                 </h2>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium capitalize text-[var(--navy-muted)]">
                     {task.priority}
                   </span>
-                  <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium capitalize text-[var(--navy-muted)]">
-                    {task.status}
-                  </span>
+                  {task.status === "done" ? (
+                    <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--navy-muted)]">
+                      Completed
+                    </span>
+                  ) : (
+                    <form action={completeTask}>
+                      <input type="hidden" name="taskId" value={task.id} />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-[var(--navy-border)] px-3 py-1 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--background)]"
+                      >
+                        Mark complete
+                      </button>
+                    </form>
+                  )}
                 </div>
               </article>
             ))
