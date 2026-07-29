@@ -23,6 +23,8 @@ import {
   listTasks,
 } from "@/lib/jarvis/tools/task-tools";
 
+export const maxDuration = 60;
+
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_TOOL_ROUNDS = 5;
 
