@@ -4,8 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
+
 export async function createTask(formData: FormData) {
   const title = ((formData.get("title") as string) ?? "").trim();
+  const rawPriority = ((formData.get("priority") as string) ?? "").trim();
+  const priority = VALID_PRIORITIES.has(rawPriority) ? rawPriority : "medium";
 
   if (!title || title.length > 200) {
     redirect("/tasks?error=Title must be between 1 and 200 characters");
@@ -19,7 +23,7 @@ export async function createTask(formData: FormData) {
     redirect("/login");
   }
 
-  const { error } = await supabase.from("tasks").insert({ title });
+  const { error } = await supabase.from("tasks").insert({ title, priority });
 
   if (error) {
     redirect("/tasks?error=Could not create task");

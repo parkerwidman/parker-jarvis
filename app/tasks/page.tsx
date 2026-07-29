@@ -50,6 +50,21 @@ export default async function TasksPage({
             />
           </label>
 
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-[var(--navy-muted)]">
+              Priority
+            </span>
+            <select
+              name="priority"
+              defaultValue="medium"
+              className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[rgba(148,163,184,0.22)] focus:outline-none"
+            >
+              <option value="low">Low priority</option>
+              <option value="medium">Medium priority</option>
+              <option value="high">High priority</option>
+            </select>
+          </label>
+
           {error ? (
             <p className="text-center text-sm text-red-400">{error}</p>
           ) : null}
