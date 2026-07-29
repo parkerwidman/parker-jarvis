@@ -36,6 +36,13 @@ export default async function Home() {
           <span className="home-card-label">Open Jarvis</span>
         </Link>
 
+        <Link
+          href="/connections/microsoft"
+          className="home-card w-full transition-colors hover:border-[rgba(59,130,246,0.35)] hover:bg-[#151f33] no-underline"
+        >
+          <span className="home-card-label">Connections</span>
+        </Link>
+
         <section className="home-cards" aria-label="Modules">
           {cards.map((label) => (
             <div key={label} className="home-card">
