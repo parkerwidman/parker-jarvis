@@ -87,15 +87,18 @@ export type OutlookEvent = {
   webLink: string | null;
 };
 
+export type MicrosoftToolFailure =
+  | { success: false; needsConnection: true }
+  | { success: false; needsReconnect: true }
+  | { success: false; error: string };
+
 export type ListOutlookInboxResult =
   | {
       success: true;
       messages: OutlookMessage[];
       note: string;
     }
-  | { success: false; needsConnection: true }
-  | { success: false; needsReconnect: true }
-  | { success: false; error: string };
+  | MicrosoftToolFailure;
 
 export type ListOutlookCalendarResult =
   | {
@@ -103,9 +106,7 @@ export type ListOutlookCalendarResult =
       events: OutlookEvent[];
       truncated: boolean;
     }
-  | { success: false; needsConnection: true }
-  | { success: false; needsReconnect: true }
-  | { success: false; error: string };
+  | MicrosoftToolFailure;
 
 export type CreateOutlookDraftResult =
   | {
@@ -117,9 +118,7 @@ export type CreateOutlookDraftResult =
       webLink: string | null;
       savedToDrafts: true;
     }
-  | { success: false; needsConnection: true }
-  | { success: false; needsReconnect: true }
-  | { success: false; error: string };
+  | MicrosoftToolFailure;
 
 export type CreateOutlookCalendarEventResult =
   | {
@@ -130,34 +129,32 @@ export type CreateOutlookCalendarEventResult =
       end: string;
       webLink: string | null;
     }
-  | { success: false; needsConnection: true }
-  | { success: false; needsReconnect: true }
-  | { success: false; error: string };
+  | MicrosoftToolFailure;
 
 const MAX_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
 const MAX_LOCATION_LENGTH = 500;
 const MAX_NOTES_LENGTH = 5000;
 
-function mapGraphResult<T extends { needsConnection?: true; needsReconnect?: true; error?: string }>(
+function mapGraphResult(
   result:
     | { success: true; data: unknown }
     | { success: false; needsConnection: true }
     | { success: false; needsReconnect: true }
     | { success: false; error: string },
-): T | null {
+): MicrosoftToolFailure | null {
   if (result.success) {
     return null;
   }
 
   if ("needsConnection" in result) {
-    return { success: false, needsConnection: true } as T;
+    return { success: false, needsConnection: true };
   }
 
   if ("needsReconnect" in result) {
-    return { success: false, needsReconnect: true } as T;
+    return { success: false, needsReconnect: true };
   }
 
-  return { success: false, error: result.error } as T;
+  return { success: false, error: result.error };
 }
 
 function isValidEmailAddress(address: string): boolean {
@@ -354,7 +351,7 @@ export async function listOutlookInbox(
 
   const graphResult = await microsoftGraphGet(supabase, userId, path);
 
-  const graphError = mapGraphResult<ListOutlookInboxResult>(graphResult);
+  const graphError = mapGraphResult(graphResult);
   if (graphError) {
     return graphError;
   }
@@ -432,7 +429,7 @@ export async function listOutlookCalendar(
 
   const graphResult = await microsoftGraphGet(supabase, userId, path);
 
-  const graphError = mapGraphResult<ListOutlookCalendarResult>(graphResult);
+  const graphError = mapGraphResult(graphResult);
   if (graphError) {
     return graphError;
   }
@@ -536,7 +533,7 @@ export async function createOutlookDraft(
     },
   );
 
-  const graphError = mapGraphResult<CreateOutlookDraftResult>(graphResult);
+  const graphError = mapGraphResult(graphResult);
   if (graphError) {
     return graphError;
   }
@@ -684,8 +681,7 @@ export async function createOutlookCalendarEvent(
     eventBody,
   );
 
-  const graphError =
-    mapGraphResult<CreateOutlookCalendarEventResult>(graphResult);
+  const graphError = mapGraphResult(graphResult);
   if (graphError) {
     return graphError;
   }
