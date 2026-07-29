@@ -68,6 +68,99 @@ async function graphFetch(
   return { ok: response.ok, status: response.status, data };
 }
 
+async function graphFetchWithMethod(
+  path: string,
+  accessToken: string,
+  method: "POST" | "PATCH",
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<{ ok: boolean; status: number; data: unknown }> {
+  const response = await fetch(`${GRAPH_BASE_URL}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const responseText = await response.text();
+
+  let data: unknown = null;
+
+  if (responseText.length > 0) {
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = null;
+    }
+  }
+
+  return { ok: response.ok, status: response.status, data };
+}
+
+async function executeGraphRequest(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string,
+  fetchFn: (accessToken: string) => Promise<{
+    ok: boolean;
+    status: number;
+    data: unknown;
+  }>,
+): Promise<MicrosoftGraphResult> {
+  if (!isValidGraphPath(path)) {
+    return { success: false, error: "Invalid Microsoft Graph path." };
+  }
+
+  const tokenResult = await getValidMicrosoftAccessToken(supabase, userId);
+
+  const tokenError = mapTokenResult(tokenResult);
+  if (tokenError) {
+    return tokenError;
+  }
+
+  if (!tokenResult.success) {
+    return { success: false, error: "Could not obtain Microsoft access token." };
+  }
+
+  try {
+    let result = await fetchFn(tokenResult.accessToken);
+
+    if (result.status === 401) {
+      const refreshResult = await getValidMicrosoftAccessToken(
+        supabase,
+        userId,
+        true,
+      );
+
+      const refreshError = mapTokenResult(refreshResult);
+      if (refreshError) {
+        return refreshError;
+      }
+
+      if (!refreshResult.success) {
+        return {
+          success: false,
+          error: "Could not obtain Microsoft access token.",
+        };
+      }
+
+      result = await fetchFn(refreshResult.accessToken);
+    }
+
+    if (!result.ok) {
+      return { success: false, error: "Microsoft Graph request failed." };
+    }
+
+    return { success: true, data: result.data };
+  } catch {
+    return { success: false, error: "Microsoft Graph request failed." };
+  }
+}
+
 export async function microsoftGraphGet(
   supabase: SupabaseClient,
   userId: string,
@@ -122,4 +215,28 @@ export async function microsoftGraphGet(
   } catch {
     return { success: false, error: "Microsoft Graph request failed." };
   }
+}
+
+export async function microsoftGraphPost(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<MicrosoftGraphResult> {
+  return executeGraphRequest(supabase, userId, path, (accessToken) =>
+    graphFetchWithMethod(path, accessToken, "POST", body, headers),
+  );
+}
+
+export async function microsoftGraphPatch(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<MicrosoftGraphResult> {
+  return executeGraphRequest(supabase, userId, path, (accessToken) =>
+    graphFetchWithMethod(path, accessToken, "PATCH", body, headers),
+  );
 }

@@ -1,8 +1,11 @@
-import { microsoftGraphGet } from "@/lib/microsoft/graph-client";
+import { microsoftGraphGet, microsoftGraphPost } from "@/lib/microsoft/graph-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ISO8601_OFFSET_PATTERN = /[Zz]|[+-]\d{2}:\d{2}$|[+-]\d{4}$/;
 const MAX_CALENDAR_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
+const MAX_SUBJECT_LENGTH = 250;
+const MAX_BODY_LENGTH = 20000;
+const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type GraphEmailAddress = {
   name?: string;
@@ -104,6 +107,20 @@ export type ListOutlookCalendarResult =
   | { success: false; needsReconnect: true }
   | { success: false; error: string };
 
+export type CreateOutlookDraftResult =
+  | {
+      success: true;
+      draftId: string;
+      subject: string;
+      toRecipients: string[];
+      ccRecipients: string[];
+      webLink: string | null;
+      savedToDrafts: true;
+    }
+  | { success: false; needsConnection: true }
+  | { success: false; needsReconnect: true }
+  | { success: false; error: string };
+
 function mapGraphResult<T extends { needsConnection?: true; needsReconnect?: true; error?: string }>(
   result:
     | { success: true; data: unknown }
@@ -124,6 +141,72 @@ function mapGraphResult<T extends { needsConnection?: true; needsReconnect?: tru
   }
 
   return { success: false, error: result.error } as T;
+}
+
+function isValidEmailAddress(address: string): boolean {
+  return EMAIL_ADDRESS_PATTERN.test(address);
+}
+
+function normalizeRecipientList(
+  addresses: string[],
+  fieldName: string,
+  minCount: number,
+  maxCount: number,
+): { success: true; addresses: string[] } | { success: false; error: string } {
+  if (!Array.isArray(addresses)) {
+    return {
+      success: false,
+      error: `${fieldName} must be an array of email addresses.`,
+    };
+  }
+
+  if (addresses.length < minCount || addresses.length > maxCount) {
+    return {
+      success: false,
+      error: `${fieldName} must contain ${minCount} through ${maxCount} email addresses.`,
+    };
+  }
+
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawAddress of addresses) {
+    if (typeof rawAddress !== "string") {
+      return {
+        success: false,
+        error: `${fieldName} must contain valid email address strings.`,
+      };
+    }
+
+    const address = rawAddress.trim().toLowerCase();
+
+    if (!isValidEmailAddress(address)) {
+      return {
+        success: false,
+        error: `Invalid email address in ${fieldName}.`,
+      };
+    }
+
+    if (!seen.has(address)) {
+      seen.add(address);
+      normalized.push(address);
+    }
+  }
+
+  if (normalized.length < minCount) {
+    return {
+      success: false,
+      error: `${fieldName} must contain ${minCount} through ${maxCount} unique email addresses.`,
+    };
+  }
+
+  return { success: true, addresses: normalized };
+}
+
+function toGraphRecipients(addresses: string[]): GraphRecipient[] {
+  return addresses.map((address) => ({
+    emailAddress: { address },
+  }));
 }
 
 function isValidIso8601WithOffset(value: string): boolean {
@@ -350,5 +433,114 @@ export async function listOutlookCalendar(
     success: true,
     events,
     truncated: typeof payload["@odata.nextLink"] === "string",
+  };
+}
+
+export async function createOutlookDraft(
+  supabase: SupabaseClient,
+  userId: string,
+  input: {
+    toRecipients: string[];
+    ccRecipients: string[];
+    subject: string;
+    body: string;
+  },
+): Promise<CreateOutlookDraftResult> {
+  const toResult = normalizeRecipientList(
+    input.toRecipients,
+    "toRecipients",
+    1,
+    10,
+  );
+  if (!toResult.success) {
+    return { success: false, error: toResult.error };
+  }
+
+  const ccResult = normalizeRecipientList(
+    input.ccRecipients,
+    "ccRecipients",
+    0,
+    10,
+  );
+  if (!ccResult.success) {
+    return { success: false, error: ccResult.error };
+  }
+
+  const toRecipients = toResult.addresses;
+  const ccRecipients = ccResult.addresses;
+
+  const toSet = new Set(toRecipients);
+  for (const address of ccRecipients) {
+    if (toSet.has(address)) {
+      return {
+        success: false,
+        error: "The same email address cannot appear in both To and CC.",
+      };
+    }
+  }
+
+  const subject = input.subject.trim();
+  const body = input.body.trim();
+
+  if (subject.length === 0) {
+    return { success: false, error: "Subject cannot be empty." };
+  }
+
+  if (subject.length > MAX_SUBJECT_LENGTH) {
+    return {
+      success: false,
+      error: `Subject cannot exceed ${MAX_SUBJECT_LENGTH} characters.`,
+    };
+  }
+
+  if (body.length === 0) {
+    return { success: false, error: "Body cannot be empty." };
+  }
+
+  if (body.length > MAX_BODY_LENGTH) {
+    return {
+      success: false,
+      error: `Body cannot exceed ${MAX_BODY_LENGTH} characters.`,
+    };
+  }
+
+  const graphResult = await microsoftGraphPost(
+    supabase,
+    userId,
+    "/v1.0/me/messages",
+    {
+      subject,
+      body: {
+        contentType: "Text",
+        content: body,
+      },
+      toRecipients: toGraphRecipients(toRecipients),
+      ccRecipients: toGraphRecipients(ccRecipients),
+    },
+  );
+
+  const graphError = mapGraphResult<CreateOutlookDraftResult>(graphResult);
+  if (graphError) {
+    return graphError;
+  }
+
+  if (!graphResult.success) {
+    return { success: false, error: "Could not create Outlook draft." };
+  }
+
+  const payload = graphResult.data as GraphMessage;
+
+  if (typeof payload.id !== "string") {
+    return { success: false, error: "Could not create Outlook draft." };
+  }
+
+  return {
+    success: true,
+    draftId: payload.id,
+    subject,
+    toRecipients,
+    ccRecipients,
+    webLink: typeof payload.webLink === "string" ? payload.webLink : null,
+    savedToDrafts: true,
   };
 }
