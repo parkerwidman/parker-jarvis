@@ -53,6 +53,16 @@ export default async function Home() {
           </span>
         </Link>
 
+        <Link
+          href="/briefings"
+          className="home-card w-full transition-colors hover:border-[rgba(59,130,246,0.35)] hover:bg-[#151f33] no-underline"
+        >
+          <span className="home-card-label">Morning Brief</span>
+          <span className="mt-1 block text-xs text-[var(--navy-muted)]">
+            Your schedule, priorities, email, tasks, and goals in one place.
+          </span>
+        </Link>
+
         <section className="home-cards" aria-label="Modules">
           {cards.map((label) => (
             <div key={label} className="home-card">
