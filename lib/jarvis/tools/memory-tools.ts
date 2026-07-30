@@ -119,6 +119,7 @@ function trimOrNull(value: string | null | undefined): string | null {
 
 export async function loadJarvisContext(
   supabase: SupabaseClient,
+  userId: string,
 ): Promise<JarvisContext> {
   const empty: JarvisContext = {
     profile: null,
@@ -130,6 +131,7 @@ export async function loadJarvisContext(
   const { data: profile, error: profileError } = await supabase
     .from("jarvis_profiles")
     .select(PROFILE_SELECT)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (profileError) {
@@ -139,6 +141,7 @@ export async function loadJarvisContext(
   const { data: lifeAreas, error: lifeAreasError } = await supabase
     .from("life_areas")
     .select(LIFE_AREA_SELECT)
+    .eq("user_id", userId)
     .eq("active", true);
 
   if (lifeAreasError) {
@@ -148,6 +151,7 @@ export async function loadJarvisContext(
   const { data: goals, error: goalsError } = await supabase
     .from("goals")
     .select(GOAL_SELECT)
+    .eq("user_id", userId)
     .in("status", ["active", "paused"]);
 
   if (goalsError) {
@@ -157,6 +161,7 @@ export async function loadJarvisContext(
   const { data: memories, error: memoriesError } = await supabase
     .from("memories")
     .select(MEMORY_SELECT)
+    .eq("user_id", userId)
     .eq("active", true)
     .order("importance", { ascending: false })
     .order("created_at", { ascending: false })
