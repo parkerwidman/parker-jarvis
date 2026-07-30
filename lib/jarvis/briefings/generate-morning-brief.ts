@@ -21,7 +21,7 @@ const SAFE_ERROR_MESSAGE = "Jarvis could not generate the morning brief.";
 const DUE_SOON_DAYS = 3;
 
 export type GenerateMorningBriefResult =
-  | { success: true }
+  | { success: true; briefingDate: string }
   | { success: false; error: string };
 
 type BriefingTask = {
@@ -437,7 +437,7 @@ export async function generateMorningBrief(
   userId: string,
 ): Promise<GenerateMorningBriefResult> {
   const now = new Date();
-  const context = await loadJarvisContext(supabase);
+  const context = await loadJarvisContext(supabase, userId);
   const timeZone = resolveTimeZone(context.profile?.timezone);
   const briefingDate = getLocalDateString(timeZone, now);
   const localDateLabel = formatLocalDateLabel(timeZone, now);
@@ -460,7 +460,7 @@ export async function generateMorningBrief(
     return { success: false, error: SAFE_ERROR_MESSAGE };
   }
 
-  const tasksResult = await listTasks(supabase);
+  const tasksResult = await listTasks(supabase, userId);
   const unfinishedTasks = tasksResult.success
     ? prepareTasks(tasksResult.tasks, timeZone, now)
     : [];
@@ -596,5 +596,5 @@ export async function generateMorningBrief(
     return { success: false, error: SAFE_ERROR_MESSAGE };
   }
 
-  return { success: true };
+  return { success: true, briefingDate };
 }

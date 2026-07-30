@@ -992,7 +992,7 @@ async function executeJarvisTool(
   try {
     switch (call.name) {
       case "list_tasks":
-        return JSON.stringify(await listTasks(supabase));
+        return JSON.stringify(await listTasks(supabase, userId));
       case "create_task":
         return JSON.stringify(
           await createTask(supabase, {
@@ -1132,7 +1132,7 @@ export async function POST(request: Request) {
   });
 
   try {
-    const jarvisContext = await loadJarvisContext(supabase);
+    const jarvisContext = await loadJarvisContext(supabase, userId);
     const instructions = buildInstructions(jarvisContext);
 
     const input: OpenAI.Responses.ResponseInput = [

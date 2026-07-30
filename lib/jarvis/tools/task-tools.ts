@@ -78,10 +78,12 @@ function compareTasks(a: TaskRecord, b: TaskRecord): number {
 
 export async function listTasks(
   supabase: SupabaseClient,
+  userId: string,
 ): Promise<ListTasksResult> {
   const { data, error } = await supabase
     .from("tasks")
-    .select(TASK_SELECT);
+    .select(TASK_SELECT)
+    .eq("user_id", userId);
 
   if (error) {
     return { success: false, error: "Could not list tasks." };
