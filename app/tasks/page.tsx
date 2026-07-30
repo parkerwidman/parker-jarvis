@@ -3,6 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { completeTask, createTask } from "./actions";
 
+function formatDueDate(isoString: string): string {
+  const date = new Date(isoString);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export default async function TasksPage({
   searchParams,
 }: {
@@ -65,6 +75,17 @@ export default async function TasksPage({
             </select>
           </label>
 
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-[var(--navy-muted)]">
+              Due date
+            </span>
+            <input
+              type="date"
+              name="dueDate"
+              className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[rgba(148,163,184,0.22)] focus:outline-none"
+            />
+          </label>
+
           {error ? (
             <p className="text-center text-sm text-red-400">{error}</p>
           ) : null}
@@ -84,15 +105,22 @@ export default async function TasksPage({
                 key={task.id}
                 className="flex items-center justify-between gap-4 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-4"
               >
-                <h2
-                  className={
-                    task.status === "done"
-                      ? "text-sm font-medium text-[var(--navy-muted)] line-through"
-                      : "text-sm font-medium text-[var(--foreground)]"
-                  }
-                >
-                  {task.title}
-                </h2>
+                <div className="min-w-0">
+                  <h2
+                    className={
+                      task.status === "done"
+                        ? "text-sm font-medium text-[var(--navy-muted)] line-through"
+                        : "text-sm font-medium text-[var(--foreground)]"
+                    }
+                  >
+                    {task.title}
+                  </h2>
+                  {task.due_at ? (
+                    <p className="mt-1 text-xs text-[var(--navy-muted)]">
+                      Due {formatDueDate(task.due_at)}
+                    </p>
+                  ) : null}
+                </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium capitalize text-[var(--navy-muted)]">
                     {task.priority}

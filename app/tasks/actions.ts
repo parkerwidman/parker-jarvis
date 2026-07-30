@@ -6,10 +6,32 @@ import { redirect } from "next/navigation";
 
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
 
+function parseDueDate(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed || !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return null;
+  }
+
+  const [year, month, day] = trimmed.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date.toISOString();
+}
+
 export async function createTask(formData: FormData) {
   const title = ((formData.get("title") as string) ?? "").trim();
   const rawPriority = ((formData.get("priority") as string) ?? "").trim();
   const priority = VALID_PRIORITIES.has(rawPriority) ? rawPriority : "medium";
+  const rawDueDate = ((formData.get("dueDate") as string) ?? "").trim();
+  const due_at = parseDueDate(rawDueDate);
 
   if (!title || title.length > 200) {
     redirect("/tasks?error=Title must be between 1 and 200 characters");
@@ -23,7 +45,9 @@ export async function createTask(formData: FormData) {
     redirect("/login");
   }
 
-  const { error } = await supabase.from("tasks").insert({ title, priority });
+  const { error } = await supabase
+    .from("tasks")
+    .insert({ title, priority, due_at });
 
   if (error) {
     redirect("/tasks?error=Could not create task");
