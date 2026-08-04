@@ -18,7 +18,7 @@ const LIFE_AREA_MODULES: LifeAreaModuleConfig[] = [
     displayName: "Melusi",
     lifeAreaName: "Melusi",
     route: "/melusi",
-    purpose: "Parker's business command module.",
+    purpose: "Melusi business command center and specialized advisor.",
     accent: "cyan",
     implemented: true,
   },

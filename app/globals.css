@@ -3231,3 +3231,410 @@ body {
     max-height: 22.5rem;
   }
 }
+
+/* ── Melusi Command Center ── */
+
+.jv-page-content--melusi-command {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.jv-page-content--melusi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.melusi-header {
+  flex-shrink: 0;
+}
+
+.melusi-greeting span {
+  color: #22d3ee;
+}
+
+.melusi-title {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.melusi-subtitle {
+  font-size: 0.8125rem;
+  color: var(--navy-muted);
+  margin-top: 0.25rem;
+}
+
+.melusi-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  flex-shrink: 0;
+}
+
+.melusi-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--navy-muted);
+  text-decoration: none;
+  border: 1px solid var(--navy-border);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.35);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.melusi-nav-link:hover {
+  color: var(--foreground);
+  border-color: rgba(34, 211, 238, 0.35);
+}
+
+.melusi-nav-link--active {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.melusi-nav-link--soon {
+  opacity: 0.75;
+}
+
+.melusi-nav-tag {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--navy-muted);
+}
+
+.melusi-stat-grid--secondary {
+  margin-top: -0.125rem;
+}
+
+.melusi-stat--disconnected {
+  cursor: default;
+}
+
+.melusi-stat--disconnected:hover {
+  border-color: var(--navy-border);
+  box-shadow: none;
+}
+
+.melusi-stat-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--navy-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.melusi-stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4375rem;
+}
+
+.melusi-stat-icon--disconnected {
+  color: var(--navy-muted);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.melusi-stat-icon--disconnected::before {
+  content: "—";
+  font-weight: 700;
+}
+
+.melusi-stat-icon--real {
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+}
+
+.melusi-stat-icon--real::before {
+  content: "●";
+  font-size: 0.625rem;
+}
+
+.melusi-dashboard-grid {
+  margin-top: 0.125rem;
+}
+
+.jarvis-panel--melusi {
+  border-color: rgba(34, 211, 238, 0.18);
+}
+
+.jarvis-panel--melusi .jarvis-panel-atmosphere {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(34, 211, 238, 0.08), transparent 55%),
+    radial-gradient(circle at 80% 80%, rgba(59, 130, 246, 0.06), transparent 50%);
+}
+
+.jarvis-panel-agent-badge {
+  position: absolute;
+  top: 0.625rem;
+  left: 0.75rem;
+  z-index: 2;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #22d3ee;
+}
+
+.jarvis-chip--setup {
+  border-style: dashed;
+  opacity: 0.9;
+}
+
+.melusi-rec-list,
+.melusi-alert-list,
+.melusi-activity-list,
+.melusi-product-list,
+.melusi-thread-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.melusi-rec-item,
+.melusi-alert-item,
+.melusi-activity-item,
+.melusi-thread-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.melusi-rec-badge,
+.melusi-alert-badge,
+.melusi-thread-badge {
+  flex-shrink: 0;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.125rem 0.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--navy-border);
+}
+
+.melusi-rec-badge--deterministic {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.melusi-rec-badge--recorded {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.35);
+}
+
+.melusi-rec-title,
+.melusi-alert-title,
+.melusi-thread-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.melusi-thread-title:hover {
+  color: #22d3ee;
+}
+
+.melusi-rec-detail,
+.melusi-alert-detail,
+.melusi-thread-meta {
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--navy-muted);
+}
+
+.melusi-alert-badge--blocker {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.melusi-alert-badge--overdue {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.melusi-alert-badge--approval {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.melusi-activity-heading,
+.melusi-thread-heading,
+.melusi-product-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.melusi-activity-project,
+.melusi-product-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.melusi-activity-type,
+.melusi-product-audience {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--navy-muted);
+}
+
+.melusi-activity-content {
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--foreground);
+  margin-top: 0.125rem;
+}
+
+.melusi-activity-time {
+  font-size: 0.625rem;
+  color: var(--navy-muted);
+  margin-top: 0.125rem;
+}
+
+.melusi-product-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--navy-border);
+}
+
+.melusi-product-line:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.melusi-surface-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.melusi-surface-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.0625rem;
+}
+
+.melusi-surface-label {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--navy-muted);
+}
+
+.melusi-surface-url {
+  font-size: 0.6875rem;
+  color: #22d3ee;
+}
+
+.melusi-surface-note {
+  font-size: 0.625rem;
+  color: var(--navy-muted);
+  font-style: italic;
+}
+
+.melusi-projects-section {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--navy-border);
+}
+
+.melusi-projects-header {
+  margin-bottom: 0.625rem;
+}
+
+.melusi-projects-sub {
+  font-size: 0.75rem;
+  color: var(--navy-muted);
+  margin-top: 0.25rem;
+}
+
+.melusi-projects-grid {
+  margin-top: 0.25rem;
+}
+
+.melusi-threads-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.625rem;
+}
+
+@media (min-width: 900px) {
+  .melusi-threads-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.melusi-thread-list-section {
+  margin-top: 0.75rem;
+}
+
+.melusi-thread-item {
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.625rem 0.75rem;
+  background: var(--navy-elevated);
+  border: 1px solid var(--navy-border);
+  border-radius: 0.625rem;
+}
+
+.melusi-thread-badge--command {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.35);
+}
+
+.melusi-thread-badge--research {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.melusi-thread-badge--campaign {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.melusi-thread-page-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
+}
+
+.melusi-thread-page-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.melusi-thread-notice {
+  font-size: 0.75rem;
+  color: var(--navy-muted);
+  padding: 0.5rem 0.625rem;
+  border: 1px dashed var(--navy-border);
+  border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.melusi-thread-badge--page {
+  align-self: flex-start;
+}

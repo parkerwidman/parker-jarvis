@@ -4,23 +4,80 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { JarvisContextChip } from "@/components/jarvis/context/jarvis-context-chip";
 import { useOptionalJarvisContext } from "@/components/jarvis/context/jarvis-context-provider";
+import type { AgentKey } from "@/lib/jarvis/agents/types";
 
 type Message = {
   role: "user" | "assistant";
   content: string;
 };
 
-const PROMPT_CHIPS = [
-  "Plan my next move",
-  "Show my priorities",
-  "Review today's schedule",
-  "Show overdue tasks",
-  "Draft an important email",
-] as const;
+const EMPTY_MESSAGES: Message[] = [];
+
+function getConversationKey(
+  agentKey: AgentKey,
+  threadId: string | null,
+): string {
+  return `${agentKey}:${threadId ?? "ephemeral"}`;
+}
+
+function normalizeMessages(messages: Message[]): Message[] {
+  return messages.flatMap((message) => {
+    if (message.role !== "user" && message.role !== "assistant") {
+      return [];
+    }
+
+    if (typeof message.content !== "string") {
+      return [];
+    }
+
+    const content = message.content.trim();
+
+    if (content.length === 0) {
+      return [];
+    }
+
+    return [{ role: message.role, content }];
+  });
+}
+
+function messagesEqual(left: Message[], right: Message[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every(
+    (message, index) =>
+      message.role === right[index]?.role &&
+      message.content === right[index]?.content,
+  );
+}
+
+type PromptChip = {
+  label: string;
+  prompt: string;
+  requiresSetup?: boolean;
+  unavailableMessage?: string | null;
+};
+
+const DEFAULT_PROMPT_CHIPS: PromptChip[] = [
+  { label: "Plan my next move", prompt: "Plan my next move" },
+  { label: "Show my priorities", prompt: "Show my priorities" },
+  { label: "Review today's schedule", prompt: "Review today's schedule" },
+  { label: "Show overdue tasks", prompt: "Show overdue tasks" },
+  { label: "Draft an important email", prompt: "Draft an important email" },
+];
 
 type JarvisChatProps = {
   variant?: "embedded" | "fullPage";
   userName?: string;
+  agentKey?: AgentKey;
+  threadId?: string | null;
+  initialMessages?: Message[];
+  agentDisplayName?: string;
+  agentSubtitle?: string;
+  expandHref?: string;
+  welcomeHint?: string;
+  promptChips?: PromptChip[];
 };
 
 function JarvisCore({ size }: { size: "sm" | "md" | "lg" }) {
@@ -67,14 +124,50 @@ function SendIcon() {
 export function JarvisChat({
   variant = "fullPage",
   userName,
+  agentKey = "main",
+  threadId: initialThreadId = null,
+  initialMessages,
+  agentDisplayName,
+  agentSubtitle,
+  expandHref,
+  welcomeHint,
+  promptChips,
 }: JarvisChatProps) {
   const isEmbedded = variant === "embedded";
   const jarvisContext = useOptionalJarvisContext();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const conversationKey = getConversationKey(agentKey, initialThreadId);
+  const initializedConversationKeyRef = useRef<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>(() =>
+    normalizeMessages(initialMessages ?? EMPTY_MESSAGES),
+  );
+  const [threadId, setThreadId] = useState<string | null>(initialThreadId);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sendingRef = useRef(false);
+
+  const displayName = agentDisplayName ?? "Jarvis";
+  const subtitle =
+    agentSubtitle ??
+    (isEmbedded ? "Connected to your command center" : "Connected to your command center");
+  const chips = promptChips ?? DEFAULT_PROMPT_CHIPS;
+  const expandTarget = expandHref ?? "/assistant";
+
+  useEffect(() => {
+    if (initializedConversationKeyRef.current === conversationKey) {
+      return;
+    }
+
+    initializedConversationKeyRef.current = conversationKey;
+
+    const normalized = normalizeMessages(initialMessages ?? EMPTY_MESSAGES);
+
+    setMessages((current) =>
+      messagesEqual(current, normalized) ? current : normalized,
+    );
+    setThreadId(initialThreadId);
+  }, [conversationKey]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -82,10 +175,11 @@ export function JarvisChat({
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || loading) {
+    if (!trimmed || loading || sendingRef.current) {
       return;
     }
 
+    sendingRef.current = true;
     const userMessage: Message = { role: "user", content: trimmed };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -96,8 +190,17 @@ export function JarvisChat({
     try {
       const requestBody: {
         message: string;
+        agentKey?: AgentKey;
+        threadId?: string;
         context?: { type: string; id: string };
-      } = { message: trimmed };
+      } = {
+        message: trimmed,
+        agentKey,
+      };
+
+      if (threadId) {
+        requestBody.threadId = threadId;
+      }
 
       if (jarvisContext?.target) {
         requestBody.context = {
@@ -112,10 +215,18 @@ export function JarvisChat({
         body: JSON.stringify(requestBody),
       });
 
-      const data = (await response.json()) as { reply?: string; error?: string };
+      const data = (await response.json()) as {
+        reply?: string;
+        error?: string;
+        threadId?: string;
+      };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Something went wrong. Please try again.");
+      }
+
+      if (typeof data.threadId === "string") {
+        setThreadId(data.threadId);
       }
 
       setMessages((prev) => [
@@ -130,6 +241,7 @@ export function JarvisChat({
       );
     } finally {
       setLoading(false);
+      sendingRef.current = false;
     }
   }
 
@@ -138,9 +250,9 @@ export function JarvisChat({
     await sendMessage(input);
   }
 
-  function handleChipClick(prompt: string) {
-    setInput(prompt);
-    void sendMessage(prompt);
+  function handleChipClick(chip: PromptChip) {
+    setInput(chip.prompt);
+    void sendMessage(chip.prompt);
   }
 
   const welcomeText = userName
@@ -161,29 +273,39 @@ export function JarvisChat({
           {isEmbedded ? (
             <p className="jarvis-status jarvis-status--centered">
               <span className="jarvis-status-dot" aria-hidden="true" />
-              Jarvis Online
+              {displayName} Online
             </p>
           ) : null}
           <div className="jarvis-welcome-copy">
             <p className="jarvis-welcome-text">
-              {isEmbedded ? "What should we work on?" : welcomeText}
+              {isEmbedded
+                ? agentKey === "melusi"
+                  ? "What should Melusi focus on?"
+                  : "What should we work on?"
+                : welcomeText}
             </p>
             <p className="jarvis-welcome-hint">
-              {isEmbedded
-                ? "Connected to your command center."
-                : "Ask about tasks, schedule, email, goals, and planning."}
+              {welcomeHint ??
+                (isEmbedded
+                  ? "Connected to your command center."
+                  : "Ask about tasks, schedule, email, goals, and planning.")}
             </p>
           </div>
           <div className="jarvis-chips">
-            {PROMPT_CHIPS.map((prompt) => (
+            {chips.map((chip) => (
               <button
-                key={prompt}
+                key={chip.label}
                 type="button"
-                onClick={() => handleChipClick(prompt)}
+                onClick={() => handleChipClick(chip)}
                 disabled={loading}
-                className="jarvis-chip"
+                className={`jarvis-chip${chip.requiresSetup ? " jarvis-chip--setup" : ""}`}
+                title={
+                  chip.requiresSetup
+                    ? "Integration not connected yet"
+                    : undefined
+                }
               >
-                {prompt}
+                {chip.label}
               </button>
             ))}
           </div>
@@ -199,7 +321,7 @@ export function JarvisChat({
             }
           >
             {message.role === "assistant" ? (
-              <span className="jarvis-bubble-label">Jarvis</span>
+              <span className="jarvis-bubble-label">{displayName}</span>
             ) : null}
             <p className="jarvis-bubble-content">{message.content}</p>
           </div>
@@ -213,7 +335,7 @@ export function JarvisChat({
             <span />
             <span />
           </span>
-          Jarvis is thinking…
+          {displayName} is thinking…
         </p>
       ) : null}
 
@@ -236,12 +358,16 @@ export function JarvisChat({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={isEmbedded ? "Ask Jarvis anything…" : "Message Jarvis…"}
+            placeholder={
+              isEmbedded
+                ? `Ask ${displayName} anything…`
+                : `Message ${displayName}…`
+            }
             rows={isEmbedded ? 1 : 3}
             maxLength={4000}
             disabled={loading}
             className="jarvis-textarea"
-            aria-label="Message to Jarvis"
+            aria-label={`Message to ${displayName}`}
           />
           <button
             type="submit"
@@ -259,8 +385,8 @@ export function JarvisChat({
   if (!isEmbedded) {
     return (
       <section
-        className="jarvis-panel jarvis-panel--full-page"
-        aria-label="Jarvis assistant"
+        className={`jarvis-panel jarvis-panel--full-page${agentKey === "melusi" ? " jarvis-panel--melusi" : ""}`}
+        aria-label={`${displayName} assistant`}
       >
         <div className="jarvis-panel-atmosphere" aria-hidden="true" />
         <div className="jarvis-panel-inner jarvis-panel-inner--full-page">
@@ -268,13 +394,11 @@ export function JarvisChat({
             <div className="jarvis-panel-identity jarvis-panel-identity--centered">
               <JarvisCore size="lg" />
               <div>
-                <h1 className="jarvis-panel-title">Jarvis</h1>
-                <p className="jarvis-panel-subtitle">
-                  Connected to your command center
-                </p>
+                <h1 className="jarvis-panel-title">{displayName}</h1>
+                <p className="jarvis-panel-subtitle">{subtitle}</p>
                 <p className="jarvis-status">
                   <span className="jarvis-status-dot" aria-hidden="true" />
-                  Jarvis Online
+                  {displayName} Online
                 </p>
               </div>
             </div>
@@ -296,14 +420,17 @@ export function JarvisChat({
     <section
       id="jarvis-embedded-panel"
       tabIndex={-1}
-      className="jarvis-panel jarvis-panel--embedded"
-      aria-label="Jarvis assistant"
+      className={`jarvis-panel jarvis-panel--embedded${agentKey === "melusi" ? " jarvis-panel--melusi" : ""}`}
+      aria-label={`${displayName} assistant`}
     >
       <div className="jarvis-panel-atmosphere" aria-hidden="true" />
-      <Link href="/assistant" className="jarvis-expand-link">
+      <Link href={expandTarget} className="jarvis-expand-link">
         <ExpandIcon />
         Expand
       </Link>
+      {agentKey === "melusi" ? (
+        <div className="jarvis-panel-agent-badge">Melusi Jarvis</div>
+      ) : null}
       <div className="jarvis-panel-inner">
         <div
           className="jarvis-messages jarvis-messages--embedded"
