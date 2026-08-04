@@ -27,6 +27,11 @@ import {
   listProjectsForModule,
   updateProjectStatusForModule,
 } from "@/lib/jarvis/projects/project-tools";
+import {
+  buildSelectedRecordSection,
+  loadAssistantContext,
+} from "@/lib/jarvis/context/load-assistant-context";
+import { parseJarvisContextTargetFromBody } from "@/lib/jarvis/context/types";
 
 export const maxDuration = 60;
 
@@ -641,11 +646,15 @@ function buildDateTimeSection(context: JarvisContext): string {
   return `\n\nCurrent date and time:\nUTC: ${utcNow}\nLocal (${timeZone}): ${localNow}`;
 }
 
-function buildInstructions(context: JarvisContext): string {
+function buildInstructions(
+  context: JarvisContext,
+  selectedRecordSection = "",
+): string {
   return (
     BASE_JARVIS_INSTRUCTIONS +
     buildDateTimeSection(context) +
-    buildPersonalContextSection(context)
+    buildPersonalContextSection(context) +
+    selectedRecordSection
   );
 }
 
@@ -1202,7 +1211,7 @@ async function executeJarvisTool(
         );
       case "complete_task":
         return JSON.stringify(
-          await completeTask(supabase, {
+          await completeTask(supabase, userId, {
             taskId: String(args.taskId ?? ""),
           }),
         );
@@ -1384,13 +1393,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid message" }, { status: 400 });
   }
 
+  const contextTarget =
+    typeof body === "object" && body !== null && "context" in body
+      ? parseJarvisContextTargetFromBody(
+          (body as { context: unknown }).context,
+        )
+      : null;
+
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
 
   try {
     const jarvisContext = await loadJarvisContext(supabase, userId);
-    const instructions = buildInstructions(jarvisContext);
+
+    let selectedRecordSection = "";
+
+    if (contextTarget) {
+      const selectedRecord = await loadAssistantContext(
+        supabase,
+        userId,
+        contextTarget,
+      );
+
+      if (selectedRecord.success) {
+        selectedRecordSection = buildSelectedRecordSection(
+          selectedRecord.context,
+        );
+      }
+    }
+
+    const instructions = buildInstructions(
+      jarvisContext,
+      selectedRecordSection,
+    );
 
     const input: OpenAI.Responses.ResponseInput = [
       { role: "user", content: message.trim() },

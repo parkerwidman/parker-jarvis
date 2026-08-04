@@ -214,6 +214,7 @@ export async function createTask(
 
 export async function completeTask(
   supabase: SupabaseClient,
+  userId: string,
   input: { taskId: string },
 ): Promise<CompleteTaskResult> {
   const taskId = input.taskId.trim();
@@ -232,6 +233,7 @@ export async function completeTask(
       updated_at: now,
     })
     .eq("id", taskId)
+    .eq("user_id", userId)
     .select(TASK_SELECT)
     .single();
 

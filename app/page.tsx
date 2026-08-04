@@ -1,5 +1,7 @@
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisChat } from "@/components/jarvis/jarvis-chat";
+import { CommandCenterContextLayout } from "@/components/jarvis/command-center-context-layout";
+import { JarvisContextButton } from "@/components/jarvis/context/jarvis-context-button";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type {
@@ -460,6 +462,9 @@ function TaskRow({
           )}
         </span>
       </div>
+      <JarvisContextButton target={{ type: "task", id: task.id }} displayLabel={task.title}>
+        Ask Jarvis
+      </JarvisContextButton>
     </li>
   );
 }
@@ -659,24 +664,26 @@ export default async function Home() {
           />
         </section>
 
-        <JarvisChat variant="embedded" userName={displayName} />
+        <CommandCenterContextLayout>
+          <JarvisChat variant="embedded" userName={displayName} />
 
-        <div className="cc-dashboard-grid">
-          <div className="cc-dashboard-col">
-            <BriefingPanel briefing={data.briefing} />
-            <SchedulePanel outlook={data.outlook} timeZone={data.timezone} />
-          </div>
+          <div className="cc-dashboard-grid">
+            <div className="cc-dashboard-col">
+              <BriefingPanel briefing={data.briefing} />
+              <SchedulePanel outlook={data.outlook} timeZone={data.timezone} />
+            </div>
 
-          <div className="cc-dashboard-col">
-            <PlanPanel plan={data.plan} timeZone={data.timezone} />
-            <TasksPanel tasks={data.tasks} timeZone={data.timezone} />
-          </div>
+            <div className="cc-dashboard-col">
+              <PlanPanel plan={data.plan} timeZone={data.timezone} />
+              <TasksPanel tasks={data.tasks} timeZone={data.timezone} />
+            </div>
 
-          <div className="cc-dashboard-col cc-dashboard-col--narrow">
-            <ApprovalsPanel approvals={data.approvals} />
-            <GoalsPanel goals={data.goals} />
+            <div className="cc-dashboard-col cc-dashboard-col--narrow">
+              <ApprovalsPanel approvals={data.approvals} />
+              <GoalsPanel goals={data.goals} />
+            </div>
           </div>
-        </div>
+        </CommandCenterContextLayout>
 
         <section className="cc-life-section" aria-label="Life areas">
           <div className="cc-life-grid">

@@ -2,10 +2,19 @@ import Link from "next/link";
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisChat } from "@/components/jarvis/jarvis-chat";
 import { JarvisPageContent } from "@/components/jarvis/jarvis-ui";
+import { JarvisContextProvider } from "@/components/jarvis/context/jarvis-context-provider";
+import { loadAssistantContext } from "@/lib/jarvis/context/load-assistant-context";
+import { parseJarvisContextTarget } from "@/lib/jarvis/context/types";
+import type { JarvisContextInitial } from "@/lib/jarvis/context/types";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
-export default async function AssistantPage() {
+export default async function AssistantPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ contextType?: string; contextId?: string }>;
+}) {
+  const { contextType, contextId } = await searchParams;
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
@@ -17,6 +26,7 @@ export default async function AssistantPage() {
     typeof data.claims.sub === "string" ? data.claims.sub : null;
 
   let displayName = "Parker";
+  let initialContext: JarvisContextInitial | null = null;
 
   if (userId) {
     const { data: profile } = await supabase
@@ -26,6 +36,24 @@ export default async function AssistantPage() {
       .maybeSingle();
 
     displayName = profile?.preferred_name?.trim() || "Parker";
+
+    const parsedTarget = parseJarvisContextTarget(contextType, contextId);
+
+    if (parsedTarget) {
+      const loaded = await loadAssistantContext(
+        supabase,
+        userId,
+        parsedTarget,
+      );
+
+      if (loaded.success) {
+        initialContext = {
+          type: loaded.context.type,
+          id: loaded.context.id,
+          displayLabel: loaded.displayLabel,
+        };
+      }
+    }
   }
 
   return (
@@ -34,7 +62,9 @@ export default async function AssistantPage() {
         <Link href="/" className="jv-back-link jv-back-link--assistant">
           ← Command Center
         </Link>
-        <JarvisChat variant="fullPage" userName={displayName} />
+        <JarvisContextProvider initialContext={initialContext}>
+          <JarvisChat variant="fullPage" userName={displayName} />
+        </JarvisContextProvider>
       </JarvisPageContent>
     </JarvisAppShell>
   );

@@ -1,5 +1,6 @@
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
+import { JarvisContextLink } from "@/components/jarvis/context/jarvis-context-link";
 import {
   JarvisAlert,
   JarvisButton,
@@ -233,11 +234,18 @@ export default async function MelusiPage({
                           )}
                         </div>
                       </div>
-                      <MelusiProjectStatusForm
-                        projectId={project.id}
-                        projectName={project.name}
-                        currentStatus={project.status}
-                      />
+                      <div className="la-project-actions">
+                        <JarvisContextLink
+                          target={{ type: "melusi_project", id: project.id }}
+                        >
+                          Ask Jarvis about this
+                        </JarvisContextLink>
+                        <MelusiProjectStatusForm
+                          projectId={project.id}
+                          projectName={project.name}
+                          currentStatus={project.status}
+                        />
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -276,6 +284,12 @@ export default async function MelusiPage({
                             )}
                           </span>
                         </div>
+                        <JarvisContextLink
+                          target={{ type: "task", id: task.id }}
+                          className="jarvis-context-link jarvis-context-link--compact"
+                        >
+                          Ask Jarvis
+                        </JarvisContextLink>
                         <span className="jv-priority-badge">{task.priority}</span>
                       </li>
                     ))}

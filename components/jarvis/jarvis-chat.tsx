@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { JarvisContextChip } from "@/components/jarvis/context/jarvis-context-chip";
+import { useOptionalJarvisContext } from "@/components/jarvis/context/jarvis-context-provider";
 
 type Message = {
   role: "user" | "assistant";
@@ -62,8 +64,12 @@ function SendIcon() {
   );
 }
 
-export function JarvisChat({ variant = "fullPage", userName }: JarvisChatProps) {
+export function JarvisChat({
+  variant = "fullPage",
+  userName,
+}: JarvisChatProps) {
   const isEmbedded = variant === "embedded";
+  const jarvisContext = useOptionalJarvisContext();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -88,10 +94,22 @@ export function JarvisChat({ variant = "fullPage", userName }: JarvisChatProps) 
     setError(null);
 
     try {
+      const requestBody: {
+        message: string;
+        context?: { type: string; id: string };
+      } = { message: trimmed };
+
+      if (jarvisContext?.target) {
+        requestBody.context = {
+          type: jarvisContext.target.type,
+          id: jarvisContext.target.id,
+        };
+      }
+
       const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = (await response.json()) as { reply?: string; error?: string };
@@ -205,6 +223,7 @@ export function JarvisChat({ variant = "fullPage", userName }: JarvisChatProps) 
 
   const inputForm = (
     <>
+      <JarvisContextChip />
       {error ? <p className="jarvis-error">{error}</p> : null}
       <form onSubmit={handleSubmit} className="jarvis-input-area">
         <div className="jarvis-input-row">
@@ -275,6 +294,8 @@ export function JarvisChat({ variant = "fullPage", userName }: JarvisChatProps) 
 
   return (
     <section
+      id="jarvis-embedded-panel"
+      tabIndex={-1}
       className="jarvis-panel jarvis-panel--embedded"
       aria-label="Jarvis assistant"
     >
