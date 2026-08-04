@@ -1,5 +1,10 @@
 import "server-only";
 
+import { ensureLifeAreaForModule } from "@/lib/jarvis/life-areas/ensure-life-area-for-module";
+import {
+  isLifeAreaModuleKey,
+  type LifeAreaModuleKey,
+} from "@/lib/jarvis/life-areas/module-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
@@ -43,6 +48,42 @@ export type UpdateProjectStatusResult =
   | { success: true; project: ProjectRecord }
   | { success: false; error: string };
 
+export type AssistantProjectSummary = {
+  name: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  description: string | null;
+};
+
+export type ListProjectsForModuleResult =
+  | { success: true; projects: AssistantProjectSummary[] }
+  | { success: false; error: string };
+
+export type CreateProjectForModuleResult =
+  | { success: true; project: AssistantProjectSummary }
+  | { success: false; error: string };
+
+export type UpdateProjectStatusForModuleResult =
+  | { success: true; project: AssistantProjectSummary }
+  | {
+      success: false;
+      error: string;
+      matches?: AssistantProjectSummary[];
+    };
+
+function toAssistantProjectSummary(
+  project: ProjectRecord,
+): AssistantProjectSummary {
+  return {
+    name: project.name,
+    status: project.status,
+    priority: project.priority,
+    dueDate: project.due_at ? project.due_at.slice(0, 10) : null,
+    description: project.description,
+  };
+}
+
 function parseDueDate(raw: string): string | null {
   const trimmed = raw.trim();
 
@@ -68,9 +109,62 @@ export async function listProjectsForLifeArea(
   supabase: SupabaseClient,
   userId: string,
   lifeAreaId: string,
+  options?: {
+    status?: string;
+    priority?: string;
+    includeArchived?: boolean;
+  },
 ): Promise<ListProjectsResult> {
   if (!UUID_REGEX.test(lifeAreaId)) {
     return { success: false, error: "Invalid life area." };
+  }
+
+  const statusFilter = options?.status?.trim();
+  const priorityFilter = options?.priority?.trim();
+
+  if (statusFilter && !VALID_STATUSES.has(statusFilter)) {
+    return { success: false, error: "Invalid project status filter." };
+  }
+
+  if (priorityFilter && !VALID_PRIORITIES.has(priorityFilter)) {
+    return { success: false, error: "Invalid project priority filter." };
+  }
+
+  let query = supabase
+    .from("projects")
+    .select(PROJECT_SELECT)
+    .eq("user_id", userId)
+    .eq("life_area_id", lifeAreaId);
+
+  if (statusFilter) {
+    query = query.eq("status", statusFilter);
+  } else if (!options?.includeArchived) {
+    query = query.neq("status", "archived");
+  }
+
+  if (priorityFilter) {
+    query = query.eq("priority", priorityFilter);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return { success: false, error: "Could not list projects." };
+  }
+
+  return { success: true, projects: data ?? [] };
+}
+
+async function findProjectsByName(
+  supabase: SupabaseClient,
+  userId: string,
+  lifeAreaId: string,
+  projectName: string,
+): Promise<ProjectRecord[]> {
+  const normalizedName = projectName.trim().toLowerCase();
+
+  if (!normalizedName) {
+    return [];
   }
 
   const { data, error } = await supabase
@@ -80,10 +174,12 @@ export async function listProjectsForLifeArea(
     .eq("life_area_id", lifeAreaId);
 
   if (error) {
-    return { success: false, error: "Could not list projects." };
+    return [];
   }
 
-  return { success: true, projects: data ?? [] };
+  return (data ?? []).filter(
+    (project) => project.name.trim().toLowerCase() === normalizedName,
+  );
 }
 
 export async function createProject(
@@ -190,4 +286,171 @@ export async function updateProjectStatus(
   }
 
   return { success: true, project: data };
+}
+
+export async function listProjectsForModule(
+  supabase: SupabaseClient,
+  userId: string,
+  moduleKey: LifeAreaModuleKey,
+  options?: {
+    status?: string;
+    priority?: string;
+    includeArchived?: boolean;
+  },
+): Promise<ListProjectsForModuleResult> {
+  if (!isLifeAreaModuleKey(moduleKey)) {
+    return { success: false, error: "Invalid life area module." };
+  }
+
+  const lifeAreaResult = await ensureLifeAreaForModule(
+    supabase,
+    userId,
+    moduleKey,
+  );
+
+  if (!lifeAreaResult.success) {
+    return lifeAreaResult;
+  }
+
+  const result = await listProjectsForLifeArea(
+    supabase,
+    userId,
+    lifeAreaResult.lifeAreaId,
+    options,
+  );
+
+  if (!result.success) {
+    return result;
+  }
+
+  return {
+    success: true,
+    projects: result.projects.map(toAssistantProjectSummary),
+  };
+}
+
+export async function createProjectForModule(
+  supabase: SupabaseClient,
+  userId: string,
+  moduleKey: LifeAreaModuleKey,
+  input: {
+    name: string;
+    description?: string;
+    priority?: string;
+    dueDate?: string;
+  },
+): Promise<CreateProjectForModuleResult> {
+  if (!isLifeAreaModuleKey(moduleKey)) {
+    return { success: false, error: "Invalid life area module." };
+  }
+
+  const lifeAreaResult = await ensureLifeAreaForModule(
+    supabase,
+    userId,
+    moduleKey,
+  );
+
+  if (!lifeAreaResult.success) {
+    return lifeAreaResult;
+  }
+
+  const result = await createProject(supabase, {
+    userId,
+    lifeAreaId: lifeAreaResult.lifeAreaId,
+    name: input.name,
+    description: input.description,
+    priority: input.priority,
+    dueDate: input.dueDate,
+  });
+
+  if (!result.success) {
+    return result;
+  }
+
+  return {
+    success: true,
+    project: toAssistantProjectSummary(result.project),
+  };
+}
+
+export async function updateProjectStatusForModule(
+  supabase: SupabaseClient,
+  userId: string,
+  moduleKey: LifeAreaModuleKey,
+  input: {
+    projectId?: string;
+    projectName?: string;
+    status: string;
+  },
+): Promise<UpdateProjectStatusForModuleResult> {
+  if (!isLifeAreaModuleKey(moduleKey)) {
+    return { success: false, error: "Invalid life area module." };
+  }
+
+  const lifeAreaResult = await ensureLifeAreaForModule(
+    supabase,
+    userId,
+    moduleKey,
+  );
+
+  if (!lifeAreaResult.success) {
+    return lifeAreaResult;
+  }
+
+  const lifeAreaId = lifeAreaResult.lifeAreaId;
+  const status = input.status.trim();
+  const projectId = input.projectId?.trim() ?? "";
+  const projectName = input.projectName?.trim() ?? "";
+
+  if (!VALID_STATUSES.has(status)) {
+    return { success: false, error: "Invalid project status." };
+  }
+
+  if (!projectId && !projectName) {
+    return {
+      success: false,
+      error: "Provide a project id or project name.",
+    };
+  }
+
+  let resolvedProjectId = projectId;
+
+  if (!resolvedProjectId) {
+    const matches = await findProjectsByName(
+      supabase,
+      userId,
+      lifeAreaId,
+      projectName,
+    );
+
+    if (matches.length === 0) {
+      return { success: false, error: "No matching project was found." };
+    }
+
+    if (matches.length > 1) {
+      return {
+        success: false,
+        error: "Multiple projects match that name. Ask Parker to clarify.",
+        matches: matches.map(toAssistantProjectSummary),
+      };
+    }
+
+    resolvedProjectId = matches[0].id;
+  }
+
+  const result = await updateProjectStatus(supabase, {
+    userId,
+    lifeAreaId,
+    projectId: resolvedProjectId,
+    status,
+  });
+
+  if (!result.success) {
+    return result;
+  }
+
+  return {
+    success: true,
+    project: toAssistantProjectSummary(result.project),
+  };
 }

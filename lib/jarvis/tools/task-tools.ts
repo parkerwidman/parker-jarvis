@@ -1,3 +1,5 @@
+import { ensureLifeAreaForModule } from "@/lib/jarvis/life-areas/ensure-life-area-for-module";
+import { isLifeAreaModuleKey } from "@/lib/jarvis/life-areas/module-registry";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
@@ -79,11 +81,38 @@ function compareTasks(a: TaskRecord, b: TaskRecord): number {
 export async function listTasks(
   supabase: SupabaseClient,
   userId: string,
+  options?: {
+    lifeAreaModuleKey?: string;
+    unfinishedOnly?: boolean;
+  },
 ): Promise<ListTasksResult> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(TASK_SELECT)
-    .eq("user_id", userId);
+  let query = supabase.from("tasks").select(TASK_SELECT).eq("user_id", userId);
+
+  const moduleKey = options?.lifeAreaModuleKey?.trim();
+
+  if (moduleKey) {
+    if (!isLifeAreaModuleKey(moduleKey)) {
+      return { success: false, error: "Invalid life area module." };
+    }
+
+    const lifeAreaResult = await ensureLifeAreaForModule(
+      supabase,
+      userId,
+      moduleKey,
+    );
+
+    if (!lifeAreaResult.success) {
+      return lifeAreaResult;
+    }
+
+    query = query.eq("life_area_id", lifeAreaResult.lifeAreaId);
+  }
+
+  if (options?.unfinishedOnly) {
+    query = query.neq("status", "done");
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return { success: false, error: "Could not list tasks." };
@@ -96,7 +125,13 @@ export async function listTasks(
 
 export async function createTask(
   supabase: SupabaseClient,
-  input: { title: string; priority?: string; dueDate?: string },
+  userId: string,
+  input: {
+    title: string;
+    priority?: string;
+    dueDate?: string;
+    lifeAreaModuleKey?: string;
+  },
 ): Promise<CreateTaskResult> {
   const title = input.title.trim();
   const priority = input.priority?.trim() ?? "medium";
@@ -128,9 +163,45 @@ export async function createTask(
     }
   }
 
+  let life_area_id: string | null = null;
+  const moduleKey = input.lifeAreaModuleKey?.trim();
+
+  if (moduleKey) {
+    if (!isLifeAreaModuleKey(moduleKey)) {
+      return { success: false, error: "Invalid life area module." };
+    }
+
+    const lifeAreaResult = await ensureLifeAreaForModule(
+      supabase,
+      userId,
+      moduleKey,
+    );
+
+    if (!lifeAreaResult.success) {
+      return lifeAreaResult;
+    }
+
+    life_area_id = lifeAreaResult.lifeAreaId;
+  }
+
+  const insertRow: {
+    title: string;
+    priority: string;
+    due_at: string | null;
+    life_area_id?: string;
+  } = {
+    title,
+    priority,
+    due_at,
+  };
+
+  if (life_area_id) {
+    insertRow.life_area_id = life_area_id;
+  }
+
   const { data, error } = await supabase
     .from("tasks")
-    .insert({ title, priority, due_at })
+    .insert(insertRow)
     .select(TASK_SELECT)
     .single();
 
