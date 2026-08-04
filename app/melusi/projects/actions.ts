@@ -5,11 +5,14 @@ import {
   createProjectTask,
   loadTrustedMelusiProject,
 } from "@/lib/jarvis/projects/project-task-tools";
+import { createProjectUpdate } from "@/lib/jarvis/projects/project-update-tools";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
+
+const VALID_UPDATE_TYPES = new Set(["progress", "blocker", "decision", "note"]);
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -124,4 +127,52 @@ export async function completeMelusiProjectTask(formData: FormData) {
   }
 
   redirect(`${projectPath(projectId)}?completed=1`);
+}
+
+export async function createMelusiProjectUpdate(formData: FormData) {
+  const projectId = ((formData.get("projectId") as string) ?? "").trim();
+  const rawUpdateType = ((formData.get("updateType") as string) ?? "").trim();
+  const updateType = VALID_UPDATE_TYPES.has(rawUpdateType)
+    ? rawUpdateType
+    : "";
+  const content = ((formData.get("content") as string) ?? "").trim();
+
+  if (!UUID_REGEX.test(projectId)) {
+    redirect("/melusi");
+  }
+
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  const projectResult = await loadTrustedMelusiProject(
+    supabase,
+    userId,
+    projectId,
+  );
+
+  if (!projectResult.success) {
+    redirect("/melusi");
+  }
+
+  const result = await createProjectUpdate(
+    supabase,
+    userId,
+    projectResult.project,
+    {
+      updateType,
+      content,
+    },
+  );
+
+  revalidatePath(projectPath(projectId));
+  revalidatePath("/melusi");
+  revalidatePath("/");
+
+  if (!result.success) {
+    redirect(
+      `${projectPath(projectId)}?error=${encodeURIComponent(result.error)}`,
+    );
+  }
+
+  redirect(`${projectPath(projectId)}?updateAdded=1`);
 }

@@ -1,6 +1,10 @@
 import "server-only";
 
-import { ensureLifeAreaForModule } from "@/lib/jarvis/life-areas/ensure-life-area-for-module";
+import {
+  listProjectUpdates,
+  WORKSPACE_UPDATE_LIST_LIMIT,
+  type ProjectUpdateRecord,
+} from "@/lib/jarvis/projects/project-update-tools";
 import {
   loadTrustedMelusiProject,
   listProjectTasks,
@@ -37,6 +41,13 @@ export type MelusiProjectWorkspaceTask = {
   status: string;
 };
 
+export type MelusiProjectWorkspaceUpdate = {
+  id: string;
+  updateType: string;
+  content: string;
+  createdAt: string;
+};
+
 export type MelusiProjectWorkspaceData = {
   project: {
     id: string;
@@ -53,6 +64,7 @@ export type MelusiProjectWorkspaceData = {
     completed: number;
     unfinished: number;
   };
+  recentUpdates: MelusiProjectWorkspaceUpdate[];
   timezone: string;
 };
 
@@ -139,6 +151,15 @@ function compareUnfinishedTasks(
   return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 }
 
+function toWorkspaceUpdate(row: ProjectUpdateRecord): MelusiProjectWorkspaceUpdate {
+  return {
+    id: row.id,
+    updateType: row.update_type,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
 function toWorkspaceTask(
   row: ProjectTaskRecord,
   todayLocal: string,
@@ -210,6 +231,19 @@ export async function loadMelusiProjectWorkspace(
     )
     .map((row) => toWorkspaceTask(row, todayLocal, timezone));
 
+  const updatesResult = await listProjectUpdates(
+    supabase,
+    userId,
+    projectResult.project,
+    { limit: WORKSPACE_UPDATE_LIST_LIMIT },
+  );
+
+  if (!updatesResult.success) {
+    return { success: false, notFound: true };
+  }
+
+  const recentUpdates = updatesResult.updates.map(toWorkspaceUpdate);
+
   const project = projectResult.project as ProjectRow;
 
   return {
@@ -230,6 +264,7 @@ export async function loadMelusiProjectWorkspace(
         completed: completedTasks.length,
         unfinished: unfinishedTasks.length,
       },
+      recentUpdates,
       timezone,
     },
   };

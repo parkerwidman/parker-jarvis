@@ -16,6 +16,7 @@ import { notFound, redirect } from "next/navigation";
 import {
   completeMelusiProjectTask,
   createMelusiProjectTask,
+  createMelusiProjectUpdate,
 } from "../actions";
 
 function formatDueDate(isoString: string, timeZone: string): string {
@@ -61,15 +62,61 @@ function projectStatusBadgeClass(status: string): string {
   }
 }
 
+function updateTypeLabel(updateType: string): string {
+  switch (updateType) {
+    case "progress":
+      return "Progress";
+    case "blocker":
+      return "Blocker";
+    case "decision":
+      return "Decision";
+    case "note":
+      return "Note";
+    default:
+      return updateType;
+  }
+}
+
+function updateTypeBadgeClass(updateType: string): string {
+  switch (updateType) {
+    case "progress":
+      return "la-update-type-badge la-update-type-badge--progress";
+    case "blocker":
+      return "la-update-type-badge la-update-type-badge--blocker";
+    case "decision":
+      return "la-update-type-badge la-update-type-badge--decision";
+    case "note":
+      return "la-update-type-badge la-update-type-badge--note";
+    default:
+      return "la-update-type-badge";
+  }
+}
+
+function formatDateTime(isoString: string, timeZone: string): string {
+  return new Date(isoString).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+}
+
 export default async function MelusiProjectPage({
   params,
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ error?: string; created?: string; completed?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    created?: string;
+    completed?: string;
+    updateAdded?: string;
+  }>;
 }) {
   const { projectId } = await params;
-  const { error, created, completed } = await searchParams;
+  const { error, created, completed, updateAdded } = await searchParams;
 
   const supabase = await createClient();
   const { data: authData, error: authError } = await supabase.auth.getClaims();
@@ -95,7 +142,7 @@ export default async function MelusiProjectPage({
     notFound();
   }
 
-  const { project, unfinishedTasks, completedTasks, taskCounts, timezone } =
+  const { project, unfinishedTasks, completedTasks, taskCounts, recentUpdates, timezone } =
     workspace.data;
 
   return (
@@ -113,6 +160,9 @@ export default async function MelusiProjectPage({
         ) : null}
         {completed ? (
           <JarvisAlert variant="success">Task completed.</JarvisAlert>
+        ) : null}
+        {updateAdded ? (
+          <JarvisAlert variant="success">Project update recorded.</JarvisAlert>
         ) : null}
         {error ? <JarvisAlert variant="error">{error}</JarvisAlert> : null}
 
@@ -244,6 +294,72 @@ export default async function MelusiProjectPage({
           </div>
 
           <div className="la-dashboard-col">
+            <JarvisCard title="Project updates" accent="cyan">
+              <form
+                action={createMelusiProjectUpdate}
+                className="jv-form la-compact-form la-project-update-form"
+              >
+                <input type="hidden" name="projectId" value={project.id} />
+                <div className="la-form-row">
+                  <JarvisField label="Update type">
+                    <select
+                      name="updateType"
+                      defaultValue="progress"
+                      required
+                      {...jarvisInputProps()}
+                    >
+                      <option value="progress">Progress</option>
+                      <option value="blocker">Blocker</option>
+                      <option value="decision">Decision</option>
+                      <option value="note">Note</option>
+                    </select>
+                  </JarvisField>
+                </div>
+                <JarvisField label="Update">
+                  <textarea
+                    name="content"
+                    required
+                    maxLength={5000}
+                    rows={3}
+                    placeholder="Record progress, a blocker, a decision, or a note."
+                    {...jarvisInputProps()}
+                  />
+                </JarvisField>
+                <JarvisButton type="submit" className="jv-btn--block la-btn--cyan">
+                  Add update
+                </JarvisButton>
+              </form>
+
+              {recentUpdates.length > 0 ? (
+                <ul
+                  className="la-project-update-list"
+                  aria-label="Recent project updates"
+                >
+                  {recentUpdates.map((update) => (
+                    <li key={update.id} className="la-project-update-item">
+                      <div className="la-project-update-heading">
+                        <span className={updateTypeBadgeClass(update.updateType)}>
+                          {updateTypeLabel(update.updateType)}
+                        </span>
+                        <time
+                          className="la-project-update-time"
+                          dateTime={update.createdAt}
+                        >
+                          {formatDateTime(update.createdAt, timezone)}
+                        </time>
+                      </div>
+                      <p className="la-project-update-content">{update.content}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <JarvisEmptyState
+                  title="No project updates yet"
+                  description="Record progress, blockers, decisions, or notes as you work on this project."
+                />
+              )}
+            </JarvisCard>
+
             {completedTasks.length > 0 ? (
               <JarvisCard title="Completed tasks" accent="cyan">
                 <ul className="jv-task-list jv-task-list--completed">
