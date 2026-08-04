@@ -8,19 +8,61 @@ type Message = {
   content: string;
 };
 
-const EXAMPLE_PROMPTS = [
-  "What should I prioritize today?",
-  "Show my overdue tasks.",
-  "Mark a task complete.",
-  "Summarize my upcoming schedule.",
-  "Draft a response to an important email.",
+const PROMPT_CHIPS = [
+  "Plan my next move",
+  "Show my priorities",
+  "Review today's schedule",
+  "Show overdue tasks",
+  "Draft an important email",
 ] as const;
 
 type JarvisChatProps = {
   variant?: "embedded" | "fullPage";
+  userName?: string;
 };
 
-export function JarvisChat({ variant = "fullPage" }: JarvisChatProps) {
+function JarvisCore({ size }: { size: "sm" | "md" | "lg" }) {
+  const ringCount = size === "sm" ? 2 : size === "md" ? 3 : 4;
+
+  return (
+    <div className={`jarvis-core jarvis-core--${size}`} aria-hidden="true">
+      {Array.from({ length: ringCount }, (_, i) => (
+        <span key={i} className="jarvis-core-ring" />
+      ))}
+      <span className="jarvis-core-dot" />
+    </div>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 1.5h7v7M10.5 1.5L1.5 10.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 8h11M9 4.5L13.5 8 9 11.5"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function JarvisChat({ variant = "fullPage", userName }: JarvisChatProps) {
   const isEmbedded = variant === "embedded";
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -78,142 +120,179 @@ export function JarvisChat({ variant = "fullPage" }: JarvisChatProps) {
     await sendMessage(input);
   }
 
-  function handleExamplePrompt(prompt: string) {
+  function handleChipClick(prompt: string) {
+    setInput(prompt);
     void sendMessage(prompt);
   }
 
-  const messageAreaClasses = isEmbedded
-    ? "flex min-h-[22rem] max-h-[36rem] flex-col gap-3 overflow-y-auto rounded-xl border border-[var(--navy-border)] bg-[var(--background)] p-4"
-    : "flex min-h-[20rem] max-h-[32rem] flex-col gap-3 overflow-y-auto rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] p-4";
+  const welcomeText = userName
+    ? `What should we work on, ${userName}?`
+    : "What should we work on?";
 
-  const chatContent = (
+  const messageContent = (
     <>
-      <div
-        className={messageAreaClasses}
-        aria-live="polite"
-        aria-label="Conversation"
-      >
-        {messages.length === 0 && !loading ? (
-          isEmbedded ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6">
-              <p className="text-center text-sm text-[var(--navy-muted)]">
-                What should we work on?
-              </p>
-              <div className="flex w-full flex-wrap justify-center gap-2">
-                {EXAMPLE_PROMPTS.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => handleExamplePrompt(prompt)}
-                    disabled={loading}
-                    className="rounded-full border border-[var(--navy-border)] bg-[var(--navy-surface)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] transition-colors hover:border-[rgba(59,130,246,0.35)] hover:bg-[#151f33] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <p className="m-auto text-center text-sm text-[var(--navy-muted)]">
-              Ask Jarvis anything to get started.
+      {messages.length === 0 && !loading ? (
+        <div
+          className={
+            isEmbedded
+              ? "jarvis-welcome jarvis-welcome--embedded"
+              : "jarvis-welcome"
+          }
+        >
+          {isEmbedded ? <JarvisCore size="lg" /> : null}
+          {isEmbedded ? (
+            <p className="jarvis-status jarvis-status--centered">
+              <span className="jarvis-status-dot" aria-hidden="true" />
+              Jarvis Online
             </p>
-          )
-        ) : (
-          messages.map((message, index) => (
-            <div
-              key={index}
-              className={
-                message.role === "user"
-                  ? "ml-8 self-end rounded-xl rounded-br-sm bg-[var(--accent)] px-4 py-2.5 text-sm text-white"
-                  : "mr-8 self-start rounded-xl rounded-bl-sm border border-[var(--navy-border)] bg-[var(--navy-surface)] px-4 py-2.5 text-sm text-[var(--foreground)]"
-              }
-            >
-              {message.role === "assistant" ? (
-                <span className="mb-1 block text-xs font-medium text-[var(--navy-muted)]">
-                  Jarvis
-                </span>
-              ) : null}
-              <p className="whitespace-pre-wrap">{message.content}</p>
-            </div>
-          ))
-        )}
+          ) : null}
+          <div className="jarvis-welcome-copy">
+            <p className="jarvis-welcome-text">
+              {isEmbedded ? "What should we work on?" : welcomeText}
+            </p>
+            <p className="jarvis-welcome-hint">
+              {isEmbedded
+                ? "Connected to your command center."
+                : "Ask about tasks, schedule, email, goals, and planning."}
+            </p>
+          </div>
+          <div className="jarvis-chips">
+            {PROMPT_CHIPS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => handleChipClick(prompt)}
+                disabled={loading}
+                className="jarvis-chip"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        messages.map((message, index) => (
+          <div
+            key={index}
+            className={
+              message.role === "user"
+                ? "jarvis-bubble jarvis-bubble--user"
+                : "jarvis-bubble jarvis-bubble--assistant"
+            }
+          >
+            {message.role === "assistant" ? (
+              <span className="jarvis-bubble-label">Jarvis</span>
+            ) : null}
+            <p className="jarvis-bubble-content">{message.content}</p>
+          </div>
+        ))
+      )}
 
-        {loading ? (
-          <p className="mr-8 self-start text-sm text-[var(--navy-muted)]">
-            Jarvis is thinking…
-          </p>
-        ) : null}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {error ? (
-        <p className="text-center text-sm text-red-400">{error}</p>
+      {loading ? (
+        <p className="jarvis-thinking" aria-live="polite">
+          <span className="jarvis-thinking-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          Jarvis is thinking…
+        </p>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-          placeholder={isEmbedded ? "Ask Jarvis…" : "Message Jarvis…"}
-          rows={isEmbedded ? 2 : 3}
-          maxLength={4000}
-          disabled={loading}
-          className="resize-none rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--navy-muted)] focus:border-[rgba(148,163,184,0.22)] focus:outline-none disabled:opacity-60"
-        />
+      <div ref={messagesEndRef} />
+    </>
+  );
 
-        <button
-          type="submit"
-          disabled={loading || input.trim().length === 0}
-          className="self-end rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Send
-        </button>
+  const inputForm = (
+    <>
+      {error ? <p className="jarvis-error">{error}</p> : null}
+      <form onSubmit={handleSubmit} className="jarvis-input-area">
+        <div className="jarvis-input-row">
+          <textarea
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder={isEmbedded ? "Ask Jarvis anything…" : "Message Jarvis…"}
+            rows={isEmbedded ? 1 : 3}
+            maxLength={4000}
+            disabled={loading}
+            className="jarvis-textarea"
+            aria-label="Message to Jarvis"
+          />
+          <button
+            type="submit"
+            disabled={loading || input.trim().length === 0}
+            className="jarvis-send"
+            aria-label="Send message"
+          >
+            {isEmbedded ? <SendIcon /> : "Send"}
+          </button>
+        </div>
       </form>
     </>
   );
 
   if (!isEmbedded) {
-    return <div className="flex w-full flex-col gap-4">{chatContent}</div>;
+    return (
+      <section
+        className="jarvis-panel jarvis-panel--full-page"
+        aria-label="Jarvis assistant"
+      >
+        <div className="jarvis-panel-atmosphere" aria-hidden="true" />
+        <div className="jarvis-panel-inner jarvis-panel-inner--full-page">
+          <div className="jarvis-panel-header jarvis-panel-header--full-page">
+            <div className="jarvis-panel-identity jarvis-panel-identity--centered">
+              <JarvisCore size="lg" />
+              <div>
+                <h1 className="jarvis-panel-title">Jarvis</h1>
+                <p className="jarvis-panel-subtitle">
+                  Connected to your command center
+                </p>
+                <p className="jarvis-status">
+                  <span className="jarvis-status-dot" aria-hidden="true" />
+                  Jarvis Online
+                </p>
+              </div>
+            </div>
+          </div>
+          <div
+            className="jarvis-messages jarvis-messages--full-page"
+            aria-live="polite"
+            aria-label="Conversation"
+          >
+            {messageContent}
+          </div>
+          {inputForm}
+        </div>
+      </section>
+    );
   }
 
   return (
     <section
-      className="flex w-full flex-col gap-4 rounded-xl border border-[rgba(59,130,246,0.2)] bg-[var(--navy-surface)] p-5 shadow-[0_0_40px_rgba(59,130,246,0.06)]"
+      className="jarvis-panel jarvis-panel--embedded"
       aria-label="Jarvis assistant"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <div
-            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[rgba(59,130,246,0.35)] bg-[rgba(59,130,246,0.1)]"
-            aria-hidden="true"
-          >
-            <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-[var(--foreground)]">
-              Ask Jarvis
-            </h2>
-            <p className="mt-0.5 text-xs text-[var(--navy-muted)]">
-              Your personal assistant — tasks, schedule, email, and goals.
-            </p>
-          </div>
-        </div>
-        <Link
-          href="/assistant"
-          className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-1.5 text-xs font-medium text-[var(--navy-muted)] transition-colors hover:border-[rgba(59,130,246,0.35)] hover:text-[var(--foreground)] no-underline"
+      <div className="jarvis-panel-atmosphere" aria-hidden="true" />
+      <Link href="/assistant" className="jarvis-expand-link">
+        <ExpandIcon />
+        Expand
+      </Link>
+      <div className="jarvis-panel-inner">
+        <div
+          className="jarvis-messages jarvis-messages--embedded"
+          aria-live="polite"
+          aria-label="Conversation"
         >
-          Expand
-        </Link>
+          {messageContent}
+        </div>
+        {inputForm}
       </div>
-
-      {chatContent}
     </section>
   );
 }

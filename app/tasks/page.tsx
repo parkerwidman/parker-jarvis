@@ -1,4 +1,14 @@
-import Link from "next/link";
+import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
+import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
+import {
+  JarvisAlert,
+  JarvisButton,
+  JarvisCard,
+  JarvisEmptyState,
+  JarvisField,
+  JarvisPageContent,
+  jarvisInputProps,
+} from "@/components/jarvis/jarvis-ui";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { completeTask, createTask } from "./actions";
@@ -11,6 +21,14 @@ function formatDueDate(isoString: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
+}
+
+function isOverdue(dueAt: string): boolean {
+  const due = new Date(dueAt);
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  due.setUTCHours(0, 0, 0, 0);
+  return due < today;
 }
 
 export default async function TasksPage({
@@ -32,136 +50,128 @@ export default async function TasksPage({
     .select("id, title, status, priority, due_at, created_at")
     .order("created_at", { ascending: false });
 
+  const openTasks = (tasks ?? []).filter((task) => task.status !== "done");
+  const completedTasks = (tasks ?? []).filter((task) => task.status === "done");
+
   return (
-    <div className="home">
-      <main className="home-main">
-        <header className="home-header">
-          <h1 className="home-title">Tasks</h1>
-          <p className="home-subtitle">
-            Everything Jarvis needs to help you complete.
-          </p>
-        </header>
+    <JarvisAppShell>
+      <JarvisPageContent>
+        <JarvisPageHeader
+          title="Tasks"
+          subtitle="Everything Jarvis needs to help you complete."
+        />
 
-        <form
-          action={createTask}
-          className="flex w-full flex-col gap-4 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] p-7"
-        >
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-[var(--navy-muted)]">
-              Task title
-            </span>
-            <input
-              type="text"
-              name="title"
-              required
-              maxLength={200}
-              placeholder="What needs to get done?"
-              className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] placeholder:text-[var(--navy-muted)] focus:border-[rgba(148,163,184,0.22)] focus:outline-none"
-            />
-          </label>
+        <JarvisCard title="Add task" accent="blue">
+          <form action={createTask} className="jv-form">
+            <JarvisField label="Task title">
+              <input
+                type="text"
+                name="title"
+                required
+                maxLength={200}
+                placeholder="What needs to get done?"
+                {...jarvisInputProps()}
+              />
+            </JarvisField>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-[var(--navy-muted)]">
-              Priority
-            </span>
-            <select
-              name="priority"
-              defaultValue="medium"
-              className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[rgba(148,163,184,0.22)] focus:outline-none"
-            >
-              <option value="low">Low priority</option>
-              <option value="medium">Medium priority</option>
-              <option value="high">High priority</option>
-            </select>
-          </label>
+            <JarvisField label="Priority">
+              <select name="priority" defaultValue="medium" {...jarvisInputProps()}>
+                <option value="low">Low priority</option>
+                <option value="medium">Medium priority</option>
+                <option value="high">High priority</option>
+              </select>
+            </JarvisField>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-[var(--navy-muted)]">
-              Due date
-            </span>
-            <input
-              type="date"
-              name="dueDate"
-              className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-3 py-2.5 text-sm text-[var(--foreground)] focus:border-[rgba(148,163,184,0.22)] focus:outline-none"
-            />
-          </label>
+            <JarvisField label="Due date">
+              <input type="date" name="dueDate" {...jarvisInputProps()} />
+            </JarvisField>
 
-          {error ? (
-            <p className="text-center text-sm text-red-400">{error}</p>
-          ) : null}
+            {error ? <JarvisAlert variant="error">{error}</JarvisAlert> : null}
 
-          <button
-            type="submit"
-            className="mt-1 rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-          >
-            Add task
-          </button>
-        </form>
+            <JarvisButton type="submit" className="jv-btn--block">
+              Add task
+            </JarvisButton>
+          </form>
+        </JarvisCard>
 
-        <section className="flex w-full flex-col gap-3" aria-label="Task list">
-          {tasks && tasks.length > 0 ? (
-            tasks.map((task) => (
-              <article
-                key={task.id}
-                className="flex items-center justify-between gap-4 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-4"
-              >
-                <div className="min-w-0">
-                  <h2
-                    className={
-                      task.status === "done"
-                        ? "text-sm font-medium text-[var(--navy-muted)] line-through"
-                        : "text-sm font-medium text-[var(--foreground)]"
-                    }
+        <section className="jv-list-section" aria-label="Open tasks">
+          <h2 className="jv-section-label">
+            Open tasks
+            {openTasks.length > 0 ? (
+              <span className="jv-section-count">{openTasks.length}</span>
+            ) : null}
+          </h2>
+
+          {openTasks.length > 0 ? (
+            <ul className="jv-task-list">
+              {openTasks.map((task) => {
+                const overdue = task.due_at ? isOverdue(task.due_at) : false;
+
+                return (
+                  <li
+                    key={task.id}
+                    className={`jv-task-item${overdue ? " jv-task-item--overdue" : ""}`}
                   >
-                    {task.title}
-                  </h2>
-                  {task.due_at ? (
-                    <p className="mt-1 text-xs text-[var(--navy-muted)]">
-                      Due {formatDueDate(task.due_at)}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium capitalize text-[var(--navy-muted)]">
-                    {task.priority}
-                  </span>
-                  {task.status === "done" ? (
-                    <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--navy-muted)]">
-                      Completed
-                    </span>
-                  ) : (
-                    <form action={completeTask}>
-                      <input type="hidden" name="taskId" value={task.id} />
-                      <button
-                        type="submit"
-                        className="rounded-lg border border-[var(--navy-border)] px-3 py-1 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--background)]"
-                      >
-                        Mark complete
-                      </button>
-                    </form>
-                  )}
-                </div>
-              </article>
-            ))
+                    <span className="jv-task-check" aria-hidden="true" />
+                    <div className="jv-task-body">
+                      <span className="jv-task-title">{task.title}</span>
+                      {task.due_at ? (
+                        <span className="jv-task-meta">
+                          Due {formatDueDate(task.due_at)}
+                          {overdue ? (
+                            <span className="jv-task-overdue"> · Overdue</span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span className="jv-task-meta">No due date</span>
+                      )}
+                    </div>
+                    <div className="jv-task-actions">
+                      <span className="jv-priority-badge">{task.priority}</span>
+                      <form action={completeTask}>
+                        <input type="hidden" name="taskId" value={task.id} />
+                        <JarvisButton type="submit" variant="secondary">
+                          Complete
+                        </JarvisButton>
+                      </form>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           ) : (
-            <div className="rounded-xl border border-dashed border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-10 text-center">
-              <p className="text-sm font-medium text-[var(--foreground)]">
-                No tasks yet
-              </p>
-              <p className="mt-1.5 text-sm text-[var(--navy-muted)]">
-                Add one above to get started.
-              </p>
-            </div>
+            <JarvisEmptyState
+              title="No open tasks"
+              description="Add one above to get started."
+            />
           )}
         </section>
 
-        <Link
-          href="/"
-          className="text-sm font-medium text-[var(--navy-muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          ← Back to home
-        </Link>
-      </main>
-    </div>
+        {completedTasks.length > 0 ? (
+          <section className="jv-list-section" aria-label="Completed tasks">
+            <h2 className="jv-section-label">
+              Completed
+              <span className="jv-section-count">{completedTasks.length}</span>
+            </h2>
+            <ul className="jv-task-list jv-task-list--completed">
+              {completedTasks.map((task) => (
+                <li key={task.id} className="jv-task-item jv-task-item--done">
+                  <span className="jv-task-check jv-task-check--done" aria-hidden="true" />
+                  <div className="jv-task-body">
+                    <span className="jv-task-title">{task.title}</span>
+                    {task.due_at ? (
+                      <span className="jv-task-meta">
+                        Due {formatDueDate(task.due_at)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <span className="jv-badge jv-badge--idle">Completed</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </JarvisPageContent>
+    </JarvisAppShell>
   );
 }

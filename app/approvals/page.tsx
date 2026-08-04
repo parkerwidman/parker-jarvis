@@ -1,7 +1,14 @@
-import Link from "next/link";
+import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
+import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
+import { parseDailyPlanCalendarPayload } from "@/lib/jarvis/plans/plan-item-calendar";
 import {
-  parseDailyPlanCalendarPayload,
-} from "@/lib/jarvis/plans/plan-item-calendar";
+  approvalStatusBadgeClass,
+  JarvisAlert,
+  JarvisButton,
+  JarvisCard,
+  JarvisEmptyState,
+  JarvisPageContent,
+} from "@/components/jarvis/jarvis-ui";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { approveActionRequest, rejectActionRequest } from "./actions";
@@ -39,10 +46,7 @@ function formatTimestamp(isoString: string): string {
   });
 }
 
-function formatCalendarDateTime(
-  isoString: string,
-  timeZone: string,
-): string {
+function formatCalendarDateTime(isoString: string, timeZone: string): string {
   const date = new Date(isoString);
 
   return date.toLocaleString("en-US", {
@@ -139,43 +143,49 @@ export default async function ApprovalsPage({
     .order("created_at", { ascending: false });
 
   const sortedRequests = [...(actionRequests ?? [])].sort(compareActionRequests);
+  const pendingCount = sortedRequests.filter((r) => r.status === "pending").length;
 
   return (
-    <div className="home">
-      <main className="home-main">
-        <header className="home-header">
-          <h1 className="home-title">Approvals</h1>
-          <p className="home-subtitle">
-            Review actions before Jarvis performs them.
-          </p>
-        </header>
+    <JarvisAppShell>
+      <JarvisPageContent className="jv-page-content--scroll">
+        <JarvisPageHeader
+          title="Approvals"
+          subtitle="Review actions before Jarvis performs them."
+          meta={
+            pendingCount > 0 ? (
+              <span className="jv-badge jv-badge--review">
+                {pendingCount} pending
+              </span>
+            ) : null
+          }
+        />
 
         {proposed === "1" ? (
-          <p className="w-full rounded-lg border border-[rgba(34,197,94,0.25)] bg-[rgba(34,197,94,0.08)] px-4 py-3 text-sm text-green-400">
+          <JarvisAlert variant="success">
             Calendar proposal submitted for approval.
-          </p>
+          </JarvisAlert>
         ) : null}
 
         {queryError === "duplicate" ? (
-          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+          <JarvisAlert variant="error">
             This Daily Plan block already has a pending or scheduled calendar
             request.
-          </p>
+          </JarvisAlert>
         ) : null}
 
         {queryError === "invalid" ? (
-          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+          <JarvisAlert variant="error">
             That Daily Plan block could not be proposed for calendar.
-          </p>
+          </JarvisAlert>
         ) : null}
 
         {queryError === "failed" ? (
-          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+          <JarvisAlert variant="error">
             The calendar proposal could not be created. Please try again.
-          </p>
+          </JarvisAlert>
         ) : null}
 
-        <section className="flex w-full flex-col gap-3" aria-label="Approval requests">
+        <section className="jv-approval-list" aria-label="Approval requests">
           {sortedRequests.length > 0 ? (
             sortedRequests.map((request) => {
               const calendarResult =
@@ -199,30 +209,27 @@ export default async function ApprovalsPage({
                   : null;
 
               return (
-                <article
+                <JarvisCard
                   key={request.id}
-                  className="flex w-full flex-col gap-3 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-4"
+                  accent={request.status === "pending" ? "amber" : "none"}
+                  className={`jv-approval-card jv-approval-card--${request.status}`}
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h2 className="text-sm font-medium text-[var(--foreground)]">
-                        {request.title}
-                      </h2>
-                      <p className="mt-1 text-sm text-[var(--navy-muted)]">
-                        {request.summary}
-                      </p>
+                  <div className="jv-approval-header">
+                    <div className="jv-approval-copy">
+                      <h2 className="jv-approval-title">{request.title}</h2>
+                      <p className="jv-approval-summary">{request.summary}</p>
                     </div>
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium capitalize text-[var(--navy-muted)]">
+                    <div className="jv-approval-badges">
+                      <span className="jv-priority-badge">
                         {request.risk_level.replace(/_/g, " ")}
                       </span>
-                      <span className="rounded-full border border-[var(--navy-border)] px-2.5 py-0.5 text-xs font-medium text-[var(--navy-muted)]">
+                      <span className={approvalStatusBadgeClass(request.status)}>
                         {statusLabel(request.status)}
                       </span>
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--navy-muted)]">
+                  <div className="jv-meta-row">
                     <span>Created {formatTimestamp(request.created_at)}</span>
                     {request.expires_at ? (
                       <span>Expires {formatTimestamp(request.expires_at)}</span>
@@ -234,22 +241,20 @@ export default async function ApprovalsPage({
                   typeof calendarPayload.startDateTime === "string" &&
                   typeof calendarPayload.endDateTime === "string" &&
                   eventTimeZone ? (
-                    <div className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-4 py-3 text-sm">
+                    <div className="jv-approval-detail">
                       {isDailyPlanRequest ? (
-                        <p className="text-xs font-medium text-[var(--accent)]">
-                          From Daily Plan
-                        </p>
+                        <p className="jv-approval-source">From Daily Plan</p>
                       ) : null}
-                      <p className="mt-1 font-medium text-[var(--foreground)]">
+                      <p className="jv-approval-detail-title">
                         {calendarPayload.subject}
                       </p>
-                      <p className="mt-1 text-xs text-[var(--navy-muted)]">
+                      <p className="jv-approval-detail-meta">
                         {formatCalendarDateTime(
                           calendarPayload.startDateTime,
                           eventTimeZone,
                         )}
                       </p>
-                      <p className="mt-0.5 text-xs text-[var(--navy-muted)]">
+                      <p className="jv-approval-detail-meta">
                         {formatCalendarTime(
                           calendarPayload.startDateTime,
                           eventTimeZone,
@@ -263,7 +268,7 @@ export default async function ApprovalsPage({
                       </p>
                       {typeof calendarPayload.reason === "string" &&
                       calendarPayload.reason.trim().length > 0 ? (
-                        <p className="mt-2 text-xs text-[var(--foreground)]">
+                        <p className="jv-approval-detail-reason">
                           {calendarPayload.reason}
                         </p>
                       ) : null}
@@ -271,19 +276,14 @@ export default async function ApprovalsPage({
                   ) : null}
 
                   {request.status === "pending" ? (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="jv-approval-actions">
                       <form action={approveActionRequest}>
                         <input
                           type="hidden"
                           name="actionRequestId"
                           value={request.id}
                         />
-                        <button
-                          type="submit"
-                          className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-                        >
-                          Approve
-                        </button>
+                        <JarvisButton type="submit">Approve</JarvisButton>
                       </form>
                       <form action={rejectActionRequest}>
                         <input
@@ -291,26 +291,21 @@ export default async function ApprovalsPage({
                           name="actionRequestId"
                           value={request.id}
                         />
-                        <button
-                          type="submit"
-                          className="rounded-lg border border-[var(--navy-border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--background)]"
-                        >
+                        <JarvisButton type="submit" variant="secondary">
                           Reject
-                        </button>
+                        </JarvisButton>
                       </form>
                     </div>
                   ) : null}
 
                   {request.status === "completed" && calendarResult ? (
-                    <div className="rounded-lg border border-[rgba(34,197,94,0.25)] bg-[rgba(34,197,94,0.08)] px-4 py-3 text-sm text-green-400">
-                      <p className="font-medium">Completed</p>
+                    <div className="jv-approval-result jv-approval-result--success">
+                      <p className="jv-approval-result-title">Completed</p>
                       {calendarResult.subject ? (
-                        <p className="mt-1 text-[var(--foreground)]">
-                          {calendarResult.subject}
-                        </p>
+                        <p>{calendarResult.subject}</p>
                       ) : null}
                       {calendarResult.start && calendarResult.end ? (
-                        <p className="mt-1 text-xs text-[var(--navy-muted)]">
+                        <p className="jv-approval-detail-meta">
                           {calendarResult.start} to {calendarResult.end} UTC
                         </p>
                       ) : null}
@@ -319,7 +314,7 @@ export default async function ApprovalsPage({
                           href={calendarResult.webLink}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="mt-2 inline-block text-xs font-medium text-[var(--accent)] hover:underline"
+                          className="jv-link"
                         >
                           Open in Outlook
                         </a>
@@ -328,44 +323,33 @@ export default async function ApprovalsPage({
                   ) : null}
 
                   {request.status === "failed" && request.safe_error_message ? (
-                    <p className="rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+                    <JarvisAlert variant="error">
                       {request.safe_error_message}
-                    </p>
+                    </JarvisAlert>
                   ) : null}
 
                   {request.status === "rejected" ? (
-                    <p className="text-xs font-medium text-[var(--navy-muted)]">
+                    <p className="jv-approval-note">
                       This request was rejected and will not be executed.
                     </p>
                   ) : null}
 
                   {request.status === "expired" ? (
-                    <p className="text-xs font-medium text-[var(--navy-muted)]">
+                    <p className="jv-approval-note">
                       This request expired before it was approved.
                     </p>
                   ) : null}
-                </article>
+                </JarvisCard>
               );
             })
           ) : (
-            <div className="rounded-xl border border-dashed border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-10 text-center">
-              <p className="text-sm font-medium text-[var(--foreground)]">
-                No approval requests
-              </p>
-              <p className="mt-1.5 text-sm text-[var(--navy-muted)]">
-                When Jarvis proposes a sensitive action, it will appear here.
-              </p>
-            </div>
+            <JarvisEmptyState
+              title="No approval requests"
+              description="When Jarvis proposes a sensitive action, it will appear here."
+            />
           )}
         </section>
-
-        <Link
-          href="/"
-          className="text-sm font-medium text-[var(--navy-muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          ← Back to home
-        </Link>
-      </main>
-    </div>
+      </JarvisPageContent>
+    </JarvisAppShell>
   );
 }

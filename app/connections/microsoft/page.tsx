@@ -1,4 +1,11 @@
 import Link from "next/link";
+import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
+import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
+import {
+  JarvisAlert,
+  JarvisCard,
+  JarvisPageContent,
+} from "@/components/jarvis/jarvis-ui";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -40,72 +47,71 @@ export default async function MicrosoftConnectionPage({
     .maybeSingle();
 
   return (
-    <div className="home">
-      <main className="home-main">
-        <header className="home-header">
-          <h1 className="home-title">Microsoft 365</h1>
-          <p className="home-subtitle">
-            Connect Jarvis to Melusi Outlook and Calendar.
-          </p>
-        </header>
+    <JarvisAppShell>
+      <JarvisPageContent>
+        <JarvisPageHeader
+          title="Microsoft Connection"
+          subtitle="Connect Jarvis to Outlook and Calendar."
+        />
 
         {connected === "true" ? (
-          <p className="w-full rounded-xl border border-[rgba(34,197,94,0.25)] bg-[rgba(34,197,94,0.08)] px-5 py-3 text-center text-sm text-green-400">
+          <JarvisAlert variant="success">
             Microsoft 365 connected successfully.
-          </p>
+          </JarvisAlert>
         ) : null}
 
         {error ? (
-          <p className="w-full rounded-xl border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-5 py-3 text-center text-sm text-red-400">
+          <JarvisAlert variant="error">
             Could not connect Microsoft 365. Please try again.
-          </p>
+          </JarvisAlert>
         ) : null}
 
-        <section className="flex w-full flex-col gap-4 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] p-7">
+        <JarvisCard title="Connection status" accent="blue">
           {connection ? (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="home-status-dot" aria-hidden="true" />
-                <span className="text-sm font-medium text-[var(--foreground)]">
-                  Connected
-                </span>
+            <div className="jv-connection-status">
+              <div className="jv-connection-indicator">
+                <span className="jv-status-dot" aria-hidden="true" />
+                <span className="jv-connection-label">Connected</span>
               </div>
 
               {connection.display_name ? (
-                <p className="text-sm text-[var(--foreground)]">
-                  {connection.display_name}
-                </p>
+                <p className="jv-connection-name">{connection.display_name}</p>
               ) : null}
 
               {connection.email ? (
-                <p className="text-sm text-[var(--navy-muted)]">
-                  {connection.email}
-                </p>
+                <p className="jv-connection-email">{connection.email}</p>
               ) : null}
 
               {connection.connected_at ? (
-                <p className="text-xs text-[var(--navy-muted)]">
+                <p className="jv-connection-meta">
                   Connected on {formatConnectionDate(connection.connected_at)}
                 </p>
               ) : null}
-            </>
-          ) : (
-            <Link
-              href="/api/microsoft/connect"
-              className="inline-flex items-center justify-center rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 no-underline"
-            >
-              Connect Microsoft 365
-            </Link>
-          )}
-        </section>
 
-        <Link
-          href="/"
-          className="text-sm font-medium text-[var(--navy-muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          ← Back to home
-        </Link>
-      </main>
-    </div>
+              <div className="jv-capabilities">
+                <h3 className="jv-section-label">Granted capabilities</h3>
+                <ul className="jv-capability-list">
+                  <li>Read Outlook calendar events</li>
+                  <li>Create calendar events after approval</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className="jv-connection-disconnected">
+              <div className="jv-connection-indicator">
+                <span className="jv-status-dot jv-status-dot--offline" aria-hidden="true" />
+                <span className="jv-connection-label">Not connected</span>
+              </div>
+              <p className="jv-connection-meta">
+                Connect Microsoft 365 to enable calendar and email integration.
+              </p>
+              <Link href="/api/microsoft/connect" className="jv-btn jv-btn--primary jv-btn--inline">
+                Connect Microsoft 365
+              </Link>
+            </div>
+          )}
+        </JarvisCard>
+      </JarvisPageContent>
+    </JarvisAppShell>
   );
 }

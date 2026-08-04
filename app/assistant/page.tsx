@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisChat } from "@/components/jarvis/jarvis-chat";
+import { JarvisPageContent } from "@/components/jarvis/jarvis-ui";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -11,23 +13,29 @@ export default async function AssistantPage() {
     redirect("/login");
   }
 
+  const userId =
+    typeof data.claims.sub === "string" ? data.claims.sub : null;
+
+  let displayName = "Parker";
+
+  if (userId) {
+    const { data: profile } = await supabase
+      .from("jarvis_profiles")
+      .select("preferred_name")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    displayName = profile?.preferred_name?.trim() || "Parker";
+  }
+
   return (
-    <div className="home">
-      <main className="home-main max-w-2xl">
-        <header className="home-header">
-          <h1 className="home-title">Jarvis</h1>
-          <p className="home-subtitle">Your personal AI command center.</p>
-        </header>
-
-        <JarvisChat variant="fullPage" />
-
-        <Link
-          href="/"
-          className="text-sm font-medium text-[var(--navy-muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          ← Back to home
+    <JarvisAppShell mainClassName="app-main--assistant">
+      <JarvisPageContent className="jv-page-content--assistant">
+        <Link href="/" className="jv-back-link jv-back-link--assistant">
+          ← Command Center
         </Link>
-      </main>
-    </div>
+        <JarvisChat variant="fullPage" userName={displayName} />
+      </JarvisPageContent>
+    </JarvisAppShell>
   );
 }

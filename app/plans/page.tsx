@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
+import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
 import {
   buildDailyPlanItemKey,
@@ -6,6 +7,16 @@ import {
   getDailyPlanItemRequestStatusLabel,
   isProposableSuggestedPlanItem,
 } from "@/lib/jarvis/plans/plan-item-calendar";
+import {
+  JarvisAlert,
+  JarvisButton,
+  JarvisCard,
+  JarvisEmptyState,
+  JarvisMarkdownContent,
+  JarvisPageContent,
+  JarvisSection,
+  statusBadgeClass,
+} from "@/components/jarvis/jarvis-ui";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import {
@@ -85,59 +96,17 @@ function parsePlanItems(raw: unknown): PlanItem[] {
   );
 }
 
-function PlanContent({ content }: { content: string }) {
-  const lines = content.split("\n");
-
-  return (
-    <div className="flex flex-col gap-2 text-sm leading-relaxed text-[var(--foreground)]">
-      {lines.map((line, index) => {
-        const trimmed = line.trim();
-
-        if (trimmed.startsWith("# ")) {
-          return (
-            <h2
-              key={index}
-              className="mt-2 text-lg font-semibold text-[var(--foreground)] first:mt-0"
-            >
-              {trimmed.slice(2)}
-            </h2>
-          );
-        }
-
-        if (trimmed.startsWith("## ")) {
-          return (
-            <h3
-              key={index}
-              className="mt-4 text-base font-medium text-[var(--foreground)]"
-            >
-              {trimmed.slice(3)}
-            </h3>
-          );
-        }
-
-        if (trimmed.startsWith("### ")) {
-          return (
-            <h4
-              key={index}
-              className="mt-3 text-sm font-medium text-[var(--foreground)]"
-            >
-              {trimmed.slice(4)}
-            </h4>
-          );
-        }
-
-        if (trimmed.length === 0) {
-          return <div key={index} className="h-2" aria-hidden="true" />;
-        }
-
-        return (
-          <p key={index} className="whitespace-pre-wrap text-[var(--foreground)]">
-            {line}
-          </p>
-        );
-      })}
-    </div>
-  );
+function planStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "completed":
+      return "Ready";
+    case "generating":
+      return "Generating";
+    case "failed":
+      return "Failed";
+    default:
+      return "Not generated";
+  }
 }
 
 function PlanTimeline({
@@ -158,13 +127,13 @@ function PlanTimeline({
   const now = new Date();
 
   return (
-    <section className="flex w-full flex-col gap-2" aria-label="Plan timeline">
-      <h3 className="text-sm font-medium text-[var(--navy-muted)]">Timeline</h3>
-      <p className="text-xs text-[var(--navy-muted)]">
+    <section className="jv-plan-timeline" aria-label="Plan timeline">
+      <h3 className="jv-section-label">Timeline</h3>
+      <p className="jv-timeline-note">
         Suggested blocks can be proposed for Outlook. Calendar changes require
         your approval before Jarvis creates an event.
       </p>
-      <ol className="flex w-full flex-col gap-2">
+      <ol className="jv-timeline-list">
         {items.map((item, index) => {
           const itemKey = buildDailyPlanItemKey(planId, item);
           const canPropose = isProposableSuggestedPlanItem(item, now);
@@ -176,58 +145,50 @@ function PlanTimeline({
           return (
             <li
               key={`${item.startTime}-${index}`}
-              className={`rounded-lg border px-4 py-3 text-sm ${
-                item.isFixed
-                  ? "border-[rgba(59,130,246,0.35)] bg-[rgba(59,130,246,0.08)]"
-                  : "border-[var(--navy-border)] bg-[var(--background)]"
-              }`}
+              className={`jv-timeline-item${item.isFixed ? " jv-timeline-item--fixed" : ""}`}
             >
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-medium text-[var(--foreground)]">
-                  {item.title}
-                </span>
-                <span
-                  className={`rounded px-1.5 py-0.5 text-xs ${
-                    item.isFixed
-                      ? "bg-[rgba(59,130,246,0.15)] text-blue-300"
-                      : "bg-[rgba(148,163,184,0.12)] text-[var(--navy-muted)]"
-                  }`}
-                >
-                  {item.isFixed ? "Fixed event" : "Suggested"}
-                </span>
-                <span className="text-xs text-[var(--navy-muted)]">
-                  {item.type.replace("_", " ")}
-                </span>
-              </div>
-              <p className="mt-1 text-xs text-[var(--navy-muted)]">
-                {formatPlanItemTime(item.startTime, timeZone)} –{" "}
-                {formatPlanItemTime(item.endTime, timeZone)}
-              </p>
-              {item.reason ? (
-                <p className="mt-1.5 text-xs text-[var(--foreground)]">
-                  {item.reason}
-                </p>
-              ) : null}
-              {!item.isFixed && canPropose && !requestStatus ? (
-                <form
-                  action={proposeDailyPlanItemForCalendarAction}
-                  className="mt-2"
-                >
-                  <input type="hidden" name="dailyPlanId" value={planId} />
-                  <input type="hidden" name="itemIndex" value={index} />
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-[var(--navy-border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--navy-surface)]"
+              <time className="jv-timeline-time" dateTime={item.startTime}>
+                {formatPlanItemTime(item.startTime, timeZone)}
+              </time>
+              <div className="jv-timeline-body">
+                <div className="jv-timeline-head">
+                  <span className="jv-timeline-title">{item.title}</span>
+                  <span
+                    className={`jv-type-badge ${
+                      item.isFixed ? "jv-type-badge--event" : "jv-type-badge--focus"
+                    }`}
                   >
-                    Propose for calendar
-                  </button>
-                </form>
-              ) : null}
-              {!item.isFixed && requestStatus ? (
-                <p className="mt-2 text-xs font-medium text-[var(--navy-muted)]">
-                  {getDailyPlanItemRequestStatusLabel(requestStatus)}
+                    {item.isFixed ? "Fixed event" : "Suggested"}
+                  </span>
+                  <span className="jv-timeline-type">
+                    {item.type.replace("_", " ")}
+                  </span>
+                </div>
+                <p className="jv-timeline-range">
+                  {formatPlanItemTime(item.startTime, timeZone)} –{" "}
+                  {formatPlanItemTime(item.endTime, timeZone)}
                 </p>
-              ) : null}
+                {item.reason ? (
+                  <p className="jv-timeline-reason">{item.reason}</p>
+                ) : null}
+                {!item.isFixed && canPropose && !requestStatus ? (
+                  <form
+                    action={proposeDailyPlanItemForCalendarAction}
+                    className="jv-timeline-action"
+                  >
+                    <input type="hidden" name="dailyPlanId" value={planId} />
+                    <input type="hidden" name="itemIndex" value={index} />
+                    <JarvisButton type="submit" variant="secondary">
+                      Propose for calendar
+                    </JarvisButton>
+                  </form>
+                ) : null}
+                {!item.isFixed && requestStatus ? (
+                  <p className="jv-timeline-status">
+                    {getDailyPlanItemRequestStatusLabel(requestStatus)}
+                  </p>
+                ) : null}
+              </div>
             </li>
           );
         })}
@@ -300,59 +261,55 @@ export default async function PlansPage({
   const hasTodayPlan = todayPlan !== undefined;
 
   return (
-    <div className="home">
-      <main className="home-main">
-        <header className="home-header">
-          <h1 className="home-title">Daily Plan</h1>
-          <p className="home-subtitle">
-            An advisory schedule for your day. Calendar changes require your
-            approval before Jarvis modifies Outlook.
-          </p>
-        </header>
+    <JarvisAppShell>
+      <JarvisPageContent className="jv-page-content--scroll">
+        <JarvisPageHeader
+          title="Daily Plan"
+          subtitle="An advisory schedule for your day. Calendar changes require your approval before Jarvis modifies Outlook."
+        />
 
         {generated === "1" ? (
-          <p className="w-full rounded-lg border border-[rgba(34,197,94,0.25)] bg-[rgba(34,197,94,0.08)] px-4 py-3 text-sm text-green-400">
-            Daily plan generated.
-          </p>
+          <JarvisAlert variant="success">Daily plan generated.</JarvisAlert>
         ) : null}
 
         {queryError === "1" ? (
-          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+          <JarvisAlert variant="error">
             Jarvis could not generate the daily plan.
-          </p>
+          </JarvisAlert>
         ) : null}
 
-        <form action={generateDailyPlanAction} className="w-full">
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-          >
-            {hasTodayPlan ? "Regenerate daily plan" : "Generate daily plan"}
-          </button>
-        </form>
+        <div className="jv-action-row">
+          <form action={generateDailyPlanAction} className="jv-action-form">
+            <JarvisButton type="submit" className="jv-btn--block">
+              {hasTodayPlan ? "Regenerate daily plan" : "Generate daily plan"}
+            </JarvisButton>
+          </form>
+          {todayPlan ? (
+            <span className={statusBadgeClass(todayPlan.status)}>
+              {planStatusLabel(todayPlan.status)}
+            </span>
+          ) : null}
+        </div>
 
         {todayPlan?.status === "generating" ? (
-          <div className="w-full rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-8 text-center">
-            <p className="text-sm font-medium text-[var(--foreground)]">
-              Generating today&apos;s plan…
+          <JarvisCard accent="purple">
+            <p className="jv-status-message">Generating today&apos;s plan…</p>
+            <p className="jv-status-detail">
+              Jarvis is building your schedule around calendar, tasks, and goals.
             </p>
-            <p className="mt-1.5 text-sm text-[var(--navy-muted)]">
-              Jarvis is building your schedule around calendar, tasks, and
-              goals.
-            </p>
-          </div>
+          </JarvisCard>
         ) : null}
 
         {todayPlan?.status === "failed" ? (
-          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+          <JarvisAlert variant="error">
             {todayPlan.safe_error_message ??
               "Jarvis could not generate the daily plan."}
-          </p>
+          </JarvisAlert>
         ) : null}
 
         {featuredPlan?.content ? (
-          <article className="flex w-full flex-col gap-4 rounded-xl border border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-5">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--navy-muted)]">
+          <JarvisCard title="Current plan" accent="purple" scroll>
+            <div className="jv-meta-row">
               <span>{formatPlanDate(featuredPlan.plan_date)}</span>
               {featuredPlan.generated_at ? (
                 <span>
@@ -365,59 +322,38 @@ export default async function PlansPage({
               ) : null}
               <span>Timezone: {featuredPlan.timezone}</span>
             </div>
-            <PlanContent content={featuredPlan.content} />
+            <JarvisMarkdownContent content={featuredPlan.content} />
             <PlanTimeline
               planId={featuredPlan.id}
               items={featuredPlan.plan_items ?? []}
               timeZone={featuredPlan.timezone}
               calendarRequests={calendarRequests ?? []}
             />
-          </article>
+          </JarvisCard>
         ) : todayPlan?.status !== "generating" ? (
-          <div className="w-full rounded-xl border border-dashed border-[var(--navy-border)] bg-[var(--navy-surface)] px-5 py-10 text-center">
-            <p className="text-sm font-medium text-[var(--foreground)]">
-              No plan yet
-            </p>
-            <p className="mt-1.5 text-sm text-[var(--navy-muted)]">
-              Generate your first daily plan to see a suggested schedule for
-              today.
-            </p>
-          </div>
+          <JarvisEmptyState
+            title="No plan yet"
+            description="Generate your first daily plan to see a suggested schedule for today."
+          />
         ) : null}
 
         {historyRows.length > 0 ? (
-          <section
-            className="flex w-full flex-col gap-2"
-            aria-label="Plan history"
-          >
-            <h2 className="text-sm font-medium text-[var(--navy-muted)]">
-              Earlier plans
-            </h2>
-            <ul className="flex w-full flex-col gap-2">
+          <JarvisSection title="Earlier plans">
+            <ul className="jv-history-list">
               {historyRows.map((row) => (
-                <li
-                  key={row.id}
-                  className="rounded-lg border border-[var(--navy-border)] bg-[var(--navy-surface)] px-4 py-3 text-sm text-[var(--foreground)]"
-                >
+                <li key={row.id} className="jv-history-item">
                   {formatPlanDate(row.plan_date)}
                   {row.generated_at ? (
-                    <span className="ml-2 text-xs text-[var(--navy-muted)]">
+                    <span className="jv-history-meta">
                       · {formatGeneratedAt(row.generated_at, row.timezone)}
                     </span>
                   ) : null}
                 </li>
               ))}
             </ul>
-          </section>
+          </JarvisSection>
         ) : null}
-
-        <Link
-          href="/"
-          className="text-sm font-medium text-[var(--navy-muted)] transition-colors hover:text-[var(--foreground)]"
-        >
-          ← Back to home
-        </Link>
-      </main>
-    </div>
+      </JarvisPageContent>
+    </JarvisAppShell>
   );
 }

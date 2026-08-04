@@ -1,0 +1,73 @@
+import type { ReactNode } from "react";
+
+export type JarvisNavIconName =
+  | "command"
+  | "tasks"
+  | "brief"
+  | "plan"
+  | "approvals"
+  | "microsoft"
+  | "assistant";
+
+const ICONS: Record<JarvisNavIconName, ReactNode> = {
+  command: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="9" y="1.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="1.5" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="9" y="9" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  ),
+  tasks: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5 8l2 2 4-4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  brief: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 4.5h10M3 8h10M3 11.5h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  ),
+  plan: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M8 5v3.5l2.5 1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  ),
+  approvals: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5.5 8l1.5 1.5 3.5-3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  microsoft: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="5.5" height="5.5" fill="currentColor" opacity="0.9" />
+      <rect x="8.5" y="2" width="5.5" height="5.5" fill="currentColor" opacity="0.7" />
+      <rect x="2" y="8.5" width="5.5" height="5.5" fill="currentColor" opacity="0.7" />
+      <rect x="8.5" y="8.5" width="5.5" height="5.5" fill="currentColor" opacity="0.5" />
+    </svg>
+  ),
+  assistant: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      <path d="M8 2.5v1.5M8 12v1.5M2.5 8h1.5M12 8h1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  ),
+};
+
+export function JarvisNavIcon({ name }: { name: JarvisNavIconName }) {
+  return <span className="app-nav-icon">{ICONS[name]}</span>;
+}
+
+export function JarvisBrandIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="9" cy="9" r="1" fill="currentColor" />
+    </svg>
+  );
+}
