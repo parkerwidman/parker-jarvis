@@ -109,6 +109,25 @@ function planStatusLabel(status: string | undefined): string {
   }
 }
 
+function splitPlanItemTitle(title: string): {
+  taskTitle: string;
+  projectName: string | null;
+} {
+  const separator = " — ";
+  const index = title.lastIndexOf(separator);
+
+  if (index === -1) {
+    return { taskTitle: title, projectName: null };
+  }
+
+  const projectName = title.slice(index + separator.length).trim();
+
+  return {
+    taskTitle: title.slice(0, index),
+    projectName: projectName.length > 0 ? projectName : null,
+  };
+}
+
 function PlanTimeline({
   planId,
   items,
@@ -141,6 +160,7 @@ function PlanTimeline({
             itemKey,
             calendarRequests,
           );
+          const { taskTitle, projectName } = splitPlanItemTitle(item.title);
 
           return (
             <li
@@ -152,7 +172,10 @@ function PlanTimeline({
               </time>
               <div className="jv-timeline-body">
                 <div className="jv-timeline-head">
-                  <span className="jv-timeline-title">{item.title}</span>
+                  <span className="jv-timeline-title">{taskTitle}</span>
+                  {projectName ? (
+                    <span className="jv-timeline-project">{projectName}</span>
+                  ) : null}
                   <span
                     className={`jv-type-badge ${
                       item.isFixed ? "jv-type-badge--event" : "jv-type-badge--focus"

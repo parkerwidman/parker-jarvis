@@ -121,7 +121,7 @@ export default async function BriefingsPage() {
       <JarvisPageContent className="jv-page-content--scroll">
         <JarvisPageHeader
           title="Morning Brief"
-          subtitle="Your schedule, priorities, email, tasks, and goals in one place."
+          subtitle="Your schedule, priorities, email, tasks, goals, and Melusi projects in one place."
         />
 
         <div className="jv-action-row">
