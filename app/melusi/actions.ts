@@ -112,6 +112,7 @@ export async function updateMelusiProjectStatus(formData: FormData) {
   });
 
   revalidatePath("/melusi");
+  revalidatePath(`/melusi/projects/${projectId}`);
   revalidatePath("/");
 
   if (!result.success) {

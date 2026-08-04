@@ -190,6 +190,7 @@ export function buildSelectedRecordSection(
     "",
     "Context rules:",
     "- Use this project's ID with lifeAreaModuleKey melusi for update_project_status when Parker clearly asks to pause, activate, complete, archive, or otherwise change this project's status.",
+    "- Use this project's trusted ID for create_task and list_tasks when Parker asks to create or list tasks for this project.",
     "- Prefer this project ID over fuzzy name matching when the selected project matches the request.",
     "- Do not guess when the request could refer to a different project or record.",
     "- Selecting this record does not authorize any action by itself. Parker must still give an explicit instruction.",

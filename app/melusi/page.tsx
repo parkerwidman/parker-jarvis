@@ -235,6 +235,12 @@ export default async function MelusiPage({
                         </div>
                       </div>
                       <div className="la-project-actions">
+                        <Link
+                          href={`/melusi/projects/${project.id}`}
+                          className="la-card-link"
+                        >
+                          Open project
+                        </Link>
                         <JarvisContextLink
                           target={{ type: "melusi_project", id: project.id }}
                         >

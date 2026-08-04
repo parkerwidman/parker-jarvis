@@ -272,7 +272,7 @@ export async function loadLifeAreaDashboard(
 
   const lifeAreaId = lifeArea.id;
 
-  const [projectsResult, tasksResult, goalsResult, memoriesResult] =
+  const [projectsResult, tasksResult, allUnfinishedTasksResult, goalsResult, memoriesResult] =
     await Promise.all([
       supabase
         .from("projects")
@@ -282,6 +282,13 @@ export async function loadLifeAreaDashboard(
       supabase
         .from("tasks")
         .select("id, title, status, priority, due_at, created_at")
+        .eq("user_id", userId)
+        .eq("life_area_id", lifeAreaId)
+        .is("project_id", null)
+        .neq("status", "done"),
+      supabase
+        .from("tasks")
+        .select("id", { count: "exact", head: true })
         .eq("user_id", userId)
         .eq("life_area_id", lifeAreaId)
         .neq("status", "done"),
@@ -361,7 +368,7 @@ export async function loadLifeAreaDashboard(
     memories,
     counts: {
       activeProjects,
-      unfinishedTasks: taskRows.length,
+      unfinishedTasks: allUnfinishedTasksResult.count ?? taskRows.length,
       activeGoals: goalRows.length,
       activeMemories: memoryRows.length,
     },

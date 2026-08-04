@@ -32,6 +32,7 @@ import {
   loadAssistantContext,
 } from "@/lib/jarvis/context/load-assistant-context";
 import { parseJarvisContextTargetFromBody } from "@/lib/jarvis/context/types";
+import type { JarvisContextTarget } from "@/lib/jarvis/context/types";
 
 export const maxDuration = 60;
 
@@ -549,7 +550,13 @@ When Parker asks to pause a project, set its status to paused.
 
 When Parker asks for active Melusi projects, list projects with status active.
 
-When Parker asks for unfinished Melusi tasks, list tasks with lifeAreaModuleKey melusi and unfinishedOnly true.`;
+When Parker asks for unfinished Melusi tasks, list tasks with lifeAreaModuleKey melusi and unfinishedOnly true.
+
+When Parker asks about tasks for a specific Melusi project, use list_tasks with projectId or projectName. When a Melusi project is selected in the interface, use that project's trusted ID for "this project" instead of fuzzy name matching.
+
+When Parker asks to create a task for a Melusi project, use create_task with projectId or projectName. When a Melusi project is selected, use that project's trusted ID. Project tasks automatically receive the trusted Melusi life area.
+
+When listing or creating project tasks, do not include uncategorized tasks, Melusi-wide tasks without a project, or tasks from another project or life area.`;
 
 function buildPersonalContextSection(context: JarvisContext): string {
   const sections: string[] = [];
@@ -663,7 +670,7 @@ const TASK_TOOLS: OpenAI.Responses.Tool[] = [
     type: "function",
     name: "list_tasks",
     description:
-      "List Parker's tasks from Supabase. Use this to see open and completed tasks, answer questions about Parker's task list, or find a task id before completing a task by name. Pass lifeAreaModuleKey melusi to list only Melusi-scoped tasks. Pass unfinishedOnly true to exclude completed tasks.",
+      "List Parker's tasks from Supabase. Use this to see open and completed tasks, answer questions about Parker's task list, or find a task id before completing a task by name. Pass lifeAreaModuleKey melusi to list Melusi-scoped tasks without a specific project. Pass projectId or projectName to list tasks for one Melusi project only. Pass unfinishedOnly true to exclude completed tasks. When a Melusi project is selected in the interface, use its trusted projectId for this project instead of name matching.",
     parameters: {
       type: "object",
       properties: {
@@ -671,15 +678,30 @@ const TASK_TOOLS: OpenAI.Responses.Tool[] = [
           type: ["string", "null"],
           enum: ["melusi", null],
           description:
-            "When Parker asks for Melusi tasks, pass melusi. Pass null for the default all-task list.",
+            "When Parker asks for Melusi tasks without naming a project, pass melusi. Pass null when listing a specific project or the default all-task list.",
         },
         unfinishedOnly: {
           type: "boolean",
           description:
-            "When true, return only tasks that are not done. Use true for unfinished or open Melusi tasks.",
+            "When true, return only tasks that are not done. Use true for unfinished or open tasks.",
+        },
+        projectId: {
+          type: ["string", "null"],
+          description:
+            "The Melusi project UUID when listing tasks for one project. Pass null when not filtering by project or when the selected project context supplies the id.",
+        },
+        projectName: {
+          type: ["string", "null"],
+          description:
+            "The Melusi project name when the id is not known. Pass null when using projectId or selected project context. Do not guess when multiple projects could match.",
         },
       },
-      required: ["lifeAreaModuleKey", "unfinishedOnly"],
+      required: [
+        "lifeAreaModuleKey",
+        "unfinishedOnly",
+        "projectId",
+        "projectName",
+      ],
       additionalProperties: false,
     },
     strict: true,
@@ -688,7 +710,7 @@ const TASK_TOOLS: OpenAI.Responses.Tool[] = [
     type: "function",
     name: "create_task",
     description:
-      "Create a new task for Parker. Use only when Parker clearly asks you to add or create a task. Pass lifeAreaModuleKey melusi when Parker clearly asks for a Melusi task.",
+      "Create a new task for Parker. Use only when Parker clearly asks you to add or create a task. Pass lifeAreaModuleKey melusi for a Melusi task without a specific project. Pass projectId or projectName to create a task linked to one Melusi project. When a Melusi project is selected in the interface, use its trusted projectId for this project.",
     parameters: {
       type: "object",
       properties: {
@@ -711,10 +733,27 @@ const TASK_TOOLS: OpenAI.Responses.Tool[] = [
           type: ["string", "null"],
           enum: ["melusi", null],
           description:
-            "Pass melusi when Parker clearly asks for a Melusi-scoped task. Pass null for an uncategorized task.",
+            "Pass melusi when Parker clearly asks for a Melusi-scoped task without naming a project. Pass null when creating a project-linked task or an uncategorized task.",
+        },
+        projectId: {
+          type: ["string", "null"],
+          description:
+            "The Melusi project UUID when creating a task for one project. Pass null when not project-linked or when selected project context supplies the id.",
+        },
+        projectName: {
+          type: ["string", "null"],
+          description:
+            "The Melusi project name when the id is not known. Pass null when using projectId or selected project context.",
         },
       },
-      required: ["title", "priority", "dueDate", "lifeAreaModuleKey"],
+      required: [
+        "title",
+        "priority",
+        "dueDate",
+        "lifeAreaModuleKey",
+        "projectId",
+        "projectName",
+      ],
       additionalProperties: false,
     },
     strict: true,
@@ -1173,10 +1212,25 @@ function requireMelusiModuleKey(
   return { error: "Invalid life area module." };
 }
 
+function resolveProjectToolArgs(
+  args: Record<string, unknown>,
+  contextTarget: JarvisContextTarget | null,
+): { projectId?: string; projectName?: string } {
+  let projectId = nullableString(args.projectId) ?? undefined;
+  let projectName = nullableString(args.projectName) ?? undefined;
+
+  if (contextTarget?.type === "melusi_project" && !projectId && !projectName) {
+    projectId = contextTarget.id;
+  }
+
+  return { projectId, projectName };
+}
+
 async function executeJarvisTool(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   call: OpenAI.Responses.ResponseFunctionToolCall,
+  contextTarget: JarvisContextTarget | null,
 ): Promise<string> {
   let args: Record<string, unknown>;
 
@@ -1192,14 +1246,21 @@ async function executeJarvisTool(
 
   try {
     switch (call.name) {
-      case "list_tasks":
+      case "list_tasks": {
+        const projectArgs = resolveProjectToolArgs(args, contextTarget);
+
         return JSON.stringify(
           await listTasks(supabase, userId, {
             lifeAreaModuleKey: nullableModuleKey(args.lifeAreaModuleKey),
             unfinishedOnly: args.unfinishedOnly === true,
+            projectId: projectArgs.projectId,
+            projectName: projectArgs.projectName,
           }),
         );
-      case "create_task":
+      }
+      case "create_task": {
+        const projectArgs = resolveProjectToolArgs(args, contextTarget);
+
         return JSON.stringify(
           await createTask(supabase, userId, {
             title: String(args.title ?? ""),
@@ -1207,8 +1268,11 @@ async function executeJarvisTool(
               typeof args.priority === "string" ? args.priority : undefined,
             dueDate: typeof args.dueDate === "string" ? args.dueDate : undefined,
             lifeAreaModuleKey: nullableModuleKey(args.lifeAreaModuleKey),
+            projectId: projectArgs.projectId,
+            projectName: projectArgs.projectName,
           }),
         );
+      }
       case "complete_task":
         return JSON.stringify(
           await completeTask(supabase, userId, {
@@ -1469,7 +1533,12 @@ export async function POST(request: Request) {
       input.push(...toResponseInputItems(response.output));
 
       for (const call of functionCalls) {
-        const toolOutput = await executeJarvisTool(supabase, userId, call);
+        const toolOutput = await executeJarvisTool(
+          supabase,
+          userId,
+          call,
+          contextTarget,
+        );
         logToolCallDiagnostic(toolRound, call.name, toolOutput);
         input.push({
           type: "function_call_output",

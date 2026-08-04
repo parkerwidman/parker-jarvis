@@ -2546,6 +2546,19 @@ body {
   color: #a5f3fc;
 }
 
+.la-project-workspace-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-bottom: 0.75rem;
+}
+
+.la-project-task-count {
+  font-size: 0.75rem;
+  color: var(--navy-muted);
+  margin: 0;
+}
+
 .la-goal-list,
 .la-memory-list {
   display: flex;

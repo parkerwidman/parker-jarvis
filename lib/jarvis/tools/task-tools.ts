@@ -1,5 +1,10 @@
 import { ensureLifeAreaForModule } from "@/lib/jarvis/life-areas/ensure-life-area-for-module";
 import { isLifeAreaModuleKey } from "@/lib/jarvis/life-areas/module-registry";
+import {
+  createProjectTask,
+  listProjectTasks,
+  resolveMelusiProject,
+} from "@/lib/jarvis/projects/project-task-tools";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
@@ -84,8 +89,37 @@ export async function listTasks(
   options?: {
     lifeAreaModuleKey?: string;
     unfinishedOnly?: boolean;
+    projectId?: string;
+    projectName?: string;
   },
 ): Promise<ListTasksResult> {
+  const projectId = options?.projectId?.trim() ?? "";
+  const projectName = options?.projectName?.trim() ?? "";
+
+  if (projectId || projectName) {
+    const projectResult = await resolveMelusiProject(supabase, userId, {
+      projectId: projectId || undefined,
+      projectName: projectName || undefined,
+    });
+
+    if (!projectResult.success) {
+      return projectResult;
+    }
+
+    const result = await listProjectTasks(
+      supabase,
+      userId,
+      projectResult.project,
+      { unfinishedOnly: options?.unfinishedOnly },
+    );
+
+    if (!result.success) {
+      return result;
+    }
+
+    return { success: true, tasks: result.tasks };
+  }
+
   let query = supabase.from("tasks").select(TASK_SELECT).eq("user_id", userId);
 
   const moduleKey = options?.lifeAreaModuleKey?.trim();
@@ -131,11 +165,43 @@ export async function createTask(
     priority?: string;
     dueDate?: string;
     lifeAreaModuleKey?: string;
+    projectId?: string;
+    projectName?: string;
   },
 ): Promise<CreateTaskResult> {
   const title = input.title.trim();
   const priority = input.priority?.trim() ?? "medium";
   const rawDueDate = input.dueDate?.trim() ?? "";
+  const projectId = input.projectId?.trim() ?? "";
+  const projectName = input.projectName?.trim() ?? "";
+
+  if (projectId || projectName) {
+    const projectResult = await resolveMelusiProject(supabase, userId, {
+      projectId: projectId || undefined,
+      projectName: projectName || undefined,
+    });
+
+    if (!projectResult.success) {
+      return projectResult;
+    }
+
+    const result = await createProjectTask(
+      supabase,
+      userId,
+      projectResult.project,
+      {
+        title,
+        priority,
+        dueDate: rawDueDate,
+      },
+    );
+
+    if (!result.success) {
+      return result;
+    }
+
+    return { success: true, task: result.task };
+  }
 
   if (!title || title.length > 200) {
     return {
