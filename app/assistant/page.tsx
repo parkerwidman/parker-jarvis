@@ -1,7 +1,7 @@
 import Link from "next/link";
+import { JarvisChat } from "@/components/jarvis/jarvis-chat";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { AssistantChat } from "./assistant-chat";
 
 export default async function AssistantPage() {
   const supabase = await createClient();
@@ -19,7 +19,7 @@ export default async function AssistantPage() {
           <p className="home-subtitle">Your personal AI command center.</p>
         </header>
 
-        <AssistantChat />
+        <JarvisChat variant="fullPage" />
 
         <Link
           href="/"

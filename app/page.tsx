@@ -1,3 +1,4 @@
+import { JarvisChat } from "@/components/jarvis/jarvis-chat";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type {
@@ -502,7 +503,6 @@ const LIFE_AREA_MODULES = [
 ] as const;
 
 const NAV_LINKS = [
-  { href: "/assistant", label: "Ask Jarvis" },
   { href: "/briefings", label: "Morning Brief" },
   { href: "/plans", label: "Daily Plan" },
   { href: "/tasks", label: "Tasks" },
@@ -588,6 +588,8 @@ export default async function Home() {
             href="/assistant"
           />
         </section>
+
+        <JarvisChat variant="embedded" />
 
         <div className="grid w-full gap-4 md:grid-cols-2">
           <BriefingPanel briefing={data.briefing} />
