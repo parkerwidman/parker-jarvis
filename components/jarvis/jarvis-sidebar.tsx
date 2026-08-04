@@ -16,6 +16,7 @@ type SidebarLink = {
 
 const SIDEBAR_LINKS: SidebarLink[] = [
   { href: "/", label: "Command Center", icon: "command" },
+  { href: "/melusi", label: "Melusi", icon: "melusi" },
   { href: "/assistant", label: "Expanded Assistant", icon: "assistant" },
   { href: "/tasks", label: "Tasks", icon: "tasks" },
   { href: "/briefings", label: "Morning Brief", icon: "brief" },

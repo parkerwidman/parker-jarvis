@@ -11,6 +11,7 @@ import type {
   CommandCenterTask,
 } from "@/lib/jarvis/dashboard/load-command-center";
 import { loadCommandCenter } from "@/lib/jarvis/dashboard/load-command-center";
+import { getLifeAreaModules } from "@/lib/jarvis/life-areas/module-registry";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -549,28 +550,35 @@ function GoalsPanel({ goals }: { goals: CommandCenterGoal[] }) {
   );
 }
 
-const LIFE_AREA_MODULES = [
-  {
-    name: "Melusi",
-    purpose: "Relationship intelligence and shared planning.",
-    slug: "melusi",
-  },
-  {
-    name: "School",
-    purpose: "Academic deadlines, classes, and study focus.",
-    slug: "school",
-  },
-  {
-    name: "Fitness",
-    purpose: "Training sessions, recovery, and consistency.",
-    slug: "fitness",
-  },
-  {
-    name: "Diet",
-    purpose: "Nutrition habits and meal planning support.",
-    slug: "diet",
-  },
-] as const;
+const LIFE_AREA_MODULES = getLifeAreaModules();
+
+function LifeAreaModuleCard({
+  module,
+}: {
+  module: (typeof LIFE_AREA_MODULES)[number];
+}) {
+  const className = `cc-life-module cc-life-module--${module.key}`;
+
+  if (module.implemented && module.route) {
+    return (
+      <Link href={module.route} className={`${className} cc-life-module--link`}>
+        <span className="cc-life-module-icon" aria-hidden="true" />
+        <span className="cc-life-module-name">{module.displayName}</span>
+        <span className="cc-life-module-purpose">{module.purpose}</span>
+        <span className="cc-life-module-tag cc-life-module-tag--ready">Open module</span>
+      </Link>
+    );
+  }
+
+  return (
+    <div className={className} aria-disabled="true">
+      <span className="cc-life-module-icon" aria-hidden="true" />
+      <span className="cc-life-module-name">{module.displayName}</span>
+      <span className="cc-life-module-purpose">{module.purpose}</span>
+      <span className="cc-life-module-tag">Coming soon</span>
+    </div>
+  );
+}
 
 export default async function Home() {
   const supabase = await createClient();
@@ -673,16 +681,7 @@ export default async function Home() {
         <section className="cc-life-section" aria-label="Life areas">
           <div className="cc-life-grid">
             {LIFE_AREA_MODULES.map((module) => (
-              <div
-                key={module.name}
-                className={`cc-life-module cc-life-module--${module.slug}`}
-                aria-disabled="true"
-              >
-                <span className="cc-life-module-icon" aria-hidden="true" />
-                <span className="cc-life-module-name">{module.name}</span>
-                <span className="cc-life-module-purpose">{module.purpose}</span>
-                <span className="cc-life-module-tag">Module foundation</span>
-              </div>
+              <LifeAreaModuleCard key={module.key} module={module} />
             ))}
           </div>
         </section>

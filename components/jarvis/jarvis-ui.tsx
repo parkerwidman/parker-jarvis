@@ -41,7 +41,7 @@ export function approvalStatusBadgeClass(status: string): string {
 type JarvisCardProps = {
   title?: string;
   children: ReactNode;
-  accent?: "blue" | "purple" | "amber" | "green" | "none";
+  accent?: "blue" | "purple" | "amber" | "green" | "cyan" | "none";
   className?: string;
   scroll?: boolean;
 };
