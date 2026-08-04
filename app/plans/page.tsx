@@ -1,8 +1,17 @@
 import Link from "next/link";
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
+import {
+  buildDailyPlanItemKey,
+  getBlockingRequestStatusForItemKey,
+  getDailyPlanItemRequestStatusLabel,
+  isProposableSuggestedPlanItem,
+} from "@/lib/jarvis/plans/plan-item-calendar";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { generateDailyPlanAction } from "./actions";
+import {
+  generateDailyPlanAction,
+  proposeDailyPlanItemForCalendarAction,
+} from "./actions";
 
 type DailyPlanRow = {
   id: string;
@@ -132,57 +141,96 @@ function PlanContent({ content }: { content: string }) {
 }
 
 function PlanTimeline({
+  planId,
   items,
   timeZone,
+  calendarRequests,
 }: {
+  planId: string;
   items: PlanItem[];
   timeZone: string;
+  calendarRequests: Array<{ status: string; payload: unknown }>;
 }) {
   if (items.length === 0) {
     return null;
   }
 
+  const now = new Date();
+
   return (
     <section className="flex w-full flex-col gap-2" aria-label="Plan timeline">
       <h3 className="text-sm font-medium text-[var(--navy-muted)]">Timeline</h3>
+      <p className="text-xs text-[var(--navy-muted)]">
+        Suggested blocks can be proposed for Outlook. Calendar changes require
+        your approval before Jarvis creates an event.
+      </p>
       <ol className="flex w-full flex-col gap-2">
-        {items.map((item, index) => (
-          <li
-            key={`${item.startTime}-${index}`}
-            className={`rounded-lg border px-4 py-3 text-sm ${
-              item.isFixed
-                ? "border-[rgba(59,130,246,0.35)] bg-[rgba(59,130,246,0.08)]"
-                : "border-[var(--navy-border)] bg-[var(--background)]"
-            }`}
-          >
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="font-medium text-[var(--foreground)]">
-                {item.title}
-              </span>
-              <span
-                className={`rounded px-1.5 py-0.5 text-xs ${
-                  item.isFixed
-                    ? "bg-[rgba(59,130,246,0.15)] text-blue-300"
-                    : "bg-[rgba(148,163,184,0.12)] text-[var(--navy-muted)]"
-                }`}
-              >
-                {item.isFixed ? "Fixed event" : "Suggested"}
-              </span>
-              <span className="text-xs text-[var(--navy-muted)]">
-                {item.type.replace("_", " ")}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-[var(--navy-muted)]">
-              {formatPlanItemTime(item.startTime, timeZone)} –{" "}
-              {formatPlanItemTime(item.endTime, timeZone)}
-            </p>
-            {item.reason ? (
-              <p className="mt-1.5 text-xs text-[var(--foreground)]">
-                {item.reason}
+        {items.map((item, index) => {
+          const itemKey = buildDailyPlanItemKey(planId, item);
+          const canPropose = isProposableSuggestedPlanItem(item, now);
+          const requestStatus = getBlockingRequestStatusForItemKey(
+            itemKey,
+            calendarRequests,
+          );
+
+          return (
+            <li
+              key={`${item.startTime}-${index}`}
+              className={`rounded-lg border px-4 py-3 text-sm ${
+                item.isFixed
+                  ? "border-[rgba(59,130,246,0.35)] bg-[rgba(59,130,246,0.08)]"
+                  : "border-[var(--navy-border)] bg-[var(--background)]"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium text-[var(--foreground)]">
+                  {item.title}
+                </span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-xs ${
+                    item.isFixed
+                      ? "bg-[rgba(59,130,246,0.15)] text-blue-300"
+                      : "bg-[rgba(148,163,184,0.12)] text-[var(--navy-muted)]"
+                  }`}
+                >
+                  {item.isFixed ? "Fixed event" : "Suggested"}
+                </span>
+                <span className="text-xs text-[var(--navy-muted)]">
+                  {item.type.replace("_", " ")}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[var(--navy-muted)]">
+                {formatPlanItemTime(item.startTime, timeZone)} –{" "}
+                {formatPlanItemTime(item.endTime, timeZone)}
               </p>
-            ) : null}
-          </li>
-        ))}
+              {item.reason ? (
+                <p className="mt-1.5 text-xs text-[var(--foreground)]">
+                  {item.reason}
+                </p>
+              ) : null}
+              {!item.isFixed && canPropose && !requestStatus ? (
+                <form
+                  action={proposeDailyPlanItemForCalendarAction}
+                  className="mt-2"
+                >
+                  <input type="hidden" name="dailyPlanId" value={planId} />
+                  <input type="hidden" name="itemIndex" value={index} />
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-[var(--navy-border)] px-3 py-1.5 text-xs font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--navy-surface)]"
+                  >
+                    Propose for calendar
+                  </button>
+                </form>
+              ) : null}
+              {!item.isFixed && requestStatus ? (
+                <p className="mt-2 text-xs font-medium text-[var(--navy-muted)]">
+                  {getDailyPlanItemRequestStatusLabel(requestStatus)}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
@@ -227,6 +275,12 @@ export default async function PlansPage({
     .order("plan_date", { ascending: false })
     .limit(14);
 
+  const { data: calendarRequests } = await supabase
+    .from("action_requests")
+    .select("status, payload")
+    .eq("user_id", userId)
+    .eq("action_type", "create_outlook_calendar_event");
+
   const rows = (plans ?? []).map((row) => ({
     ...(row as DailyPlanRow),
     plan_items: parsePlanItems((row as DailyPlanRow).plan_items),
@@ -251,8 +305,8 @@ export default async function PlansPage({
         <header className="home-header">
           <h1 className="home-title">Daily Plan</h1>
           <p className="home-subtitle">
-            An advisory schedule for your day. Jarvis does not modify your
-            Outlook calendar.
+            An advisory schedule for your day. Calendar changes require your
+            approval before Jarvis modifies Outlook.
           </p>
         </header>
 
@@ -313,8 +367,10 @@ export default async function PlansPage({
             </div>
             <PlanContent content={featuredPlan.content} />
             <PlanTimeline
+              planId={featuredPlan.id}
               items={featuredPlan.plan_items ?? []}
               timeZone={featuredPlan.timezone}
+              calendarRequests={calendarRequests ?? []}
             />
           </article>
         ) : todayPlan?.status !== "generating" ? (

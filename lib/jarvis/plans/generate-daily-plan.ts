@@ -577,7 +577,7 @@ function isValidFixedPlanItem(item: PlanItem): boolean {
   return true;
 }
 
-function isValidSuggestedPlanItem(item: unknown): item is PlanItem {
+export function isValidSuggestedPlanItem(item: unknown): item is PlanItem {
   if (typeof item !== "object" || item === null) {
     return false;
   }

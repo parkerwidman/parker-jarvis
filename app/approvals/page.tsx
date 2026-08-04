@@ -1,4 +1,7 @@
 import Link from "next/link";
+import {
+  parseDailyPlanCalendarPayload,
+} from "@/lib/jarvis/plans/plan-item-calendar";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { approveActionRequest, rejectActionRequest } from "./actions";
@@ -10,6 +13,7 @@ type ActionRequestRow = {
   risk_level: string;
   title: string;
   summary: string;
+  payload: unknown;
   expires_at: string | null;
   created_at: string;
   result: unknown;
@@ -32,6 +36,35 @@ function formatTimestamp(isoString: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+  });
+}
+
+function formatCalendarDateTime(
+  isoString: string,
+  timeZone: string,
+): string {
+  const date = new Date(isoString);
+
+  return date.toLocaleString("en-US", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  });
+}
+
+function formatCalendarTime(isoString: string, timeZone: string): string {
+  const date = new Date(isoString);
+
+  return date.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
   });
 }
 
@@ -73,7 +106,16 @@ function statusLabel(status: string): string {
   }
 }
 
-export default async function ApprovalsPage() {
+export default async function ApprovalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    proposed?: string;
+    error?: string;
+  }>;
+}) {
+  const { proposed, error: queryError } = await searchParams;
+
   const supabase = await createClient();
   const { data: authData, error: authError } = await supabase.auth.getClaims();
 
@@ -91,7 +133,7 @@ export default async function ApprovalsPage() {
   const { data: actionRequests } = await supabase
     .from("action_requests")
     .select(
-      "id, action_type, status, risk_level, title, summary, expires_at, created_at, result, safe_error_message",
+      "id, action_type, status, risk_level, title, summary, payload, expires_at, created_at, result, safe_error_message",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -108,6 +150,31 @@ export default async function ApprovalsPage() {
           </p>
         </header>
 
+        {proposed === "1" ? (
+          <p className="w-full rounded-lg border border-[rgba(34,197,94,0.25)] bg-[rgba(34,197,94,0.08)] px-4 py-3 text-sm text-green-400">
+            Calendar proposal submitted for approval.
+          </p>
+        ) : null}
+
+        {queryError === "duplicate" ? (
+          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+            This Daily Plan block already has a pending or scheduled calendar
+            request.
+          </p>
+        ) : null}
+
+        {queryError === "invalid" ? (
+          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+            That Daily Plan block could not be proposed for calendar.
+          </p>
+        ) : null}
+
+        {queryError === "failed" ? (
+          <p className="w-full rounded-lg border border-[rgba(248,113,113,0.25)] bg-[rgba(248,113,113,0.08)] px-4 py-3 text-sm text-red-400">
+            The calendar proposal could not be created. Please try again.
+          </p>
+        ) : null}
+
         <section className="flex w-full flex-col gap-3" aria-label="Approval requests">
           {sortedRequests.length > 0 ? (
             sortedRequests.map((request) => {
@@ -115,6 +182,20 @@ export default async function ApprovalsPage() {
                 request.status === "completed" &&
                 request.action_type === "create_outlook_calendar_event"
                   ? parseCalendarResult(request.result)
+                  : null;
+
+              const calendarPayload =
+                request.action_type === "create_outlook_calendar_event"
+                  ? parseDailyPlanCalendarPayload(request.payload)
+                  : null;
+
+              const isDailyPlanRequest =
+                calendarPayload?.source === "daily_plan" &&
+                typeof calendarPayload.dailyPlanId === "string";
+
+              const eventTimeZone =
+                typeof calendarPayload?.timeZone === "string"
+                  ? calendarPayload.timeZone
                   : null;
 
               return (
@@ -147,6 +228,47 @@ export default async function ApprovalsPage() {
                       <span>Expires {formatTimestamp(request.expires_at)}</span>
                     ) : null}
                   </div>
+
+                  {calendarPayload &&
+                  typeof calendarPayload.subject === "string" &&
+                  typeof calendarPayload.startDateTime === "string" &&
+                  typeof calendarPayload.endDateTime === "string" &&
+                  eventTimeZone ? (
+                    <div className="rounded-lg border border-[var(--navy-border)] bg-[var(--background)] px-4 py-3 text-sm">
+                      {isDailyPlanRequest ? (
+                        <p className="text-xs font-medium text-[var(--accent)]">
+                          From Daily Plan
+                        </p>
+                      ) : null}
+                      <p className="mt-1 font-medium text-[var(--foreground)]">
+                        {calendarPayload.subject}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--navy-muted)]">
+                        {formatCalendarDateTime(
+                          calendarPayload.startDateTime,
+                          eventTimeZone,
+                        )}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[var(--navy-muted)]">
+                        {formatCalendarTime(
+                          calendarPayload.startDateTime,
+                          eventTimeZone,
+                        )}{" "}
+                        to{" "}
+                        {formatCalendarTime(
+                          calendarPayload.endDateTime,
+                          eventTimeZone,
+                        )}{" "}
+                        ({eventTimeZone})
+                      </p>
+                      {typeof calendarPayload.reason === "string" &&
+                      calendarPayload.reason.trim().length > 0 ? (
+                        <p className="mt-2 text-xs text-[var(--foreground)]">
+                          {calendarPayload.reason}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {request.status === "pending" ? (
                     <div className="flex flex-wrap gap-2">

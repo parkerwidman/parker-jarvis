@@ -108,6 +108,12 @@ function buildCalendarEventSummary(input: {
   return summary;
 }
 
+export type DailyPlanCalendarSource = {
+  dailyPlanId: string;
+  dailyPlanItemKey: string;
+  reason: string;
+};
+
 export async function proposeOutlookCalendarEvent(
   supabase: SupabaseClient,
   userId: string,
@@ -118,6 +124,7 @@ export async function proposeOutlookCalendarEvent(
     timeZone: string;
     locationName: string | null;
     notes: string | null;
+    dailyPlanSource?: DailyPlanCalendarSource;
   },
 ): Promise<ProposeOutlookCalendarEventResult> {
   const subject = input.subject.trim();
@@ -208,7 +215,9 @@ export async function proposeOutlookCalendarEvent(
     locationName,
   });
 
-  const payload = {
+  const dailyPlanSource = input.dailyPlanSource;
+
+  const payload: Record<string, unknown> = {
     subject,
     startDateTime,
     endDateTime,
@@ -216,6 +225,18 @@ export async function proposeOutlookCalendarEvent(
     locationName,
     notes,
   };
+
+  let title = "Create Outlook calendar event";
+  let requestSummary = summary;
+
+  if (dailyPlanSource) {
+    payload.dailyPlanId = dailyPlanSource.dailyPlanId;
+    payload.dailyPlanItemKey = dailyPlanSource.dailyPlanItemKey;
+    payload.source = "daily_plan";
+    payload.reason = dailyPlanSource.reason;
+    title = "Schedule Daily Plan block on Outlook";
+    requestSummary = `From Daily Plan — ${summary}`;
+  }
 
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -226,8 +247,8 @@ export async function proposeOutlookCalendarEvent(
       action_type: "create_outlook_calendar_event",
       status: "pending",
       risk_level: "approval_required",
-      title: "Create Outlook calendar event",
-      summary,
+      title,
+      summary: requestSummary,
       payload,
       expires_at: expiresAt,
     })
