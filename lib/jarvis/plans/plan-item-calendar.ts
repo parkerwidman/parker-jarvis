@@ -1,6 +1,9 @@
 import type { PlanItem } from "./generate-daily-plan";
 import { isValidSuggestedPlanItem } from "./generate-daily-plan";
 
+const CALENDAR_NOTES_MAX = 500;
+const CALENDAR_CONTEXT_MAX = 150;
+
 const BLOCKING_REQUEST_STATUSES = new Set([
   "pending",
   "approved",
@@ -26,6 +29,50 @@ export function buildDailyPlanItemKey(
   item: Pick<PlanItem, "startTime" | "endTime" | "title">,
 ): string {
   return `${planId}:${item.startTime}:${item.endTime}:${item.title}`;
+}
+
+function truncateCalendarContext(text: string): string {
+  const trimmed = text.trim();
+
+  if (trimmed.length <= CALENDAR_CONTEXT_MAX) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, CALENDAR_CONTEXT_MAX).trimEnd()}…`;
+}
+
+export function buildDailyPlanCalendarNotes(item: PlanItem): string | null {
+  const parts: string[] = [];
+
+  if (item.reason.trim()) {
+    parts.push(item.reason.trim());
+  }
+
+  const context = item.projectContext;
+
+  if (context?.recordedBlocker) {
+    parts.push(
+      `Recorded blocker: ${truncateCalendarContext(context.recordedBlocker)}`,
+    );
+  }
+
+  if (context?.recordedDecision) {
+    parts.push(
+      `Recorded decision: ${truncateCalendarContext(context.recordedDecision)}`,
+    );
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  const combined = parts.join("\n");
+
+  if (combined.length <= CALENDAR_NOTES_MAX) {
+    return combined;
+  }
+
+  return `${combined.slice(0, CALENDAR_NOTES_MAX).trimEnd()}…`;
 }
 
 export function isProposableSuggestedPlanItem(

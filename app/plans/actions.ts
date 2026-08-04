@@ -3,6 +3,7 @@
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
 import { generateDailyPlan } from "@/lib/jarvis/plans/generate-daily-plan";
 import {
+  buildDailyPlanCalendarNotes,
   buildDailyPlanItemKey,
   isBlockingCalendarRequestStatus,
   isProposableSuggestedPlanItem,
@@ -134,7 +135,7 @@ export async function proposeDailyPlanItemForCalendarAction(formData: FormData) 
     endDateTime: item.endTime,
     timeZone: plan.timezone,
     locationName: null,
-    notes: item.reason.trim() || null,
+    notes: buildDailyPlanCalendarNotes(item),
     dailyPlanSource: {
       dailyPlanId: plan.id,
       dailyPlanItemKey: itemKey,

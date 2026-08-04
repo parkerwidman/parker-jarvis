@@ -2905,11 +2905,16 @@ body {
 }
 
 .jv-timeline-range,
+.jv-timeline-context,
 .jv-timeline-reason,
 .jv-timeline-status {
   margin-top: 0.25rem;
   font-size: 0.6875rem;
   color: var(--navy-muted);
+}
+
+.jv-timeline-context {
+  color: rgba(103, 232, 249, 0.75);
 }
 
 .jv-timeline-action {

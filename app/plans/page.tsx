@@ -2,6 +2,7 @@ import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
 import {
+  buildDailyPlanCalendarNotes,
   buildDailyPlanItemKey,
   getBlockingRequestStatusForItemKey,
   getDailyPlanItemRequestStatusLabel,
@@ -128,6 +129,18 @@ function splitPlanItemTitle(title: string): {
   };
 }
 
+const DISPLAY_CONTEXT_MAX = 120;
+
+function truncateDisplayText(text: string, maxLength = DISPLAY_CONTEXT_MAX): string {
+  const trimmed = text.trim();
+
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength).trimEnd()}…`;
+}
+
 function PlanTimeline({
   planId,
   items,
@@ -161,6 +174,8 @@ function PlanTimeline({
             calendarRequests,
           );
           const { taskTitle, projectName } = splitPlanItemTitle(item.title);
+          const displayProjectName =
+            item.projectContext?.projectName ?? projectName;
 
           return (
             <li
@@ -173,8 +188,8 @@ function PlanTimeline({
               <div className="jv-timeline-body">
                 <div className="jv-timeline-head">
                   <span className="jv-timeline-title">{taskTitle}</span>
-                  {projectName ? (
-                    <span className="jv-timeline-project">{projectName}</span>
+                  {displayProjectName ? (
+                    <span className="jv-timeline-project">{displayProjectName}</span>
                   ) : null}
                   <span
                     className={`jv-type-badge ${
@@ -191,6 +206,18 @@ function PlanTimeline({
                   {formatPlanItemTime(item.startTime, timeZone)} –{" "}
                   {formatPlanItemTime(item.endTime, timeZone)}
                 </p>
+                {item.projectContext?.recordedBlocker ? (
+                  <p className="jv-timeline-context">
+                    Recorded blocker:{" "}
+                    {truncateDisplayText(item.projectContext.recordedBlocker)}
+                  </p>
+                ) : null}
+                {item.projectContext?.recordedDecision ? (
+                  <p className="jv-timeline-context">
+                    Recorded decision:{" "}
+                    {truncateDisplayText(item.projectContext.recordedDecision)}
+                  </p>
+                ) : null}
                 {item.reason ? (
                   <p className="jv-timeline-reason">{item.reason}</p>
                 ) : null}

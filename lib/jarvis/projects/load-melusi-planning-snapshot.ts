@@ -9,6 +9,10 @@ const MAX_ACTIVE_PROJECTS = 8;
 const MAX_PAUSED_PROJECTS = 4;
 const MAX_TASKS_PER_LIST = 6;
 const MAX_UNFINISHED_TASKS = 100;
+const MAX_PLANNING_UPDATE_ROWS = 80;
+const MAX_PLANNING_UPDATE_CONTENT = 250;
+
+const PLANNING_UPDATE_TYPES = ["progress", "blocker", "decision"] as const;
 
 const PRIORITY_WEIGHT: Record<string, number> = {
   high: 0,
@@ -74,6 +78,20 @@ export type MelusiPlanningSnapshotProjectNeedingAttention = {
   reason: "no_open_next_task";
 };
 
+export type MelusiPlanningSnapshotUpdate = {
+  updateType: "progress" | "blocker" | "decision";
+  content: string;
+  recordedAt: string;
+};
+
+export type MelusiPlanningSnapshotProjectUpdates = {
+  projectId: string;
+  projectName: string;
+  recentProgress: MelusiPlanningSnapshotUpdate | null;
+  recentBlocker: MelusiPlanningSnapshotUpdate | null;
+  recentDecision: MelusiPlanningSnapshotUpdate | null;
+};
+
 export type MelusiPlanningSnapshot = {
   hasMeaningfulActivity: boolean;
   activeProjects: MelusiPlanningSnapshotProject[];
@@ -82,7 +100,9 @@ export type MelusiPlanningSnapshot = {
   dueSoonTasks: MelusiPlanningSnapshotTask[];
   highPriorityTasks: MelusiPlanningSnapshotTask[];
   projectsWithoutOpenTasks: MelusiPlanningSnapshotProjectNeedingAttention[];
+  projectUpdates: MelusiPlanningSnapshotProjectUpdates[];
   projectNameByTaskId: Record<string, string>;
+  projectIdByTaskId: Record<string, string>;
 };
 
 function isValidTimeZone(timeZone: string): boolean {
@@ -233,6 +253,41 @@ function compareProjectsByRelevance(a: ProjectRow, b: ProjectRow): number {
   return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
 }
 
+type ProjectUpdateRow = {
+  project_id: string;
+  update_type: string;
+  content: string;
+  created_at: string;
+};
+
+function truncatePlanningUpdateContent(content: string): string {
+  const trimmed = content.trim();
+
+  if (trimmed.length <= MAX_PLANNING_UPDATE_CONTENT) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, MAX_PLANNING_UPDATE_CONTENT).trimEnd()}…`;
+}
+
+function toPlanningSnapshotUpdate(
+  row: ProjectUpdateRow,
+): MelusiPlanningSnapshotUpdate | null {
+  if (
+    row.update_type !== "progress" &&
+    row.update_type !== "blocker" &&
+    row.update_type !== "decision"
+  ) {
+    return null;
+  }
+
+  return {
+    updateType: row.update_type,
+    content: truncatePlanningUpdateContent(row.content),
+    recordedAt: row.created_at,
+  };
+}
+
 function emptySnapshot(): MelusiPlanningSnapshot {
   return {
     hasMeaningfulActivity: false,
@@ -242,7 +297,9 @@ function emptySnapshot(): MelusiPlanningSnapshot {
     dueSoonTasks: [],
     highPriorityTasks: [],
     projectsWithoutOpenTasks: [],
+    projectUpdates: [],
     projectNameByTaskId: {},
+    projectIdByTaskId: {},
   };
 }
 
@@ -293,9 +350,89 @@ function limitUniqueTasks(
   return result;
 }
 
+function buildProjectUpdatesForSnapshot(
+  rows: ProjectUpdateRow[],
+  activeProjectIds: string[],
+  projectById: Map<string, ProjectRow>,
+): MelusiPlanningSnapshotProjectUpdates[] {
+  const latestByProject = new Map<
+    string,
+    {
+      progress: MelusiPlanningSnapshotUpdate | null;
+      blocker: MelusiPlanningSnapshotUpdate | null;
+      decision: MelusiPlanningSnapshotUpdate | null;
+    }
+  >();
+
+  for (const row of rows) {
+    if (!activeProjectIds.includes(row.project_id)) {
+      continue;
+    }
+
+    const update = toPlanningSnapshotUpdate(row);
+
+    if (!update) {
+      continue;
+    }
+
+    let entry = latestByProject.get(row.project_id);
+
+    if (!entry) {
+      entry = {
+        progress: null,
+        blocker: null,
+        decision: null,
+      };
+      latestByProject.set(row.project_id, entry);
+    }
+
+    if (update.updateType === "progress" && !entry.progress) {
+      entry.progress = update;
+    } else if (update.updateType === "blocker" && !entry.blocker) {
+      entry.blocker = update;
+    } else if (update.updateType === "decision" && !entry.decision) {
+      entry.decision = update;
+    }
+  }
+
+  const result: MelusiPlanningSnapshotProjectUpdates[] = [];
+
+  for (const projectId of activeProjectIds) {
+    const project = projectById.get(projectId);
+    const entry = latestByProject.get(projectId);
+
+    if (!project || !entry) {
+      continue;
+    }
+
+    if (!entry.progress && !entry.blocker && !entry.decision) {
+      continue;
+    }
+
+    result.push({
+      projectId,
+      projectName: project.name,
+      recentProgress: entry.progress,
+      recentBlocker: entry.blocker,
+      recentDecision: entry.decision,
+    });
+  }
+
+  return result;
+}
+
 export function formatMelusiSnapshotForPrompt(
   snapshot: MelusiPlanningSnapshot,
 ): string {
+  const recordedProjectUpdates = snapshot.projectUpdates.map((entry) => ({
+    projectName: entry.projectName,
+    ...(entry.recentProgress
+      ? { recentProgress: entry.recentProgress }
+      : {}),
+    ...(entry.recentBlocker ? { recentBlocker: entry.recentBlocker } : {}),
+    ...(entry.recentDecision ? { recentDecision: entry.recentDecision } : {}),
+  }));
+
   return JSON.stringify(
     {
       activeProjects: snapshot.activeProjects,
@@ -304,6 +441,9 @@ export function formatMelusiSnapshotForPrompt(
       dueSoonTasks: snapshot.dueSoonTasks,
       highPriorityTasks: snapshot.highPriorityTasks,
       projectsWithoutOpenTasks: snapshot.projectsWithoutOpenTasks,
+      ...(recordedProjectUpdates.length > 0
+        ? { recordedProjectUpdates }
+        : {}),
     },
     null,
     2,
@@ -443,9 +583,11 @@ export async function loadMelusiPlanningSnapshot(
     .filter((task): task is MelusiPlanningSnapshotTask => task !== null);
 
   const projectNameByTaskId: Record<string, string> = {};
+  const projectIdByTaskId: Record<string, string> = {};
 
   for (const task of sortedTasks) {
     projectNameByTaskId[task.id] = task.projectName;
+    projectIdByTaskId[task.id] = task.projectId;
   }
 
   const overdueTasks = limitUniqueTasks(
@@ -499,6 +641,30 @@ export async function loadMelusiPlanningSnapshot(
     .sort(compareProjectsByRelevance)
     .slice(0, MAX_ACTIVE_PROJECTS);
 
+  const activeProjectIds = activeProjectRows.map((project) => project.id);
+
+  let projectUpdates: MelusiPlanningSnapshotProjectUpdates[] = [];
+
+  if (activeProjectIds.length > 0) {
+    const { data: updateRows, error: updatesError } = await supabase
+      .from("project_updates")
+      .select("project_id, update_type, content, created_at")
+      .eq("user_id", userId)
+      .eq("life_area_id", lifeAreaId)
+      .in("project_id", activeProjectIds)
+      .in("update_type", [...PLANNING_UPDATE_TYPES])
+      .order("created_at", { ascending: false })
+      .limit(MAX_PLANNING_UPDATE_ROWS);
+
+    if (!updatesError && updateRows?.length) {
+      projectUpdates = buildProjectUpdatesForSnapshot(
+        updateRows as ProjectUpdateRow[],
+        activeProjectIds,
+        projectById,
+      );
+    }
+  }
+
   const pausedProjectRows = projects
     .filter((project) => project.status === "paused")
     .filter((project) => {
@@ -530,7 +696,8 @@ export async function loadMelusiPlanningSnapshot(
     overdueTasks.length > 0 ||
     dueSoonTasks.length > 0 ||
     highPriorityTasks.length > 0 ||
-    projectsWithoutOpenTasks.length > 0;
+    projectsWithoutOpenTasks.length > 0 ||
+    projectUpdates.length > 0;
 
   return {
     hasMeaningfulActivity,
@@ -540,6 +707,8 @@ export async function loadMelusiPlanningSnapshot(
     dueSoonTasks,
     highPriorityTasks,
     projectsWithoutOpenTasks,
+    projectUpdates,
     projectNameByTaskId,
+    projectIdByTaskId,
   };
 }
