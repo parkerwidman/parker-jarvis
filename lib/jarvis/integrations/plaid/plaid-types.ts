@@ -27,7 +27,8 @@ export type PlaidConnectionRow = {
   updated_at: string;
 };
 
-export type PlaidSafeConnection = {
+export type PlaidSafeConnectionSummary = {
+  id: string;
   connected: boolean;
   status: PlaidConnectionStatus;
   institutionName: string | null;

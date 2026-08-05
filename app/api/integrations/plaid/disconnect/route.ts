@@ -2,15 +2,18 @@ import { createClient } from "@/lib/supabase/server";
 import { removePlaidItem } from "@/lib/jarvis/integrations/plaid/plaid-client";
 import {
   decryptStoredAccessToken,
-  disconnectPlaidConnection,
+  disconnectPlaidConnectionById,
   hasUsablePlaidCredentials,
-  loadPlaidConnectionRow,
-  markPlaidConnectionError,
+  loadPlaidConnectionRowById,
+  markPlaidConnectionErrorById,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
 import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function POST() {
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
@@ -25,7 +28,33 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const row = await loadPlaidConnectionRow(supabase, userId);
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "invalid_request" },
+      { status: 400 },
+    );
+  }
+
+  const connectionId =
+    body &&
+    typeof body === "object" &&
+    "connectionId" in body &&
+    typeof (body as { connectionId: unknown }).connectionId === "string"
+      ? (body as { connectionId: string }).connectionId.trim()
+      : null;
+
+  if (!connectionId || !UUID_PATTERN.test(connectionId)) {
+    return NextResponse.json(
+      { ok: false, error: "invalid_request" },
+      { status: 400 },
+    );
+  }
+
+  const row = await loadPlaidConnectionRowById(supabase, userId, connectionId);
 
   if (!row || row.status === "disconnected") {
     return NextResponse.json(
@@ -38,9 +67,10 @@ export async function POST() {
     const accessToken = decryptStoredAccessToken(row);
 
     if (!accessToken) {
-      await markPlaidConnectionError(
+      await markPlaidConnectionErrorById(
         supabase,
         userId,
+        connectionId,
         "decryption_failed",
         "reconnect_required",
       );
@@ -56,7 +86,13 @@ export async function POST() {
       const code =
         caught instanceof PlaidSafeError ? caught.code : "disconnect_failed";
 
-      await markPlaidConnectionError(supabase, userId, code, "error");
+      await markPlaidConnectionErrorById(
+        supabase,
+        userId,
+        connectionId,
+        code,
+        "error",
+      );
 
       return NextResponse.json(
         { ok: false, error: code, status: "error" },
@@ -66,7 +102,7 @@ export async function POST() {
   }
 
   try {
-    await disconnectPlaidConnection(supabase, userId);
+    await disconnectPlaidConnectionById(supabase, userId, connectionId);
     return NextResponse.json({ ok: true, status: "disconnected" });
   } catch {
     return NextResponse.json(

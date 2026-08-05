@@ -6,14 +6,28 @@ import { useRouter } from "next/navigation";
 
 type PlaidLinkButtonProps = {
   disabled?: boolean;
+  label?: string;
+  connectedInstitutionNames?: string[];
 };
 
-export function PlaidLinkButton({ disabled = false }: PlaidLinkButtonProps) {
+export function PlaidLinkButton({
+  disabled = false,
+  label = "Connect Sandbox bank",
+  connectedInstitutionNames = [],
+}: PlaidLinkButtonProps) {
   const router = useRouter();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [shouldOpen, setShouldOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const uniqueInstitutionNames = [
+    ...new Set(
+      connectedInstitutionNames.filter(
+        (name): name is string => typeof name === "string" && name.length > 0,
+      ),
+    ),
+  ];
 
   const onSuccess = useCallback(
     async (publicToken: string) => {
@@ -107,6 +121,13 @@ export function PlaidLinkButton({ disabled = false }: PlaidLinkButtonProps) {
 
   return (
     <div className="jv-connection-actions">
+      {uniqueInstitutionNames.length > 0 ? (
+        <p className="jv-connection-meta">
+          Already connected: {uniqueInstitutionNames.join(", ")}. Link another
+          institution only if you intend to add a separate Sandbox bank login.
+        </p>
+      ) : null}
+
       <button
         type="button"
         className="jv-btn jv-btn--primary"
@@ -114,7 +135,7 @@ export function PlaidLinkButton({ disabled = false }: PlaidLinkButtonProps) {
         disabled={pending || disabled}
         aria-busy={pending}
       >
-        {pending ? "Connecting…" : "Connect Sandbox bank"}
+        {pending ? "Connecting…" : label}
       </button>
 
       {actionError ? (

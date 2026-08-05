@@ -6,8 +6,8 @@ import {
 } from "@/lib/jarvis/integrations/plaid/plaid-client";
 import {
   loadPlaidConnectionRowByItemId,
+  markPlaidConnectionErrorByItemId,
   savePlaidConnectedConnection,
-  markPlaidConnectionError,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
 import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { NextRequest, NextResponse } from "next/server";
@@ -59,8 +59,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let exchangedItemId: string | null = null;
+
   try {
     const { accessToken, itemId } = await exchangePublicToken(publicToken);
+    exchangedItemId = itemId;
 
     const existingItem = await loadPlaidConnectionRowByItemId(supabase, itemId);
     if (existingItem && existingItem.user_id !== userId) {
@@ -93,10 +96,17 @@ export async function POST(request: NextRequest) {
     const code =
       caught instanceof PlaidSafeError ? caught.code : "exchange_failed";
 
-    try {
-      await markPlaidConnectionError(supabase, userId, code);
-    } catch {
-      // Best-effort status update; original error still returned.
+    if (exchangedItemId) {
+      try {
+        await markPlaidConnectionErrorByItemId(
+          supabase,
+          userId,
+          exchangedItemId,
+          code,
+        );
+      } catch {
+        // Best-effort per-Item status update; original error still returned.
+      }
     }
 
     return NextResponse.json(

@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 type PlaidDisconnectButtonProps = {
+  connectionId: string;
   disabled?: boolean;
 };
 
 export function PlaidDisconnectButton({
+  connectionId,
   disabled = false,
 }: PlaidDisconnectButtonProps) {
   const router = useRouter();
@@ -25,17 +27,19 @@ export function PlaidDisconnectButton({
     try {
       const response = await fetch("/api/integrations/plaid/disconnect", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId }),
       });
       const payload = (await response.json()) as { ok?: boolean };
 
       if (!response.ok || !payload.ok) {
-        setActionError("Could not disconnect the Sandbox bank.");
+        setActionError("Could not disconnect this Sandbox bank.");
         return;
       }
 
       router.refresh();
     } catch {
-      setActionError("Could not disconnect the Sandbox bank.");
+      setActionError("Could not disconnect this Sandbox bank.");
     } finally {
       setPending(false);
     }

@@ -10,40 +10,40 @@ import { getPlaidEnvironment } from "./plaid-config";
 import type {
   PlaidConnectionRow,
   PlaidConnectionStatus,
-  PlaidSafeConnection,
+  PlaidSafeConnectionSummary,
 } from "./plaid-types";
+import { PlaidSafeError } from "./plaid-types";
+
+const MAX_SAFE_PLAID_CONNECTIONS = 50;
 
 const SECRET_COLUMNS =
   "id, user_id, item_id, institution_id, institution_name, encrypted_access_token, encryption_version, environment, status, products, transactions_cursor, last_successful_sync_at, last_webhook_at, last_error_code, connected_at, disconnected_at, created_at, updated_at";
 
-const SAFE_COLUMNS =
-  "status, institution_name, environment, connected_at, last_successful_sync_at, last_error_code";
+const SAFE_SUMMARY_COLUMNS =
+  "id, status, institution_name, environment, connected_at, last_successful_sync_at, last_error_code";
 
-export function toSafePlaidConnection(
-  row: Pick<
-    PlaidConnectionRow,
-    | "status"
-    | "institution_name"
-    | "environment"
-    | "connected_at"
-    | "last_successful_sync_at"
-    | "last_error_code"
-  > | null,
-): PlaidSafeConnection {
-  if (!row || row.status === "disconnected") {
-    return {
-      connected: false,
-      status: "disconnected",
-      institutionName: null,
-      environment: getPlaidEnvironment(),
-      connectedAt: null,
-      lastSuccessfulSyncAt: null,
-      reconnectRequired: false,
-      lastErrorCode: null,
-    };
-  }
+const ACTIVE_CONNECTION_STATUSES: PlaidConnectionStatus[] = [
+  "connected",
+  "reconnect_required",
+  "error",
+];
 
+type SafeSummaryRow = Pick<
+  PlaidConnectionRow,
+  | "id"
+  | "status"
+  | "institution_name"
+  | "environment"
+  | "connected_at"
+  | "last_successful_sync_at"
+  | "last_error_code"
+>;
+
+export function toSafePlaidConnectionSummary(
+  row: SafeSummaryRow,
+): PlaidSafeConnectionSummary {
   return {
+    id: row.id,
     connected: row.status === "connected",
     status: row.status,
     institutionName: row.institution_name,
@@ -55,13 +55,15 @@ export function toSafePlaidConnection(
   };
 }
 
-export async function loadPlaidConnectionRow(
+export async function loadPlaidConnectionRowById(
   supabase: SupabaseClient,
   userId: string,
+  connectionId: string,
 ): Promise<PlaidConnectionRow | null> {
   const { data, error } = await supabase
     .from("plaid_connections")
     .select(SECRET_COLUMNS)
+    .eq("id", connectionId)
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -89,30 +91,24 @@ export async function loadPlaidConnectionRowByItemId(
   return (data as PlaidConnectionRow | null) ?? null;
 }
 
-export async function loadSafePlaidConnection(
+export async function loadSafePlaidConnections(
   supabase: SupabaseClient,
   userId: string,
-): Promise<PlaidSafeConnection> {
+): Promise<PlaidSafeConnectionSummary[]> {
   const { data, error } = await supabase
     .from("plaid_connections")
-    .select(SAFE_COLUMNS)
+    .select(SAFE_SUMMARY_COLUMNS)
     .eq("user_id", userId)
-    .maybeSingle();
+    .in("status", ACTIVE_CONNECTION_STATUSES)
+    .order("connected_at", { ascending: false, nullsFirst: false })
+    .limit(MAX_SAFE_PLAID_CONNECTIONS);
 
   if (error) {
     throw error;
   }
 
-  return toSafePlaidConnection(
-    data as Pick<
-      PlaidConnectionRow,
-      | "status"
-      | "institution_name"
-      | "environment"
-      | "connected_at"
-      | "last_successful_sync_at"
-      | "last_error_code"
-    > | null,
+  return ((data as SafeSummaryRow[] | null) ?? []).map(
+    toSafePlaidConnectionSummary,
   );
 }
 
@@ -141,61 +137,77 @@ export async function savePlaidConnectedConnection(
     institutionName: string | null;
     accessToken: string;
   },
-): Promise<PlaidSafeConnection> {
+): Promise<PlaidSafeConnectionSummary> {
   const now = new Date().toISOString();
   const encryptedAccessToken = encryptPlaidAccessToken(metadata.accessToken);
+  const existing = await loadPlaidConnectionRowByItemId(
+    supabase,
+    metadata.itemId,
+  );
+
+  if (existing && existing.user_id !== userId) {
+    throw new PlaidSafeError("exchange_failed");
+  }
+
+  const connectionPayload = {
+    item_id: metadata.itemId,
+    institution_id: metadata.institutionId,
+    institution_name: metadata.institutionName,
+    encrypted_access_token: encryptedAccessToken,
+    encryption_version: getPlaidEncryptionVersion(),
+    environment: getPlaidEnvironment(),
+    status: "connected" satisfies PlaidConnectionStatus,
+    products: ["transactions"],
+    transactions_cursor: null,
+    last_successful_sync_at: null,
+    last_webhook_at: null,
+    last_error_code: null,
+    connected_at: now,
+    disconnected_at: null,
+  };
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from("plaid_connections")
+      .update(connectionPayload)
+      .eq("id", existing.id)
+      .eq("user_id", userId)
+      .select(SAFE_SUMMARY_COLUMNS)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return toSafePlaidConnectionSummary(data as SafeSummaryRow);
+  }
 
   const { data, error } = await supabase
     .from("plaid_connections")
-    .upsert(
-      {
-        user_id: userId,
-        item_id: metadata.itemId,
-        institution_id: metadata.institutionId,
-        institution_name: metadata.institutionName,
-        encrypted_access_token: encryptedAccessToken,
-        encryption_version: getPlaidEncryptionVersion(),
-        environment: getPlaidEnvironment(),
-        status: "connected" satisfies PlaidConnectionStatus,
-        products: ["transactions"],
-        transactions_cursor: null,
-        last_successful_sync_at: null,
-        last_webhook_at: null,
-        last_error_code: null,
-        connected_at: now,
-        disconnected_at: null,
-      },
-      { onConflict: "user_id" },
-    )
-    .select(SAFE_COLUMNS)
+    .insert({
+      user_id: userId,
+      ...connectionPayload,
+    })
+    .select(SAFE_SUMMARY_COLUMNS)
     .single();
 
   if (error) {
     throw error;
   }
 
-  return toSafePlaidConnection(
-    data as Pick<
-      PlaidConnectionRow,
-      | "status"
-      | "institution_name"
-      | "environment"
-      | "connected_at"
-      | "last_successful_sync_at"
-      | "last_error_code"
-    >,
-  );
+  return toSafePlaidConnectionSummary(data as SafeSummaryRow);
 }
 
-export async function disconnectPlaidConnection(
+export async function disconnectPlaidConnectionById(
   supabase: SupabaseClient,
   userId: string,
+  connectionId: string,
 ): Promise<void> {
   const now = new Date().toISOString();
 
-  const { error } = await supabase.from("plaid_connections").upsert(
-    {
-      user_id: userId,
+  const { error } = await supabase
+    .from("plaid_connections")
+    .update({
       item_id: null,
       institution_id: null,
       institution_name: null,
@@ -203,25 +215,22 @@ export async function disconnectPlaidConnection(
       encryption_version: getPlaidEncryptionVersion(),
       environment: getPlaidEnvironment(),
       status: "disconnected" satisfies PlaidConnectionStatus,
-      products: ["transactions"],
       transactions_cursor: null,
-      last_successful_sync_at: null,
-      last_webhook_at: null,
       last_error_code: null,
-      connected_at: null,
       disconnected_at: now,
-    },
-    { onConflict: "user_id" },
-  );
+    })
+    .eq("id", connectionId)
+    .eq("user_id", userId);
 
   if (error) {
     throw error;
   }
 }
 
-export async function markPlaidConnectionError(
+export async function markPlaidConnectionErrorByItemId(
   supabase: SupabaseClient,
   userId: string,
+  itemId: string,
   lastErrorCode: string,
   status: PlaidConnectionStatus = "error",
 ): Promise<void> {
@@ -231,6 +240,28 @@ export async function markPlaidConnectionError(
       status,
       last_error_code: lastErrorCode,
     })
+    .eq("user_id", userId)
+    .eq("item_id", itemId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function markPlaidConnectionErrorById(
+  supabase: SupabaseClient,
+  userId: string,
+  connectionId: string,
+  lastErrorCode: string,
+  status: PlaidConnectionStatus = "error",
+): Promise<void> {
+  const { error } = await supabase
+    .from("plaid_connections")
+    .update({
+      status,
+      last_error_code: lastErrorCode,
+    })
+    .eq("id", connectionId)
     .eq("user_id", userId);
 
   if (error) {
