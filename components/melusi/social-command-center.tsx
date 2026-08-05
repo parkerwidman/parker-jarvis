@@ -4,19 +4,26 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type {
-  ComparisonDisplay,
-  NetworkPerformanceSnapshot,
-  RecentSocialPost,
-  ScheduledSocialPost,
   SocialAlert,
   SocialCommandCenterSnapshot,
   SocialContentType,
+  SocialFocus,
+  SocialNetworkKey,
 } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
-import type { SocialNetworkKey } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
 import type { MetricoolSafeConnection } from "@/lib/jarvis/integrations/metricool/metricool-types";
-import { NETWORK_DISPLAY_NAMES } from "@/lib/jarvis/integrations/metricool/metricool-social-display";
+import { SOCIAL_CAVEATS } from "@/lib/jarvis/integrations/metricool/metricool-social-display";
 import { MetricoolConnectionActions } from "@/components/melusi/metricool-connection-panel";
-import { JarvisAlert, JarvisCard } from "@/components/jarvis/jarvis-ui";
+import { JarvisAlert } from "@/components/jarvis/jarvis-ui";
+import { SocialFocusSection } from "@/components/melusi/social/social-focus-section";
+import { SocialSummaryStrip } from "@/components/melusi/social/social-summary-strip";
+import { SocialNetworkCard } from "@/components/melusi/social/social-network-card";
+import { SocialGroupedContentList } from "@/components/melusi/social/social-grouped-content-list";
+import {
+  SocialBestTimesPanel,
+  SocialContentHighlights,
+  SocialScheduleList,
+} from "@/components/melusi/social/social-content-sections";
+import { SocialInfoDisclosure } from "@/components/melusi/social/social-info-disclosure";
 
 type SocialCommandCenterProps = {
   connection: MetricoolSafeConnection;
@@ -29,26 +36,24 @@ type SocialCommandCenterProps = {
   showConnectionRecovery?: boolean;
 };
 
-const NETWORK_FILTERS: Array<{ value: "all" | SocialNetworkKey; label: string }> =
-  [
-    { value: "all", label: "All networks" },
-    { value: "instagram", label: "Instagram" },
-    { value: "facebook", label: "Facebook" },
-    { value: "linkedin", label: "LinkedIn" },
-    { value: "tiktok", label: "TikTok" },
-    { value: "twitter", label: "X" },
-  ];
+const NETWORK_FILTERS: Array<{ value: "all" | SocialNetworkKey; label: string }> = [
+  { value: "all", label: "All networks" },
+  { value: "instagram", label: "Instagram" },
+  { value: "facebook", label: "Facebook" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "twitter", label: "X" },
+];
 
-const CONTENT_FILTERS: Array<{ value: "all" | SocialContentType; label: string }> =
-  [
-    { value: "all", label: "All types" },
-    { value: "post", label: "Posts" },
-    { value: "carousel", label: "Carousels" },
-    { value: "image", label: "Images" },
-    { value: "reel", label: "Reels" },
-    { value: "video", label: "Videos" },
-    { value: "story", label: "Stories" },
-  ];
+const CONTENT_FILTERS: Array<{ value: "all" | SocialContentType; label: string }> = [
+  { value: "all", label: "All types" },
+  { value: "post", label: "Posts" },
+  { value: "carousel", label: "Carousels" },
+  { value: "image", label: "Images" },
+  { value: "reel", label: "Reels" },
+  { value: "video", label: "Videos" },
+  { value: "story", label: "Stories" },
+];
 
 function formatDateTime(isoString: string | null, timeZone: string): string {
   if (!isoString) {
@@ -63,49 +68,6 @@ function formatDateTime(isoString: string | null, timeZone: string): string {
     minute: "2-digit",
     timeZone,
   });
-}
-
-function formatPostDate(isoString: string, timeZone: string): string {
-  return new Date(isoString).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-  });
-}
-
-function comparisonLabel(comparison: ComparisonDisplay | null): string {
-  if (!comparison) {
-    return "";
-  }
-
-  switch (comparison.kind) {
-    case "new_activity":
-      return "New activity this period";
-    case "unavailable":
-      return comparison.reason;
-    case "percent": {
-      const prefix =
-        comparison.direction === "up"
-          ? "Up"
-          : comparison.direction === "down"
-            ? "Down"
-            : "Flat";
-      return `${prefix} ${Math.round(Math.abs(comparison.value))}% vs prior period`;
-    }
-  }
-}
-
-function paceLabel(pace: string): string {
-  switch (pace) {
-    case "ahead":
-      return "Ahead";
-    case "behind":
-      return "Behind";
-    default:
-      return "On pace";
-  }
 }
 
 function alertBadgeClass(category: SocialAlert["category"]): string {
@@ -128,167 +90,57 @@ function ConnectionHealthBadge({
             ? "Connecting"
             : "Not connected";
 
-  return <span className={`social-status-badge social-status-badge--${status}`}>{label}</span>;
-}
-
-function MetricRow({
-  metric,
-}: {
-  metric: NetworkPerformanceSnapshot["metrics"][number];
-}) {
-  const comparison = comparisonLabel(metric.comparison);
-
   return (
-    <div className="social-metric-row">
-      <div className="social-metric-head">
-        <span className="social-metric-label">{metric.label}</span>
-        <span className="social-metric-value">{metric.formatted}</span>
-      </div>
-      {comparison ? (
-        <span className="social-metric-comparison">{comparison}</span>
-      ) : null}
-      {metric.definition ? (
-        <span className="social-metric-definition">{metric.definition}</span>
-      ) : null}
-    </div>
+    <span className={`social-status-badge social-status-badge--${status}`}>{label}</span>
   );
 }
 
-function NetworkCard({ network }: { network: NetworkPerformanceSnapshot }) {
-  return (
-    <article className="social-network-card">
-      <div className="social-network-card-header">
-        <h3>{network.displayName}</h3>
-        {!network.available ? (
-          <span className="social-network-flag">Unavailable</span>
-        ) : network.limitedData ? (
-          <span className="social-network-flag">Limited data</span>
-        ) : null}
-      </div>
-      {network.limitedDataReason ? (
-        <p className="social-network-note">{network.limitedDataReason}</p>
-      ) : null}
-      <p className="social-network-note">
-        Engagement context: {network.engagementDenominator}
-      </p>
-      <div className="social-metric-list">
-        {network.metrics.map((metric) => (
-          <MetricRow key={metric.label} metric={metric} />
-        ))}
-      </div>
-      {network.warnings.map((warning) => (
-        <p key={warning} className="social-inline-warning">
-          {warning}
-        </p>
-      ))}
-    </article>
-  );
-}
+function resolveClientSocialFocus(
+  connection: MetricoolSafeConnection,
+  snapshot: SocialCommandCenterSnapshot | null,
+  analyticsUnavailable: boolean,
+): SocialFocus {
+  if (snapshot?.socialFocus) {
+    return snapshot.socialFocus;
+  }
 
-function PostCard({
-  post,
-  timeZone,
-}: {
-  post: RecentSocialPost;
-  timeZone: string;
-}) {
-  return (
-    <article className="social-post-card">
-      <div className="social-post-card-header">
-        <span className="social-post-network">
-          {NETWORK_DISPLAY_NAMES[post.network]}
-        </span>
-        <span className="social-post-type">{post.postType}</span>
-        <time dateTime={post.publicationDate}>
-          {formatPostDate(post.publicationDate, timeZone)}
-        </time>
-      </div>
-      <p className="social-post-caption">{post.caption}</p>
-      <dl className="social-post-metrics">
-        {post.reach !== null ? (
-          <>
-            <dt>Reach</dt>
-            <dd>{post.reach}</dd>
-          </>
-        ) : null}
-        {post.impressions !== null ? (
-          <>
-            <dt>Impressions</dt>
-            <dd>{post.impressions}</dd>
-          </>
-        ) : null}
-        {post.views !== null ? (
-          <>
-            <dt>Views</dt>
-            <dd>{post.views}</dd>
-          </>
-        ) : null}
-        {post.likes !== null ? (
-          <>
-            <dt>Likes</dt>
-            <dd>{post.likes}</dd>
-          </>
-        ) : null}
-        {post.comments !== null ? (
-          <>
-            <dt>Comments</dt>
-            <dd>{post.comments}</dd>
-          </>
-        ) : null}
-        {post.shares !== null ? (
-          <>
-            <dt>Shares</dt>
-            <dd>{post.shares}</dd>
-          </>
-        ) : null}
-        {post.engagementRate !== null ? (
-          <>
-            <dt>Engagement</dt>
-            <dd>{post.engagementRate}</dd>
-          </>
-        ) : null}
-      </dl>
-      {post.permalink ? (
-        <a
-          href={post.permalink}
-          className="social-post-link"
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          View on platform
-        </a>
-      ) : null}
-    </article>
-  );
-}
+  if (
+    connection.status === "reconnect_required" ||
+    connection.status === "error"
+  ) {
+    return {
+      category: "urgent",
+      title: "Metricool reconnection required",
+      explanation:
+        "Live social analytics cannot refresh until Metricool authorization is restored.",
+      nextAction: "Reconnect Metricool.",
+      platform: null,
+      contentType: null,
+      sectionAnchor: "#social-connection",
+    };
+  }
 
-function ScheduledCard({
-  post,
-  timeZone,
-}: {
-  post: ScheduledSocialPost;
-  timeZone: string;
-}) {
-  return (
-    <article className="social-scheduled-card">
-      <div className="social-scheduled-header">
-        <time dateTime={post.publicationDate}>
-          {formatPostDate(post.publicationDate, timeZone)} ({post.timezone})
-        </time>
-        <span className="social-scheduled-status">{post.statusLabel}</span>
-      </div>
-      <p className="social-scheduled-networks">
-        {post.networks.map((network) => NETWORK_DISPLAY_NAMES[network]).join(", ") ||
-          "Networks pending"}
-      </p>
-      <p className="social-post-caption">{post.caption || "No caption"}</p>
-      <p className="social-scheduled-meta">
-        {post.draft ? "Draft" : "Scheduled"}
-        {post.autoPublish === false ? " · Manual publish" : ""}
-        {post.postType ? ` · ${post.postType}` : ""}
-      </p>
-    </article>
-  );
+  if (analyticsUnavailable) {
+    return {
+      category: "urgent",
+      title: "Social analytics unavailable",
+      explanation: "The latest analytics refresh failed.",
+      nextAction: "Retry refresh after verifying Metricool access.",
+      platform: null,
+      contentType: null,
+      sectionAnchor: "#social-connection",
+    };
+  }
+
+  return {
+    category: "information",
+    title: "Connect Metricool to load social analytics",
+    explanation: "Network performance, grouped content, and schedule data appear after verification.",
+    nextAction: "Connect Metricool.",
+    platform: null,
+    contentType: null,
+    sectionAnchor: "#social-connection",
+  };
 }
 
 export function SocialCommandCenter({
@@ -308,24 +160,51 @@ export function SocialCommandCenter({
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [recovering, setRecovering] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [limitationsOpen, setLimitationsOpen] = useState(false);
 
-  const filteredPosts = useMemo(() => {
+  const isConnected = connection.status === "connected";
+  const isConnecting = connection.status === "connecting";
+  const needsReconnect =
+    connection.status === "reconnect_required" || connection.status === "error";
+  const showInterruptedConnection = showConnectionRecovery && isConnecting;
+  const analyticsUnavailable = Boolean(
+    isConnected && (loadError || snapshot?.refreshFailed),
+  );
+  const analyticsLoaded = Boolean(
+    isConnected && snapshot && !snapshot.refreshFailed,
+  );
+
+  const importantAlerts = useMemo(
+    () =>
+      snapshot?.alerts.filter(
+        (alert) => alert.category === "error" || alert.category === "warning",
+      ) ?? [],
+    [snapshot],
+  );
+
+  const visibleAlerts = useMemo(() => {
     if (!snapshot) {
       return [];
     }
 
-    return snapshot.recentPosts.filter((post) => {
-      if (networkFilter !== "all" && post.network !== networkFilter) {
-        return false;
+    return snapshot.alerts.filter((alert) => {
+      if (alert.category === "error" || alert.category === "warning") {
+        return true;
       }
 
-      if (contentFilter !== "all" && post.postType !== contentFilter) {
-        return false;
+      if (alert.category === "opportunity") {
+        return true;
       }
 
-      return true;
+      return alert.id === "waitlist-not-connected";
     });
-  }, [snapshot, networkFilter, contentFilter]);
+  }, [snapshot]);
+
+  const socialFocus = resolveClientSocialFocus(
+    connection,
+    snapshot,
+    analyticsUnavailable,
+  );
 
   async function handleRecoverConnection() {
     if (recovering) {
@@ -342,7 +221,6 @@ export function SocialCommandCenter({
       const payload = (await response.json()) as {
         ok?: boolean;
         error?: string;
-        status?: string;
       };
 
       if (!response.ok && payload.error === "not_recoverable") {
@@ -388,101 +266,35 @@ export function SocialCommandCenter({
     }
   }
 
-  const importantAlerts =
-    snapshot?.alerts.filter(
-      (alert) => alert.category === "error" || alert.category === "warning",
-    ) ?? [];
-
-  const isConnected = connection.status === "connected";
-  const isConnecting = connection.status === "connecting";
-  const needsReconnect =
-    connection.status === "reconnect_required" || connection.status === "error";
-  const showInterruptedConnection = showConnectionRecovery && isConnecting;
-
-  const analyticsUnavailable = Boolean(
-    isConnected && (loadError || snapshot?.refreshFailed),
-  );
-  const analyticsLoaded = Boolean(
-    isConnected && snapshot && !snapshot.refreshFailed,
-  );
-
-  const connectionPanel = (
-    <section className="social-connection-compact">
-      <div className="social-connection-compact-main">
-        <h2>Metricool connection</h2>
-        <ConnectionHealthBadge status={connection.status} />
-        {isConnected ? (
-          <p className="social-connection-copy">
-            Verified read-only access for {connection.brandLabel ?? "melusiai"}.
-            {connection.connectedNetworks.length > 0
-              ? ` ${connection.connectedNetworks.length} connected network${connection.connectedNetworks.length === 1 ? "" : "s"}.`
-              : null}
-          </p>
-        ) : showInterruptedConnection ? (
-          <p className="social-connection-copy">
-            The previous Metricool authorization did not finish. Check whether your
-            saved connection is still valid before reconnecting.
-          </p>
-        ) : isConnecting ? (
-          <p className="social-connection-copy">
-            OAuth authorization is in progress. Complete Metricool sign-in if
-            prompted.
-          </p>
-        ) : needsReconnect ? (
-          <p className="social-connection-copy">
-            Metricool authorization needs to be renewed before analytics can
-            refresh.
-          </p>
-        ) : (
-          <p className="social-connection-copy">
-            Connect Metricool to load live social analytics for the trusted Melusi
-            brand.
-          </p>
-        )}
-      </div>
-      <div className="social-connection-compact-actions">
-        <MetricoolConnectionActions
-          canVerify={canVerify}
-          canDisconnect={canDisconnect}
-          canReconnect={canReconnect}
-          canRecover={showInterruptedConnection}
-          onRecover={handleRecoverConnection}
-          recoverPending={recovering}
-        />
-        {connection.status === "disconnected" ? (
-          <a
-            href="/api/integrations/metricool/connect"
-            className="jv-btn jv-btn--primary jv-btn--inline"
-          >
-            Connect Metricool
-          </a>
-        ) : null}
-        {recoveryError ? (
-          <p className="jv-connection-meta jv-connection-meta--error">{recoveryError}</p>
-        ) : null}
-        <button
-          type="button"
-          className="jv-btn jv-btn--secondary"
-          onClick={handleRefresh}
-          disabled={refreshing || !isConnected}
-        >
-          {refreshing ? "Refreshing…" : "Refresh analytics"}
-        </button>
-      </div>
-    </section>
-  );
-
   return (
     <div className="social-command-center">
       <header className="social-header melusi-subpage-header">
         <div className="social-header-copy">
           <div className="social-header-title-row">
-            <h1 className="melusi-dash-title">Social <span>Command Center</span></h1>
+            <h1 className="melusi-dash-title">
+              Social <span>Command Center</span>
+            </h1>
             <span className="social-readonly-badge">Read-only</span>
+            <ConnectionHealthBadge status={connection.status} />
           </div>
           <p className="melusi-dash-descriptor">
             Live Metricool analytics for Melusi&apos;s trusted brand
           </p>
+          {analyticsLoaded && snapshot?.refreshedAt ? (
+            <p className="social-header-refreshed">
+              Last refreshed {formatDateTime(snapshot.refreshedAt, timeZone)}
+            </p>
+          ) : null}
+        </div>
+        <div className="social-header-actions">
+          <button
+            type="button"
+            className="jv-btn jv-btn--secondary"
+            onClick={handleRefresh}
+            disabled={refreshing || !isConnected}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
       </header>
 
@@ -492,121 +304,50 @@ export function SocialCommandCenter({
         <JarvisAlert variant="info">{snapshot.limitedHistoryDetail}</JarvisAlert>
       ) : null}
 
-      {connectionPanel}
+      <SocialFocusSection focus={socialFocus} />
+
+      {analyticsLoaded && snapshot ? (
+        <SocialSummaryStrip
+          cadence={snapshot.cadence}
+          groupedContent={snapshot.groupedRecentContent}
+          upcomingScheduled={snapshot.upcomingScheduled}
+          alertCount={importantAlerts.length}
+          connectionStatus={connection.status}
+        />
+      ) : null}
 
       {analyticsUnavailable ? (
         <section className="social-unavailable-state">
           <h2>Analytics unavailable</h2>
           <p>
-            Social analytics could not be loaded. Connection status is shown above.
-            Retry refresh after verifying Metricool access — unavailable sections are
+            Social analytics could not be loaded. Connection status is shown below.
+            Retry refresh after verifying Metricool access — performance sections stay
             hidden so failed data is not shown as zero performance.
           </p>
         </section>
       ) : null}
 
       {!analyticsLoaded && !analyticsUnavailable && !isConnecting ? (
-        <section className="social-unavailable-state">
+        <section className="social-unavailable-state social-unavailable-state--quiet">
           <h2>Social analytics not connected</h2>
-          <p>
-            Connect and verify Metricool to load network performance, content
-            analysis, and schedule data.
-          </p>
+          <p>Connect and verify Metricool to load network performance and schedule data.</p>
         </section>
       ) : null}
 
       {analyticsLoaded && snapshot ? (
-        <section className="social-summary-strip" aria-label="Social summary">
-          <div className="social-summary-cell">
-            <span>Static cadence</span>
-            <strong>
-              {snapshot.cadence.staticActual}/{snapshot.cadence.staticTarget}
-            </strong>
-            <em>{paceLabel(snapshot.cadence.staticPace)}</em>
-          </div>
-          <div className="social-summary-cell">
-            <span>Reel cadence</span>
-            <strong>
-              {snapshot.cadence.reelActual}/{snapshot.cadence.reelTarget}
-            </strong>
-            <em>{paceLabel(snapshot.cadence.reelPace)}</em>
-          </div>
-          <div className="social-summary-cell">
-            <span>Recent posts</span>
-            <strong>{snapshot.recentPosts.length}</strong>
-          </div>
-          <div className="social-summary-cell">
-            <span>Scheduled</span>
-            <strong>{snapshot.upcomingScheduled.length}</strong>
-          </div>
-          <div className="social-summary-cell">
-            <span>Alerts</span>
-            <strong>{importantAlerts.length}</strong>
-          </div>
-        </section>
-      ) : null}
-
-      {analyticsLoaded && snapshot ? (
-        <>
-          <section className="social-section">
-            <div className="social-section-header">
-              <h2>Network performance</h2>
-              <p>
-                Current period: {snapshot.currentPeriodLabel}. Comparison:{" "}
-                {snapshot.comparisonPeriodLabel}. Metrics are shown separately
-                per platform.
-              </p>
-            </div>
-            <div className="social-network-grid">
-              {snapshot.networks.map((network) => (
-                <NetworkCard key={network.network} network={network} />
-              ))}
-            </div>
-          </section>
-
-          <section className="social-section">
+        <div className="social-main-layout">
+          <section
+            className="social-section social-section--primary"
+            id="social-content-performance"
+          >
             <div className="social-section-header">
               <h2>Content performance</h2>
-              <p>
-                Top and weak comparisons stay within the same network and content
-                type when enough mature records exist.
-              </p>
+              <p>{snapshot.recentContentPeriodLabel}</p>
             </div>
-            <div className="social-highlight-grid">
-              <JarvisCard title="Top-performing recent content" accent="green">
-                {snapshot.topPerforming ? (
-                  <div className="social-highlight-card">
-                    <p className="social-highlight-meta">
-                      {NETWORK_DISPLAY_NAMES[snapshot.topPerforming.network]} ·{" "}
-                      {snapshot.topPerforming.postType} ·{" "}
-                      {snapshot.topPerforming.metricLabel}:{" "}
-                      {snapshot.topPerforming.metricValue}
-                    </p>
-                    <p>{snapshot.topPerforming.caption}</p>
-                    <p className="social-panel-note">{snapshot.topPerforming.note}</p>
-                  </div>
-                ) : (
-                  <p className="cc-empty">Not enough comparable content yet.</p>
-                )}
-              </JarvisCard>
-              <JarvisCard title="Weakest mature comparable content" accent="amber">
-                {snapshot.weakestMature ? (
-                  <div className="social-highlight-card">
-                    <p className="social-highlight-meta">
-                      {NETWORK_DISPLAY_NAMES[snapshot.weakestMature.network]} ·{" "}
-                      {snapshot.weakestMature.postType} ·{" "}
-                      {snapshot.weakestMature.metricLabel}:{" "}
-                      {snapshot.weakestMature.metricValue}
-                    </p>
-                    <p>{snapshot.weakestMature.caption}</p>
-                    <p className="social-panel-note">{snapshot.weakestMature.note}</p>
-                  </div>
-                ) : (
-                  <p className="cc-empty">Not enough comparable content yet.</p>
-                )}
-              </JarvisCard>
-            </div>
-
+            <SocialContentHighlights
+              topPerforming={snapshot.topPerforming}
+              weakestMature={snapshot.weakestMature}
+            />
             <div className="social-filter-row">
               <label className="social-filter">
                 <span>Network</span>
@@ -639,114 +380,152 @@ export function SocialCommandCenter({
                 </select>
               </label>
             </div>
-
-            {filteredPosts.length > 0 ? (
-              <div className="social-post-grid">
-                {filteredPosts.map((post, index) => (
-                  <PostCard
-                    key={`${post.network}-${post.publicationDate}-${index}`}
-                    post={post}
-                    timeZone={timeZone}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="cc-empty">No recent published content matches these filters.</p>
-            )}
+            <SocialGroupedContentList
+              groups={snapshot.groupedRecentContent}
+              timeZone={timeZone}
+              networkFilter={networkFilter}
+              contentFilter={contentFilter}
+            />
           </section>
 
-          <section className="social-section">
+          <section className="social-section social-section--primary" id="social-schedule">
             <div className="social-section-header">
-              <h2>Schedule & cadence</h2>
+              <h2>Upcoming schedule</h2>
+              <p>{snapshot.upcomingSchedulePeriodLabel}</p>
             </div>
-            <div className="social-schedule-grid">
-              <JarvisCard title="Upcoming scheduled posts" accent="purple">
-                {snapshot.upcomingScheduled.length > 0 ? (
-                  <div className="social-scheduled-list">
-                    {snapshot.upcomingScheduled.map((post, index) => (
-                      <ScheduledCard
-                        key={`${post.publicationDate}-${index}`}
-                        post={post}
-                        timeZone={timeZone}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <p className="cc-empty">No upcoming posts scheduled</p>
-                )}
-              </JarvisCard>
-              <JarvisCard title="Best posting times" accent="blue">
-                <div className="social-best-times-list">
-                  {snapshot.bestTimes.map((entry) => (
-                    <div key={entry.network} className="social-best-times-item">
-                      <h3>{NETWORK_DISPLAY_NAMES[entry.network]}</h3>
-                      {entry.available && entry.slots.length > 0 ? (
-                        <ul>
-                          {entry.slots.slice(0, 3).map((slot) => (
-                            <li key={`${slot.dayOfWeek}-${slot.hourOfDay}`}>
-                              Day {slot.dayOfWeek}, {slot.hourOfDay}:00 · score{" "}
-                              {slot.score}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="social-panel-note">
-                          {entry.warning ?? "No best-time data returned."}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </JarvisCard>
-            </div>
+            <SocialScheduleList posts={snapshot.upcomingScheduled} timeZone={timeZone} />
           </section>
 
-          <section className="social-section">
+          <section className="social-section social-section--secondary" id="social-network-performance">
             <div className="social-section-header">
-              <h2>Advisor & alerts</h2>
+              <h2>Network performance</h2>
               <p>
-                Deterministic alerts come from server-side rules on real Metricool
-                data. Ask Melusi Jarvis for analysis and recommendations.
+                {snapshot.currentPeriodLabel} vs {snapshot.comparisonPeriodLabel}
               </p>
             </div>
-            <div className="social-advisor-grid">
-              <JarvisCard title="Deterministic social alerts" accent="amber">
-                <ul className="social-alert-list">
-                  {snapshot.alerts.map((alert) => (
-                    <li key={alert.id} className="social-alert-item">
-                      <span className={alertBadgeClass(alert.category)}>
-                        {alert.category}
-                      </span>
-                      <div>
-                        <span className="social-alert-title">{alert.title}</span>
-                        <p className="social-alert-detail">{alert.detail}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </JarvisCard>
-              <JarvisCard title="Attribution & limitations" accent="blue">
-                <p className="social-panel-note">{snapshot.waitlistAttribution.message}</p>
-                {snapshot.warnings.length > 0 ? (
+            <div className="social-network-grid">
+              {snapshot.networks.map((network) => (
+                <SocialNetworkCard key={network.network} network={network} />
+              ))}
+            </div>
+          </section>
+
+          <section className="social-section social-section--secondary" id="social-best-times">
+            <div className="social-section-header">
+              <h2>Best posting times</h2>
+            </div>
+            <SocialBestTimesPanel bestTimes={snapshot.bestTimes} />
+          </section>
+
+          <section className="social-section social-section--footer" id="social-alerts">
+            <div className="social-section-header">
+              <h2>Alerts & limitations</h2>
+            </div>
+            <ul className="social-alert-list">
+              {visibleAlerts.map((alert) => (
+                <li key={alert.id} className="social-alert-item">
+                  <span className={alertBadgeClass(alert.category)}>{alert.category}</span>
+                  <div>
+                    <span className="social-alert-title">{alert.title}</span>
+                    <p className="social-alert-detail">{alert.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+
+            {snapshot.warnings.length > 0 ? (
+              <div className="social-limitations-disclosure">
+                <button
+                  type="button"
+                  className="social-expand-btn"
+                  aria-expanded={limitationsOpen}
+                  onClick={() => setLimitationsOpen((value) => !value)}
+                >
+                  {limitationsOpen
+                    ? "Hide partial-data details"
+                    : `Show ${snapshot.warnings.length} partial-data notice${snapshot.warnings.length === 1 ? "" : "s"}`}
+                </button>
+                {limitationsOpen ? (
                   <ul className="social-limitations-list">
                     {snapshot.warnings.map((warning) => (
                       <li key={warning.id}>{warning.message}</li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="social-panel-note">
-                    Partial-data warnings will appear here when one connector fails
-                    while others succeed.
-                  </p>
-                )}
-                <Link href="/melusi" className="cc-card-link">
-                  Ask Melusi Jarvis on the Command Center →
-                </Link>
-              </JarvisCard>
-            </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <p className="social-section-footnote">
+              {snapshot.waitlistAttribution.message}
+              <SocialInfoDisclosure
+                label="Waitlist attribution"
+                content={SOCIAL_CAVEATS.waitlistAttribution}
+              />
+              {" · "}
+              <SocialInfoDisclosure
+                label="Social vs commercial outcomes"
+                content={SOCIAL_CAVEATS.commercialOutcomes}
+              />
+            </p>
+
+            <Link href="/melusi" className="cc-card-link">
+              Ask Melusi Jarvis on the Command Center →
+            </Link>
           </section>
-        </>
+        </div>
       ) : null}
+
+      <section className="social-connection-compact" id="social-connection">
+        <div className="social-connection-compact-main">
+          <h2>Metricool connection</h2>
+          {isConnected ? (
+            <p className="social-connection-copy">
+              Verified read-only access for {connection.brandLabel ?? "melusiai"}.
+              {connection.connectedNetworks.length > 0
+                ? ` ${connection.connectedNetworks.length} connected network${connection.connectedNetworks.length === 1 ? "" : "s"}.`
+                : null}
+            </p>
+          ) : showInterruptedConnection ? (
+            <p className="social-connection-copy">
+              The previous Metricool authorization did not finish. Check whether your
+              saved connection is still valid before reconnecting.
+            </p>
+          ) : isConnecting ? (
+            <p className="social-connection-copy">
+              OAuth authorization is in progress. Complete Metricool sign-in if prompted.
+            </p>
+          ) : needsReconnect ? (
+            <p className="social-connection-copy">
+              Metricool authorization needs to be renewed before analytics can refresh.
+            </p>
+          ) : (
+            <p className="social-connection-copy">
+              Connect Metricool to load live social analytics for the trusted Melusi brand.
+            </p>
+          )}
+        </div>
+        <div className="social-connection-compact-actions">
+          <MetricoolConnectionActions
+            canVerify={canVerify}
+            canDisconnect={canDisconnect}
+            canReconnect={canReconnect}
+            canRecover={showInterruptedConnection}
+            onRecover={handleRecoverConnection}
+            recoverPending={recovering}
+          />
+          {connection.status === "disconnected" ? (
+            <a
+              href="/api/integrations/metricool/connect"
+              className="jv-btn jv-btn--primary jv-btn--inline"
+            >
+              Connect Metricool
+            </a>
+          ) : null}
+          {recoveryError ? (
+            <p className="jv-connection-meta jv-connection-meta--error">{recoveryError}</p>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

@@ -8,9 +8,55 @@ export type SocialNetworkKey =
   | "twitter";
 
 export type ComparisonDisplay =
-  | { kind: "percent"; value: number; direction: "up" | "down" | "flat" }
+  | { kind: "percent"; value: number; direction: "up" | "down" }
   | { kind: "new_activity" }
+  | { kind: "flat" }
   | { kind: "unavailable"; reason: string };
+
+export type SocialFocusCategory = "urgent" | "warning" | "opportunity" | "information";
+
+export type SocialFocus = {
+  category: SocialFocusCategory;
+  title: string;
+  explanation: string;
+  nextAction: string;
+  platform: SocialNetworkKey | null;
+  contentType: SocialContentType | null;
+  sectionAnchor: string | null;
+};
+
+export type ContentGroupingConfidence =
+  | "planner"
+  | "campaign"
+  | "inferred"
+  | "single";
+
+export type NetworkPublicationMetrics = {
+  network: SocialNetworkKey;
+  publicationDate: string;
+  postType: SocialContentType;
+  permalink: string | null;
+  reach: number | null;
+  impressions: number | null;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  clicks: number | null;
+  engagementRate: number | null;
+  engagementContext: string | null;
+};
+
+export type GroupedCoreContent = {
+  id: string;
+  caption: string;
+  publicationDate: string;
+  postType: SocialContentType;
+  mediaPreviewUrl: string | null;
+  networks: SocialNetworkKey[];
+  publications: NetworkPublicationMetrics[];
+  groupingConfidence: ContentGroupingConfidence;
+};
 
 export type MetricValue = {
   label: string;
@@ -19,6 +65,7 @@ export type MetricValue = {
   comparison: ComparisonDisplay | null;
   definition?: string;
   unavailable?: boolean;
+  fieldKey?: string;
 };
 
 export type NetworkPerformanceSnapshot = {
@@ -27,8 +74,9 @@ export type NetworkPerformanceSnapshot = {
   available: boolean;
   limitedData: boolean;
   limitedDataReason: string | null;
-  engagementDenominator: string;
+  engagementBasisLabel: string;
   metrics: MetricValue[];
+  secondaryMetrics: MetricValue[];
   warnings: string[];
 };
 
@@ -48,6 +96,12 @@ export type RecentSocialPost = {
   caption: string;
   permalink: string | null;
   mediaPreviewUrl: string | null;
+  /** Platform-native post identifier — not used for cross-network grouping. */
+  postId: string | null;
+  /** Metricool planner identifier when available from provider data. */
+  plannerId: string | null;
+  /** Shared campaign or content identifier when available. */
+  campaignId: string | null;
   reach: number | null;
   impressions: number | null;
   views: number | null;
@@ -86,10 +140,21 @@ export type ScheduledSocialPost = {
   statusLabel: string;
 };
 
+export type BestPostingTimeRank = "best" | "strong" | "good";
+
+export type BestTimeDayLabelSource = "provider_named_weekday" | "unavailable";
+
+export type BestTimeDayLabel = {
+  source: BestTimeDayLabelSource;
+  label: string | null;
+};
+
 export type BestPostingTimeSlot = {
-  dayOfWeek: number;
   hourOfDay: number;
   score: number;
+  rank: BestPostingTimeRank;
+  day: BestTimeDayLabel;
+  timeLabel: string;
 };
 
 export type NetworkBestTimes = {
@@ -97,6 +162,8 @@ export type NetworkBestTimes = {
   available: boolean;
   slots: BestPostingTimeSlot[];
   warning: string | null;
+  weekdayLabelsAvailable: boolean;
+  weekdayLimitation: string | null;
 };
 
 export type CadencePace = "on_pace" | "behind" | "ahead";
@@ -149,8 +216,10 @@ export type SocialCommandCenterSnapshot = {
     connected: false;
     message: string;
   };
+  socialFocus: SocialFocus | null;
   networks: NetworkPerformanceSnapshot[];
   recentPosts: RecentSocialPost[];
+  groupedRecentContent: GroupedCoreContent[];
   topPerforming: TopContentHighlight | null;
   weakestMature: TopContentHighlight | null;
   upcomingScheduled: ScheduledSocialPost[];

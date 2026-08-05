@@ -56,6 +56,7 @@ export function parseScheduledPosts(payload: unknown): unknown[] {
 
 export function parseBestTimes(payload: unknown): Array<{
   dayOfWeek: number;
+  providerWeekdayName: string | null;
   bestTimesByHour: Array<{ hourOfDay: number; value: number }>;
 }> {
   if (!payload || typeof payload !== "object") {
@@ -71,6 +72,7 @@ export function parseBestTimes(payload: unknown): Array<{
 
   const result: Array<{
     dayOfWeek: number;
+    providerWeekdayName: string | null;
     bestTimesByHour: Array<{ hourOfDay: number; value: number }>;
   }> = [];
 
@@ -103,10 +105,30 @@ export function parseBestTimes(payload: unknown): Array<{
       }
     }
 
-    result.push({ dayOfWeek, bestTimesByHour });
+    result.push({
+      dayOfWeek,
+      providerWeekdayName: parseProviderWeekdayName(item),
+      bestTimesByHour,
+    });
   }
 
   return result;
+}
+
+function parseProviderWeekdayName(item: Record<string, unknown>): string | null {
+  for (const key of ["dayName", "weekday", "weekDay", "name"]) {
+    const value = item[key];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  const dayValue = item.day;
+  if (typeof dayValue === "string" && dayValue.trim().length > 0 && !/^\d+$/.test(dayValue.trim())) {
+    return dayValue.trim();
+  }
+
+  return null;
 }
 
 export function toNumeric(value: unknown): number | null {
@@ -158,7 +180,7 @@ export function buildComparison(
   }
 
   if (previous === 0 && current === 0) {
-    return { kind: "unavailable", reason: "No meaningful change" };
+    return { kind: "flat" };
   }
 
   if (previous === 0 && current > 0) {
@@ -176,7 +198,7 @@ export function buildComparison(
   }
 
   if (Math.abs(change) < 3) {
-    return { kind: "unavailable", reason: "No meaningful change" };
+    return { kind: "flat" };
   }
 
   return {
@@ -436,6 +458,24 @@ export function mapPostRowToRecentPost(
           : null,
     mediaPreviewUrl:
       typeof row.mediaUrl === "string" ? row.mediaUrl : null,
+    postId:
+      typeof row.postId === "string"
+        ? row.postId
+        : typeof row.postId === "number"
+          ? String(row.postId)
+          : null,
+    plannerId:
+      typeof row.plannerId === "string" && row.plannerId.trim().length > 0
+        ? row.plannerId.trim()
+        : typeof row.plannerUuid === "string" && row.plannerUuid.trim().length > 0
+          ? row.plannerUuid.trim()
+          : null,
+    campaignId:
+      typeof row.campaignId === "string" && row.campaignId.trim().length > 0
+        ? row.campaignId.trim()
+        : typeof row.contentId === "string" && row.contentId.trim().length > 0
+          ? row.contentId.trim()
+          : null,
     reach: toNumeric(row.reach),
     impressions: toNumeric(row.impressions),
     views: toNumeric(row.views),

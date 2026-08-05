@@ -25,8 +25,11 @@ import {
   NETWORK_POST_CATALOG,
   type SocialNetworkKey,
 } from "./metricool-metric-catalog";
-import { NETWORK_DISPLAY_NAMES } from "./metricool-social-display";
+import { NETWORK_DISPLAY_NAMES, NETWORK_PRIMARY_FIELDS, NETWORK_ENGAGEMENT_BASIS_LABEL, SOCIAL_CAVEATS, formatBestTimeHour } from "./metricool-social-display";
+import { groupRecentPostsIntoCoreContent } from "./metricool-social-grouping";
+import { selectSocialFocus } from "./metricool-social-focus";
 import type {
+  BestPostingTimeRank,
   NetworkBestTimes,
   NetworkPerformanceSnapshot,
   PartialDataWarning,
@@ -93,7 +96,15 @@ async function fetchBestTimes(
   network: SocialNetworkKey,
   fromDate: string,
   toDate: string,
-): Promise<{ slots: NetworkBestTimes["slots"]; forbidden: boolean }> {
+): Promise<{
+  slots: Array<{
+    dayOfWeek: number;
+    providerWeekdayName: string | null;
+    hourOfDay: number;
+    score: number;
+  }>;
+  forbidden: boolean;
+}> {
   const result = await callMetricoolReadOnlyTool(
     client,
     "getBestTimeToPostByNetwork",
@@ -115,6 +126,7 @@ async function fetchBestTimes(
   const slots = parsed.flatMap((day) =>
     day.bestTimesByHour.map((hour) => ({
       dayOfWeek: day.dayOfWeek,
+      providerWeekdayName: day.providerWeekdayName,
       hourOfDay: hour.hourOfDay,
       score: hour.value,
     })),
@@ -123,6 +135,89 @@ async function fetchBestTimes(
   slots.sort((left, right) => right.score - left.score);
 
   return { slots: slots.slice(0, 8), forbidden: false };
+}
+
+function rankBestTimeSlot(index: number): BestPostingTimeRank {
+  if (index === 0) {
+    return "best";
+  }
+
+  if (index <= 2) {
+    return "strong";
+  }
+
+  return "good";
+}
+
+function enrichBestTimeSlots(
+  slots: Array<{
+    dayOfWeek: number;
+    providerWeekdayName: string | null;
+    hourOfDay: number;
+    score: number;
+  }>,
+  timeZone: string,
+): Pick<NetworkBestTimes, "slots" | "weekdayLabelsAvailable" | "weekdayLimitation"> {
+  const enriched: NetworkBestTimes["slots"] = slots.slice(0, 5).map((slot, index) => {
+    const providerWeekdayName = slot.providerWeekdayName?.trim() ?? null;
+
+    return {
+      hourOfDay: slot.hourOfDay,
+      score: slot.score,
+      rank: rankBestTimeSlot(index),
+      day: providerWeekdayName
+        ? {
+            source: "provider_named_weekday",
+            label: providerWeekdayName,
+          }
+        : {
+            source: "unavailable",
+            label: null,
+          },
+      timeLabel: formatBestTimeHour(slot.hourOfDay, timeZone),
+    };
+  });
+
+  const weekdayLabelsAvailable =
+    enriched.length > 0 &&
+    enriched.every((slot) => slot.day.source === "provider_named_weekday");
+
+  return {
+    slots: enriched,
+    weekdayLabelsAvailable,
+    weekdayLimitation: weekdayLabelsAvailable
+      ? null
+      : SOCIAL_CAVEATS.bestTimesWeekdayUnavailable,
+  };
+}
+
+function splitNetworkMetrics(
+  network: SocialNetworkKey,
+  metrics: NetworkPerformanceSnapshot["metrics"],
+): {
+  primary: NetworkPerformanceSnapshot["metrics"];
+  secondary: NetworkPerformanceSnapshot["secondaryMetrics"];
+} {
+  const primaryFields = new Set(NETWORK_PRIMARY_FIELDS[network]);
+  const primary = metrics.filter(
+    (metric) => metric.fieldKey && primaryFields.has(metric.fieldKey),
+  );
+  const secondary = metrics.filter(
+    (metric) => !metric.fieldKey || !primaryFields.has(metric.fieldKey),
+  );
+
+  const visiblePrimary = primary.filter(
+    (metric) => metric.value !== null || metric.unavailable,
+  );
+
+  if (visiblePrimary.length > 0) {
+    return { primary: visiblePrimary, secondary };
+  }
+
+  return {
+    primary: metrics.filter((metric) => metric.value !== null).slice(0, 4),
+    secondary: metrics.filter((metric) => metric.value === null),
+  };
 }
 
 function buildNetworkPerformance(
@@ -141,8 +236,9 @@ function buildNetworkPerformance(
       available: false,
       limitedData: true,
       limitedDataReason: "Analytics unavailable for this network.",
-      engagementDenominator: NETWORK_ENGAGEMENT_DENOMINATOR[network],
+      engagementBasisLabel: NETWORK_ENGAGEMENT_BASIS_LABEL[network],
       metrics: [],
+      secondaryMetrics: [],
       warnings: ["Analytics request failed for this network."],
     };
   }
@@ -171,10 +267,13 @@ function buildNetworkPerformance(
       formatted,
       comparison: buildComparison(currentValue, previousValue),
       definition: metricDefinitionForField(network, field),
+      fieldKey: field,
+      unavailable: currentValue === null,
     };
   });
 
   const hasAnyData = metrics.some((metric) => metric.value !== null);
+  const { primary, secondary } = splitNetworkMetrics(network, metrics);
 
   if (!hasAnyData) {
     warnings.push("Limited Metricool history for this reporting window.");
@@ -188,8 +287,9 @@ function buildNetworkPerformance(
     limitedDataReason: !hasAnyData
       ? "No meaningful data returned for this period."
       : null,
-    engagementDenominator: NETWORK_ENGAGEMENT_DENOMINATOR[network],
-    metrics,
+    engagementBasisLabel: NETWORK_ENGAGEMENT_BASIS_LABEL[network],
+    metrics: primary,
+    secondaryMetrics: secondary,
     warnings,
   };
 }
@@ -932,6 +1032,7 @@ export async function loadMetricoolSocialDashboard(
     }
 
     const recentPosts = mergeRecentPosts(recentPostBuckets);
+    const groupedRecentContent = groupRecentPostsIntoCoreContent(recentPosts);
 
     const scheduledResult = await Promise.allSettled([
       callMetricoolReadOnlyTool(session.client, "getScheduledPosts", {
@@ -982,10 +1083,14 @@ export async function loadMetricoolSocialDashboard(
           windows.recentTo,
         );
 
+        const enriched = enrichBestTimeSlots(slots, TRUSTED_BRAND_TIMEZONE);
+
         return {
           network,
           available: !forbidden,
-          slots,
+          slots: enriched.slots,
+          weekdayLabelsAvailable: enriched.weekdayLabelsAvailable,
+          weekdayLimitation: enriched.weekdayLimitation,
           warning: forbidden
             ? network === "twitter"
               ? "Best posting times are unavailable for X with the current Metricool permission."
@@ -1006,6 +1111,8 @@ export async function loadMetricoolSocialDashboard(
         network,
         available: false,
         slots: [],
+        weekdayLabelsAvailable: false,
+        weekdayLimitation: null,
         warning: "Best posting times could not be loaded.",
       };
     });
@@ -1029,8 +1136,10 @@ export async function loadMetricoolSocialDashboard(
         connected: false,
         message: "Social-to-waitlist attribution is not connected.",
       },
+      socialFocus: null,
       networks,
       recentPosts,
+      groupedRecentContent,
       topPerforming,
       weakestMature,
       upcomingScheduled,
@@ -1051,6 +1160,17 @@ export async function loadMetricoolSocialDashboard(
       bestTimes,
       topPerforming,
       weakestMature,
+    });
+
+    snapshot.socialFocus = selectSocialFocus({
+      connectionStatus: connection.status,
+      analyticsUnavailable: false,
+      cadence,
+      networks,
+      upcomingScheduled,
+      topPerforming,
+      weakestMature,
+      alerts: snapshot.alerts,
     });
 
     return { ok: true, snapshot };
@@ -1092,8 +1212,28 @@ export function createFailedSocialCommandCenterSnapshot(
       connected: false,
       message: "Social-to-waitlist attribution is not connected.",
     },
+    socialFocus: selectSocialFocus({
+      connectionStatus: connection.status,
+      analyticsUnavailable: true,
+      cadence: {
+        staticTarget: MELUSI_CADENCE_TARGETS.staticPostsPerWeek,
+        staticActual: 0,
+        reelTarget: MELUSI_CADENCE_TARGETS.reelsPerWeek,
+        reelActual: 0,
+        staticPace: "behind",
+        reelPace: "behind",
+        countingMethod: "platform_publications",
+        limitations: [limitation],
+      },
+      networks: [],
+      upcomingScheduled: [],
+      topPerforming: null,
+      weakestMature: null,
+      alerts: [],
+    }),
     networks: [],
     recentPosts: [],
+    groupedRecentContent: [],
     topPerforming: null,
     weakestMature: null,
     upcomingScheduled: [],
