@@ -6,6 +6,7 @@ import {
   encryptPlaidAccessToken,
   getPlaidEncryptionVersion,
 } from "./plaid-token-crypto";
+import { verifyPlaidItemAccess } from "./plaid-client";
 import { getPlaidEnvironment } from "./plaid-config";
 import type {
   PlaidConnectionRow,
@@ -17,16 +18,18 @@ import { PlaidSafeError } from "./plaid-types";
 const MAX_SAFE_PLAID_CONNECTIONS = 50;
 
 const SECRET_COLUMNS =
-  "id, user_id, item_id, institution_id, institution_name, encrypted_access_token, encryption_version, environment, status, products, transactions_cursor, last_successful_sync_at, last_webhook_at, last_error_code, connected_at, disconnected_at, created_at, updated_at";
+  "id, user_id, item_id, institution_id, institution_name, encrypted_access_token, encryption_version, environment, status, products, transactions_cursor, last_successful_sync_at, last_webhook_at, last_error_code, last_sync_accounts_created, last_sync_accounts_updated, last_sync_transactions_added, last_sync_transactions_modified, last_sync_transactions_removed, last_sync_unclassified_count, linked_accounts_count, sync_in_progress_at, connected_at, disconnected_at, created_at, updated_at";
 
 const SAFE_SUMMARY_COLUMNS =
-  "id, status, institution_name, environment, connected_at, last_successful_sync_at, last_error_code";
+  "id, status, institution_name, environment, connected_at, last_successful_sync_at, last_error_code, last_sync_accounts_created, last_sync_accounts_updated, last_sync_transactions_added, last_sync_transactions_modified, last_sync_transactions_removed, last_sync_unclassified_count, linked_accounts_count, sync_in_progress_at";
 
 const ACTIVE_CONNECTION_STATUSES: PlaidConnectionStatus[] = [
   "connected",
   "reconnect_required",
   "error",
 ];
+
+const SYNC_LOCK_MINUTES = 10;
 
 type SafeSummaryRow = Pick<
   PlaidConnectionRow,
@@ -37,7 +40,28 @@ type SafeSummaryRow = Pick<
   | "connected_at"
   | "last_successful_sync_at"
   | "last_error_code"
+  | "last_sync_accounts_created"
+  | "last_sync_accounts_updated"
+  | "last_sync_transactions_added"
+  | "last_sync_transactions_modified"
+  | "last_sync_transactions_removed"
+  | "last_sync_unclassified_count"
+  | "linked_accounts_count"
+  | "sync_in_progress_at"
 >;
+
+function isSyncInProgress(syncInProgressAt: string | null): boolean {
+  if (!syncInProgressAt) {
+    return false;
+  }
+
+  const startedMs = Date.parse(syncInProgressAt);
+  if (!Number.isFinite(startedMs)) {
+    return false;
+  }
+
+  return Date.now() - startedMs < SYNC_LOCK_MINUTES * 60_000;
+}
 
 export function toSafePlaidConnectionSummary(
   row: SafeSummaryRow,
@@ -52,6 +76,14 @@ export function toSafePlaidConnectionSummary(
     lastSuccessfulSyncAt: row.last_successful_sync_at,
     reconnectRequired: row.status === "reconnect_required",
     lastErrorCode: row.last_error_code,
+    syncInProgress: isSyncInProgress(row.sync_in_progress_at),
+    linkedAccountsCount: row.linked_accounts_count,
+    lastSyncAccountsCreated: row.last_sync_accounts_created,
+    lastSyncAccountsUpdated: row.last_sync_accounts_updated,
+    lastSyncTransactionsAdded: row.last_sync_transactions_added,
+    lastSyncTransactionsModified: row.last_sync_transactions_modified,
+    lastSyncTransactionsRemoved: row.last_sync_transactions_removed,
+    lastSyncUnclassifiedCount: row.last_sync_unclassified_count,
   };
 }
 
@@ -116,6 +148,12 @@ export function hasUsablePlaidCredentials(
   row: PlaidConnectionRow | null,
 ): boolean {
   return Boolean(row?.encrypted_access_token && row.status === "connected");
+}
+
+export function hasStoredPlaidAccessToken(
+  row: PlaidConnectionRow | null,
+): boolean {
+  return Boolean(row?.encrypted_access_token);
 }
 
 export function decryptStoredAccessToken(
@@ -267,4 +305,91 @@ export async function markPlaidConnectionErrorById(
   if (error) {
     throw error;
   }
+}
+
+export async function markPlaidConnectionReconnected(
+  supabase: SupabaseClient,
+  userId: string,
+  connectionId: string,
+): Promise<PlaidSafeConnectionSummary> {
+  const { data, error } = await supabase
+    .from("plaid_connections")
+    .update({
+      status: "connected" satisfies PlaidConnectionStatus,
+      last_error_code: null,
+    })
+    .eq("id", connectionId)
+    .eq("user_id", userId)
+    .select(SAFE_SUMMARY_COLUMNS)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return toSafePlaidConnectionSummary(data as SafeSummaryRow);
+}
+
+export type PlaidConnectionUpdateResult =
+  | { ok: true; connection: PlaidSafeConnectionSummary }
+  | { ok: false; error: "reconnect_required" | "update_failed"; connection: PlaidSafeConnectionSummary };
+
+export async function completePlaidConnectionUpdate(
+  supabase: SupabaseClient,
+  userId: string,
+  connectionId: string,
+): Promise<PlaidConnectionUpdateResult> {
+  const connection = await loadPlaidConnectionRowById(supabase, userId, connectionId);
+
+  if (!connection || !hasStoredPlaidAccessToken(connection)) {
+    throw new PlaidSafeError("item_not_found");
+  }
+
+  const accessToken = decryptStoredAccessToken(connection);
+  if (!accessToken) {
+    throw new PlaidSafeError("decryption_failed");
+  }
+
+  try {
+    await verifyPlaidItemAccess(accessToken);
+  } catch (error) {
+    const safeError = error instanceof PlaidSafeError ? error : new PlaidSafeError("update_failed");
+    const reconnectRequired = safeError.code === "reconnect_required";
+    const nextStatus: PlaidConnectionStatus = reconnectRequired
+      ? "reconnect_required"
+      : "error";
+
+    await markPlaidConnectionErrorById(
+      supabase,
+      userId,
+      connectionId,
+      safeError.code,
+      nextStatus,
+    );
+
+    const { data, error: reloadError } = await supabase
+      .from("plaid_connections")
+      .select(SAFE_SUMMARY_COLUMNS)
+      .eq("id", connectionId)
+      .eq("user_id", userId)
+      .single();
+
+    if (reloadError || !data) {
+      throw reloadError ?? new PlaidSafeError("update_failed");
+    }
+
+    return {
+      ok: false,
+      error: reconnectRequired ? "reconnect_required" : "update_failed",
+      connection: toSafePlaidConnectionSummary(data as SafeSummaryRow),
+    };
+  }
+
+  const connectionSummary = await markPlaidConnectionReconnected(
+    supabase,
+    userId,
+    connectionId,
+  );
+
+  return { ok: true, connection: connectionSummary };
 }

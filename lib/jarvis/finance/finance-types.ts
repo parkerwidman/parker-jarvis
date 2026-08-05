@@ -80,7 +80,7 @@ export type FinanceTransaction = {
   transactionType: FinanceTransactionType;
   status: FinanceTransactionStatus;
   notes: string | null;
-  source: "manual";
+  source: "manual" | "plaid";
   deduplicationFingerprint: string | null;
   recurringItemId: string | null;
   personalOrBusiness: FinancePersonalOrBusiness;

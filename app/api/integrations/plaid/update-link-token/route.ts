@@ -1,9 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
-import { removePlaidItem } from "@/lib/jarvis/integrations/plaid/plaid-client";
+import {
+  classifyPlaidAccessTokenForUpdate,
+  createUpdateLinkToken,
+} from "@/lib/jarvis/integrations/plaid/plaid-client";
 import {
   decryptStoredAccessToken,
-  disconnectPlaidConnectionById,
-  hasUsablePlaidCredentials,
+  hasStoredPlaidAccessToken,
   loadPlaidConnectionRowById,
   markPlaidConnectionErrorById,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
@@ -54,66 +56,68 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const row = await loadPlaidConnectionRowById(supabase, userId, connectionId);
-
-  if (!row || row.status === "disconnected") {
-    return NextResponse.json(
-      { ok: false, error: "item_not_found", status: "disconnected" },
-      { status: 400 },
+  try {
+    const connection = await loadPlaidConnectionRowById(
+      supabase,
+      userId,
+      connectionId,
     );
-  }
 
-  if (hasUsablePlaidCredentials(row)) {
-    const accessToken = decryptStoredAccessToken(row);
-
-    if (!accessToken) {
-      await markPlaidConnectionErrorById(
-        supabase,
-        userId,
-        connectionId,
-        "decryption_failed",
-        "reconnect_required",
-      );
+    if (!connection || !hasStoredPlaidAccessToken(connection)) {
       return NextResponse.json(
-        { ok: false, error: "decryption_failed", status: "reconnect_required" },
+        { ok: false, error: "invalid_request" },
+        { status: 404 },
+      );
+    }
+
+    if (connection.status !== "reconnect_required") {
+      return NextResponse.json(
+        { ok: false, error: "invalid_request" },
         { status: 400 },
       );
     }
 
-    try {
-      await removePlaidItem(accessToken);
-    } catch (caught) {
-      const code =
-        caught instanceof PlaidSafeError ? caught.code : "disconnect_failed";
-
-      const remoteItemAlreadyUnusable =
-        caught instanceof PlaidSafeError &&
-        caught.code === "token_not_repairable";
-
-      if (!remoteItemAlreadyUnusable) {
-        await markPlaidConnectionErrorById(
-          supabase,
-          userId,
-          connectionId,
-          code,
-          "error",
-        );
-
-        return NextResponse.json(
-          { ok: false, error: code, status: "error" },
-          { status: 400 },
-        );
-      }
+    const accessToken = decryptStoredAccessToken(connection);
+    if (!accessToken) {
+      return NextResponse.json(
+        { ok: false, error: "connection_failed" },
+        { status: 400 },
+      );
     }
-  }
 
-  try {
-    await disconnectPlaidConnectionById(supabase, userId, connectionId);
-    return NextResponse.json({ ok: true, status: "disconnected" });
-  } catch {
+    const tokenState = await classifyPlaidAccessTokenForUpdate(accessToken);
+    if (tokenState === "not_repairable") {
+      await markPlaidConnectionErrorById(
+        supabase,
+        userId,
+        connectionId,
+        "token_not_repairable",
+        "error",
+      );
+
+      return NextResponse.json(
+        { ok: false, error: "token_not_repairable" },
+        { status: 400 },
+      );
+    }
+
+    const { linkToken, expiration } = await createUpdateLinkToken(
+      userId,
+      accessToken,
+    );
+
+    return NextResponse.json({
+      ok: true,
+      linkToken,
+      expiration,
+    });
+  } catch (caught) {
+    const code =
+      caught instanceof PlaidSafeError ? caught.code : "connection_failed";
+
     return NextResponse.json(
-      { ok: false, error: "disconnect_failed" },
-      { status: 500 },
+      { ok: false, error: code },
+      { status: code === "not_configured" ? 500 : 400 },
     );
   }
 }
