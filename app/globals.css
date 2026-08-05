@@ -3072,6 +3072,44 @@ body {
   color: var(--navy-muted);
 }
 
+.jv-connection-meta--error {
+  color: var(--red-danger, #dc2626);
+}
+
+.jv-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.melusi-connection-details {
+  display: grid;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--navy-border);
+}
+
+.melusi-connection-details div {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.melusi-connection-details dt {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--navy-muted);
+}
+
+.melusi-connection-details dd {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+
 .jv-capabilities {
   margin-top: 0.5rem;
   padding-top: 0.625rem;

@@ -14,7 +14,7 @@ const MELUSI_NAV_LINKS: MelusiNavLink[] = [
   { href: "/melusi", label: "Overview", exact: true },
   { href: "/melusi/threads", label: "Threads", exact: false },
   { href: "/melusi#projects", label: "Projects", exact: false },
-  { href: "/melusi/social", label: "Social", comingSoon: true },
+  { href: "/melusi/social", label: "Social" },
   { href: "/melusi/revenue", label: "Revenue", comingSoon: true },
   { href: "/melusi/knowledge", label: "Knowledge", comingSoon: true },
 ];

@@ -18,6 +18,10 @@ import { findMelusiCommandThread } from "@/lib/jarvis/agents/agent-thread-tools"
 import { toChatInitialMessages } from "@/lib/jarvis/agents/load-agent-thread";
 import { loadMelusiCommandCenter } from "@/lib/jarvis/melusi/load-melusi-command-center";
 import {
+  loadSafeMetricoolConnection,
+  toCommandCenterStatus,
+} from "@/lib/jarvis/integrations/metricool/metricool-connection-tools";
+import {
   MELUSI_INTEGRATIONS,
   MELUSI_PRODUCT_LINES,
 } from "@/lib/jarvis/melusi/product-config";
@@ -100,16 +104,25 @@ function ConnectionStat({
   label,
   setupHint,
   href,
+  statusLabel,
+  connected = false,
 }: {
   label: string;
   setupHint: string;
   href: string | null;
+  statusLabel?: string;
+  connected?: boolean;
 }) {
   const content = (
     <>
-      <span className="melusi-stat-icon melusi-stat-icon--disconnected" aria-hidden="true" />
+      <span
+        className={`melusi-stat-icon${connected ? " melusi-stat-icon--real" : " melusi-stat-icon--disconnected"}`}
+        aria-hidden="true"
+      />
       <div className="cc-stat-body">
-        <span className="melusi-stat-status">Not connected</span>
+        <span className="melusi-stat-status">
+          {statusLabel ?? (connected ? "Connected" : "Not connected")}
+        </span>
         <span className="cc-stat-label">{label}</span>
         <span className="cc-stat-meta">{setupHint}</span>
       </div>
@@ -118,13 +131,22 @@ function ConnectionStat({
 
   if (href) {
     return (
-      <Link href={href} className="cc-stat melusi-stat melusi-stat--disconnected">
+      <Link
+        href={href}
+        className={`cc-stat melusi-stat${connected ? "" : " melusi-stat--disconnected"}`}
+      >
         {content}
       </Link>
     );
   }
 
-  return <div className="cc-stat melusi-stat melusi-stat--disconnected">{content}</div>;
+  return (
+    <div
+      className={`cc-stat melusi-stat${connected ? "" : " melusi-stat--disconnected"}`}
+    >
+      {content}
+    </div>
+  );
 }
 
 function RealStatCard({
@@ -200,10 +222,11 @@ export default async function MelusiPage({
     redirect("/login");
   }
 
-  const [data, dashboard, commandThread] = await Promise.all([
+  const [data, dashboard, commandThread, metricoolConnection] = await Promise.all([
     loadMelusiCommandCenter(supabase, userId),
     loadLifeAreaDashboard(supabase, userId, "melusi"),
     findMelusiCommandThread(supabase, userId),
+    loadSafeMetricoolConnection(supabase, userId),
   ]);
 
   const commandMessages = commandThread
@@ -218,6 +241,27 @@ export default async function MelusiPage({
 
   const revenueIntegration = MELUSI_INTEGRATIONS.find((i) => i.key === "revenue")!;
   const socialIntegration = MELUSI_INTEGRATIONS.find((i) => i.key === "social")!;
+  const socialCommandStatus = toCommandCenterStatus(metricoolConnection);
+  const socialStatusLabel =
+    socialCommandStatus === "connected"
+      ? "Connected"
+      : socialCommandStatus === "reconnect_required"
+        ? "Reconnect required"
+        : socialCommandStatus === "error"
+          ? "Error"
+          : socialCommandStatus === "connecting"
+            ? "Connecting"
+            : "Setup required";
+  const socialSetupHint =
+    socialCommandStatus === "connected"
+      ? "Metricool verified for Melusi read-only access."
+      : socialCommandStatus === "reconnect_required"
+        ? "Metricool authorization needs to be renewed."
+        : socialCommandStatus === "error"
+          ? "Metricool connection needs attention on the Social page."
+          : socialCommandStatus === "connecting"
+            ? "Metricool OAuth is in progress."
+            : socialIntegration.setupHint;
   const leadsIntegration = MELUSI_INTEGRATIONS.find((i) => i.key === "leads")!;
 
   return (
@@ -249,8 +293,10 @@ export default async function MelusiPage({
           />
           <ConnectionStat
             label={socialIntegration.label}
-            setupHint={socialIntegration.setupHint}
+            setupHint={socialSetupHint}
             href={socialIntegration.futureRoute}
+            statusLabel={socialStatusLabel}
+            connected={socialCommandStatus === "connected"}
           />
           <ConnectionStat
             label="New leads"
