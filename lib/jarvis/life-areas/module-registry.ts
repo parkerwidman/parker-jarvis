@@ -1,4 +1,9 @@
-export type LifeAreaModuleKey = "melusi" | "school" | "fitness" | "diet";
+export type LifeAreaModuleKey =
+  | "melusi"
+  | "school"
+  | "fitness"
+  | "diet"
+  | "finance";
 
 export type LifeAreaModuleAccent = "cyan" | "blue" | "green" | "amber";
 
@@ -47,6 +52,15 @@ const LIFE_AREA_MODULES: LifeAreaModuleConfig[] = [
     route: null,
     purpose: "Nutrition habits and meal planning support.",
     accent: "amber",
+    implemented: false,
+  },
+  {
+    key: "finance",
+    displayName: "Finance",
+    lifeAreaName: "Finance",
+    route: "/finance",
+    purpose: "Personal cash flow, accounts, and spending visibility.",
+    accent: "blue",
     implemented: false,
   },
 ];
