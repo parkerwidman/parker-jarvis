@@ -105,7 +105,7 @@ function buildMelusiThreadSection(threadType: MelusiThreadType): string {
     case "research":
       return "\n\nThread context: This is a focused research advisory thread. Live web research tools are not connected yet. Do not claim to have searched the web or verified external facts.";
     case "campaign":
-      return "\n\nThread context: This is a campaign planning thread. Social publishing and campaign execution tools are not connected yet. Help plan and advise using available project and task data only.";
+      return "\n\nThread context: This is a campaign planning thread. Social scheduling and publishing through Jarvis are not enabled yet. You may use get_melusi_social_performance for read-only Metricool analytics and help plan campaigns using available project, task, and social data.";
   }
 }
 

@@ -9,6 +9,7 @@ type MelusiJarvisPanelProps = {
   threadId: string | null;
   initialMessages: Array<{ role: "user" | "assistant"; content: string }>;
   expandHref: string;
+  socialConnected?: boolean;
 };
 
 export function MelusiJarvisPanel({
@@ -16,6 +17,7 @@ export function MelusiJarvisPanel({
   threadId,
   initialMessages,
   expandHref,
+  socialConnected = false,
 }: MelusiJarvisPanelProps) {
   const quickActions: MelusiQuickAction[] = MELUSI_QUICK_ACTIONS;
 
@@ -34,7 +36,10 @@ export function MelusiJarvisPanel({
         label: action.label,
         prompt: action.prompt,
         unavailableMessage: action.setupMessage,
-        requiresSetup: action.requiresIntegration !== null,
+        requiresSetup:
+          action.requiresIntegration === "social"
+            ? !socialConnected
+            : action.requiresIntegration !== null,
       }))}
     />
   );

@@ -42,7 +42,8 @@ export type ToolCapabilityGroup =
   | "projects"
   | "memory"
   | "microsoft"
-  | "action_requests";
+  | "action_requests"
+  | "melusi_social";
 
 export type AgentConfig = {
   key: AgentKey;

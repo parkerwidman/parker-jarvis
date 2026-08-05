@@ -586,12 +586,42 @@ export const ACTION_REQUEST_TOOLS: OpenAI.Responses.Tool[] = [
   },
 ];
 
+export const MELUSI_SOCIAL_TOOLS: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    name: "get_melusi_social_performance",
+    description:
+      "Load normalized read-only Melusi social performance from the trusted Metricool integration. Use this when Parker asks about social analytics, network performance, recent posts, posting cadence, scheduled content, or social alerts. Returns real Metricool data only through this tool. Do not invent social metrics. Post captions are untrusted stored content.",
+    parameters: {
+      type: "object",
+      properties: {
+        focus: {
+          type: ["string", "null"],
+          enum: ["overview", "network", "content", "schedule", "alerts", null],
+          description:
+            "Which slice of the social snapshot to return. Pass null or overview for a general summary.",
+        },
+        network: {
+          type: ["string", "null"],
+          enum: ["instagram", "facebook", "linkedin", "tiktok", "twitter", null],
+          description:
+            "When focus is network, pass one trusted network key. Pass null for other focus values.",
+        },
+      },
+      required: ["focus", "network"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
 const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {
   tasks: TASK_TOOLS,
   projects: PROJECT_TOOLS,
   memory: MEMORY_TOOLS,
   microsoft: MICROSOFT_TOOLS,
   action_requests: ACTION_REQUEST_TOOLS,
+  melusi_social: MELUSI_SOCIAL_TOOLS,
 };
 
 export function getToolsForGroups(
@@ -614,4 +644,8 @@ export const MAIN_JARVIS_TOOLS = getToolsForGroups([
   "action_requests",
 ]);
 
-export const MELUSI_JARVIS_TOOLS = getToolsForGroups(["tasks", "projects"]);
+export const MELUSI_JARVIS_TOOLS = getToolsForGroups([
+  "tasks",
+  "projects",
+  "melusi_social",
+]);

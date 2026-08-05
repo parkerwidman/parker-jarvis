@@ -241,7 +241,7 @@ function collectBrandCandidates(payload: unknown): Record<string, unknown>[] {
   return [];
 }
 
-function parseToolResultPayload(result: unknown): unknown {
+export function parseToolResultPayload(result: unknown): unknown {
   if (!result || typeof result !== "object") {
     return result;
   }

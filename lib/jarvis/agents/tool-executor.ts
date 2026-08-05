@@ -30,6 +30,7 @@ import {
   createMelusiProjectUpdate,
   listMelusiProjectUpdates,
 } from "@/lib/jarvis/projects/project-update-tools";
+import { getMelusiSocialPerformance } from "@/lib/jarvis/melusi/melusi-social-tools";
 import { logAssistantError } from "./agent-diagnostics";
 
 function nullableString(value: unknown): string | null {
@@ -272,6 +273,13 @@ export async function executeJarvisTool(
             timeZone: String(args.timeZone ?? ""),
             locationName: nullableString(args.locationName),
             notes: nullableString(args.notes),
+          }),
+        );
+      case "get_melusi_social_performance":
+        return JSON.stringify(
+          await getMelusiSocialPerformance(supabase, userId, {
+            focus: args.focus,
+            network: args.network,
           }),
         );
       default:

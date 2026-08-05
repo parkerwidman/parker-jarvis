@@ -7,6 +7,9 @@ export const TRUSTED_BRAND_ID = "6543911";
 export const TRUSTED_BRAND_LABEL = "melusiai";
 export const TRUSTED_BRAND_TIMEZONE = "America/Chicago";
 
+/** First date with meaningful Metricool history for Melusi — server-side only. */
+export const METRICOOL_BRAND_HISTORY_START = "2026-07-12";
+
 export const EXPECTED_CONNECTED_NETWORKS = [
   "instagram",
   "facebook",

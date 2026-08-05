@@ -121,10 +121,11 @@ export const MELUSI_QUICK_ACTIONS: MelusiQuickAction[] = [
   {
     id: "review-social",
     label: "Review social performance",
-    prompt: "Review Melusi social performance.",
+    prompt:
+      "Use get_melusi_social_performance with an overview focus to review Melusi's real Metricool social performance. Summarize network highlights, cadence, upcoming schedule, and the most important deterministic alerts. Distinguish facts from recommendations.",
     requiresIntegration: "social",
     setupMessage:
-      "Social analytics are not connected yet. Connect Metricool or social platforms to review performance data.",
+      "Connect Metricool on the Social Command Center page to review live social analytics.",
   },
   {
     id: "analyze-revenue",

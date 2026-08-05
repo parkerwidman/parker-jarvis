@@ -22,6 +22,10 @@ import {
   toCommandCenterStatus,
 } from "@/lib/jarvis/integrations/metricool/metricool-connection-tools";
 import {
+  loadMetricoolSocialDashboard,
+  toSocialCommandCenterSummary,
+} from "@/lib/jarvis/integrations/metricool/metricool-social-dashboard";
+import {
   MELUSI_INTEGRATIONS,
   MELUSI_PRODUCT_LINES,
 } from "@/lib/jarvis/melusi/product-config";
@@ -229,6 +233,19 @@ export default async function MelusiPage({
     loadSafeMetricoolConnection(supabase, userId),
   ]);
 
+  const socialConnected = metricoolConnection.status === "connected";
+  const socialDashboard = socialConnected
+    ? await loadMetricoolSocialDashboard(
+        supabase,
+        userId,
+        process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+      )
+    : null;
+  const socialSummary =
+    socialDashboard?.ok === true
+      ? toSocialCommandCenterSummary(socialDashboard.snapshot)
+      : null;
+
   const commandMessages = commandThread
     ? toChatInitialMessages(
         await loadRecentThreadMessages(supabase, userId, commandThread.id),
@@ -254,7 +271,9 @@ export default async function MelusiPage({
             : "Setup required";
   const socialSetupHint =
     socialCommandStatus === "connected"
-      ? "Metricool verified for Melusi read-only access."
+      ? socialSummary
+        ? `${socialSummary.recentPublicationCount} recent posts · ${socialSummary.alertCount} important alerts`
+        : "Metricool verified for Melusi read-only access."
       : socialCommandStatus === "reconnect_required"
         ? "Metricool authorization needs to be renewed."
         : socialCommandStatus === "error"
@@ -362,10 +381,52 @@ export default async function MelusiPage({
             threadId={commandThread?.id ?? null}
             initialMessages={commandMessages}
             expandHref={expandHref}
+            socialConnected={socialConnected}
           />
 
           <div className="cc-dashboard-grid melusi-dashboard-grid">
             <div className="cc-dashboard-col">
+              {socialConnected && socialSummary ? (
+                <Panel
+                  title="Social Command Center"
+                  href="/melusi/social"
+                  hrefLabel="Open social dashboard"
+                  accent="purple"
+                >
+                  <ul className="social-overview-list">
+                    <li>
+                      <span>Connection</span>
+                      <strong>Connected</strong>
+                    </li>
+                    <li>
+                      <span>Static cadence</span>
+                      <strong>{socialSummary.cadenceStaticPace ?? "—"}</strong>
+                    </li>
+                    <li>
+                      <span>Reel cadence</span>
+                      <strong>{socialSummary.cadenceReelPace ?? "—"}</strong>
+                    </li>
+                    <li>
+                      <span>Important alerts</span>
+                      <strong>{socialSummary.alertCount}</strong>
+                    </li>
+                    <li>
+                      <span>Recent publications</span>
+                      <strong>{socialSummary.recentPublicationCount}</strong>
+                    </li>
+                    <li>
+                      <span>Upcoming scheduled</span>
+                      <strong>{socialSummary.upcomingScheduledCount}</strong>
+                    </li>
+                  </ul>
+                  {socialSummary.refreshedAt ? (
+                    <p className="cc-empty social-overview-refreshed">
+                      Refreshed{" "}
+                      {formatActivityTime(socialSummary.refreshedAt, data.timezone)}
+                    </p>
+                  ) : null}
+                </Panel>
+              ) : null}
               <Panel
                 title="Recommended actions"
                 href="/melusi/threads"
