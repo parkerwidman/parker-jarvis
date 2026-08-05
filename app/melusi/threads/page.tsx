@@ -3,7 +3,6 @@ import { MelusiNav } from "@/components/melusi/melusi-nav";
 import {
   JarvisAlert,
   JarvisButton,
-  JarvisCard,
   JarvisEmptyState,
   JarvisField,
   JarvisPageContent,
@@ -28,9 +27,7 @@ function formatRelativeTime(isoString: string | null, timeZone: string): string 
     return "No messages yet";
   }
 
-  const date = new Date(isoString);
-
-  return date.toLocaleString("en-US", {
+  return new Date(isoString).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -86,15 +83,14 @@ export default async function MelusiThreadsPage({
 
   return (
     <JarvisAppShell mainClassName="app-main--command-center">
-      <JarvisPageContent className="jv-page-content--melusi">
-        <header className="melusi-header">
-          <div className="melusi-header-copy">
-            <Link href="/melusi" className="jv-back-link">
-              ← Melusi Command Center
-            </Link>
-            <h1 className="melusi-title">Melusi Threads</h1>
-            <p className="melusi-subtitle">
-              Command, research, and campaign conversations with Melusi Jarvis.
+      <JarvisPageContent className="jv-page-content--melusi-command melusi-workspace">
+        <header className="melusi-dash-header melusi-subpage-header">
+          <div className="melusi-dash-header-main">
+            <h1 className="melusi-dash-title">
+              Melusi <span>Threads</span>
+            </h1>
+            <p className="melusi-dash-descriptor">
+              Command, research, and campaign conversations
             </p>
           </div>
         </header>
@@ -106,32 +102,27 @@ export default async function MelusiThreadsPage({
         ) : null}
         {error ? <JarvisAlert variant="error">{error}</JarvisAlert> : null}
 
-        <section className="melusi-threads-grid">
-          <JarvisCard title="Command conversation" accent="cyan">
-            <p className="cc-empty">
-              Your primary Melusi command thread opens from the command center
-              or here when you send the first message.
-            </p>
-            {commandThread ? (
-              <Link
-                href={`/melusi/threads/${commandThread.id}`}
-                className="cc-card-link"
-              >
-                Open command thread →
-              </Link>
-            ) : (
-              <Link href="/melusi" className="cc-card-link">
-                Open Melusi Command Center →
-              </Link>
-            )}
-          </JarvisCard>
+        <section className="melusi-threads-actions" aria-label="Thread actions">
+          <Link
+            href={
+              commandThread
+                ? `/melusi/threads/${commandThread.id}`
+                : "/melusi"
+            }
+            className="melusi-thread-action melusi-thread-action--primary"
+          >
+            <span className="melusi-thread-action-label">Command conversation</span>
+            <span className="melusi-thread-action-meta">
+              {commandThread ? "Open primary thread" : "Start from overview"}
+            </span>
+          </Link>
 
-          <JarvisCard title="New research thread" accent="cyan">
-            <p className="cc-empty">
-              Focused advisory conversations. Live web research is not connected
-              yet.
-            </p>
-            <form action={createMelusiResearchThread} className="jv-form">
+          <details className="melusi-thread-action-details">
+            <summary className="melusi-thread-action">
+              <span className="melusi-thread-action-label">New research thread</span>
+              <span className="melusi-thread-action-meta">Focused advisory chat</span>
+            </summary>
+            <form action={createMelusiResearchThread} className="melusi-thread-create-form">
               <JarvisField label="Thread name">
                 <input
                   type="text"
@@ -146,14 +137,14 @@ export default async function MelusiThreadsPage({
                 Create research thread
               </JarvisButton>
             </form>
-          </JarvisCard>
+          </details>
 
-          <JarvisCard title="New campaign thread" accent="cyan">
-            <p className="cc-empty">
-              Campaign planning conversations. Publishing tools are not connected
-              yet.
-            </p>
-            <form action={createMelusiCampaignThread} className="jv-form">
+          <details className="melusi-thread-action-details">
+            <summary className="melusi-thread-action">
+              <span className="melusi-thread-action-label">New campaign thread</span>
+              <span className="melusi-thread-action-meta">Campaign planning chat</span>
+            </summary>
+            <form action={createMelusiCampaignThread} className="melusi-thread-create-form">
               <JarvisField label="Thread name">
                 <input
                   type="text"
@@ -168,16 +159,16 @@ export default async function MelusiThreadsPage({
                 Create campaign thread
               </JarvisButton>
             </form>
-          </JarvisCard>
+          </details>
         </section>
 
         <section className="melusi-thread-list-section" aria-label="Recent threads">
-          <h2 className="jv-section-label">Recent threads</h2>
+          <h2 className="melusi-section-title">Recent threads</h2>
 
           {threads.length > 0 ? (
-            <ul className="melusi-thread-list">
+            <ul className="melusi-thread-list melusi-thread-list--compact">
               {threads.map((thread) => (
-                <li key={thread.id} className="melusi-thread-item">
+                <li key={thread.id} className="melusi-thread-item melusi-thread-item--compact">
                   <div className="melusi-thread-main">
                     <div className="melusi-thread-heading">
                       <Link
@@ -191,14 +182,13 @@ export default async function MelusiThreadsPage({
                       </span>
                     </div>
                     <p className="melusi-thread-meta">
-                      Last activity:{" "}
                       {formatRelativeTime(thread.lastMessageAt, timeZone)}
                     </p>
                   </div>
                   {thread.threadType !== "command" ? (
                     <form action={archiveMelusiThreadAction}>
                       <input type="hidden" name="threadId" value={thread.id} />
-                      <JarvisButton type="submit" variant="secondary">
+                      <JarvisButton type="submit" variant="secondary" className="melusi-thread-archive">
                         Archive
                       </JarvisButton>
                     </form>
@@ -209,7 +199,7 @@ export default async function MelusiThreadsPage({
           ) : (
             <JarvisEmptyState
               title="No threads yet"
-              description="Send a message in the Melusi Command Center or create a research or campaign thread above."
+              description="Open the command conversation or create a research or campaign thread above."
             />
           )}
         </section>

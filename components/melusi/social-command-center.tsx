@@ -13,17 +13,20 @@ import type {
   SocialContentType,
 } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
 import type { SocialNetworkKey } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
+import type { MetricoolSafeConnection } from "@/lib/jarvis/integrations/metricool/metricool-types";
 import { NETWORK_DISPLAY_NAMES } from "@/lib/jarvis/integrations/metricool/metricool-social-display";
 import { MetricoolConnectionActions } from "@/components/melusi/metricool-connection-panel";
 import { JarvisAlert, JarvisCard } from "@/components/jarvis/jarvis-ui";
 
 type SocialCommandCenterProps = {
+  connection: MetricoolSafeConnection;
   snapshot: SocialCommandCenterSnapshot | null;
   loadError: string | null;
   timeZone: string;
   canVerify: boolean;
   canDisconnect: boolean;
   canReconnect: boolean;
+  showConnectionRecovery?: boolean;
 };
 
 const NETWORK_FILTERS: Array<{ value: "all" | SocialNetworkKey; label: string }> =
@@ -112,7 +115,7 @@ function alertBadgeClass(category: SocialAlert["category"]): string {
 function ConnectionHealthBadge({
   status,
 }: {
-  status: SocialCommandCenterSnapshot["connection"]["status"];
+  status: MetricoolSafeConnection["status"];
 }) {
   const label =
     status === "connected"
@@ -289,18 +292,22 @@ function ScheduledCard({
 }
 
 export function SocialCommandCenter({
+  connection,
   snapshot,
   loadError,
   timeZone,
   canVerify,
   canDisconnect,
   canReconnect,
+  showConnectionRecovery = false,
 }: SocialCommandCenterProps) {
   const router = useRouter();
   const [networkFilter, setNetworkFilter] = useState<"all" | SocialNetworkKey>("all");
   const [contentFilter, setContentFilter] = useState<"all" | SocialContentType>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   const filteredPosts = useMemo(() => {
     if (!snapshot) {
@@ -319,6 +326,37 @@ export function SocialCommandCenter({
       return true;
     });
   }, [snapshot, networkFilter, contentFilter]);
+
+  async function handleRecoverConnection() {
+    if (recovering) {
+      return;
+    }
+
+    setRecovering(true);
+    setRecoveryError(null);
+
+    try {
+      const response = await fetch("/api/integrations/metricool/recover", {
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        status?: string;
+      };
+
+      if (!response.ok && payload.error === "not_recoverable") {
+        setRecoveryError("This Metricool connection is not in a recoverable state.");
+        return;
+      }
+
+      router.refresh();
+    } catch {
+      setRecoveryError("Could not recover the saved Metricool connection.");
+    } finally {
+      setRecovering(false);
+    }
+  }
 
   async function handleRefresh() {
     if (refreshing) {
@@ -355,188 +393,160 @@ export function SocialCommandCenter({
       (alert) => alert.category === "error" || alert.category === "warning",
     ) ?? [];
 
+  const isConnected = connection.status === "connected";
+  const isConnecting = connection.status === "connecting";
+  const needsReconnect =
+    connection.status === "reconnect_required" || connection.status === "error";
+  const showInterruptedConnection = showConnectionRecovery && isConnecting;
+
+  const analyticsUnavailable = Boolean(
+    isConnected && (loadError || snapshot?.refreshFailed),
+  );
+  const analyticsLoaded = Boolean(
+    isConnected && snapshot && !snapshot.refreshFailed,
+  );
+
+  const connectionPanel = (
+    <section className="social-connection-compact">
+      <div className="social-connection-compact-main">
+        <h2>Metricool connection</h2>
+        <ConnectionHealthBadge status={connection.status} />
+        {isConnected ? (
+          <p className="social-connection-copy">
+            Verified read-only access for {connection.brandLabel ?? "melusiai"}.
+            {connection.connectedNetworks.length > 0
+              ? ` ${connection.connectedNetworks.length} connected network${connection.connectedNetworks.length === 1 ? "" : "s"}.`
+              : null}
+          </p>
+        ) : showInterruptedConnection ? (
+          <p className="social-connection-copy">
+            The previous Metricool authorization did not finish. Check whether your
+            saved connection is still valid before reconnecting.
+          </p>
+        ) : isConnecting ? (
+          <p className="social-connection-copy">
+            OAuth authorization is in progress. Complete Metricool sign-in if
+            prompted.
+          </p>
+        ) : needsReconnect ? (
+          <p className="social-connection-copy">
+            Metricool authorization needs to be renewed before analytics can
+            refresh.
+          </p>
+        ) : (
+          <p className="social-connection-copy">
+            Connect Metricool to load live social analytics for the trusted Melusi
+            brand.
+          </p>
+        )}
+      </div>
+      <div className="social-connection-compact-actions">
+        <MetricoolConnectionActions
+          canVerify={canVerify}
+          canDisconnect={canDisconnect}
+          canReconnect={canReconnect}
+          canRecover={showInterruptedConnection}
+          onRecover={handleRecoverConnection}
+          recoverPending={recovering}
+        />
+        {connection.status === "disconnected" ? (
+          <a
+            href="/api/integrations/metricool/connect"
+            className="jv-btn jv-btn--primary jv-btn--inline"
+          >
+            Connect Metricool
+          </a>
+        ) : null}
+        {recoveryError ? (
+          <p className="jv-connection-meta jv-connection-meta--error">{recoveryError}</p>
+        ) : null}
+        <button
+          type="button"
+          className="jv-btn jv-btn--secondary"
+          onClick={handleRefresh}
+          disabled={refreshing || !isConnected}
+        >
+          {refreshing ? "Refreshing…" : "Refresh analytics"}
+        </button>
+      </div>
+    </section>
+  );
+
   return (
     <div className="social-command-center">
-      <header className="social-header">
+      <header className="social-header melusi-subpage-header">
         <div className="social-header-copy">
-          <Link href="/melusi" className="jv-back-link">
-            ← Melusi Command Center
-          </Link>
           <div className="social-header-title-row">
-            <h1 className="melusi-title">Social Command Center</h1>
+            <h1 className="melusi-dash-title">Social <span>Command Center</span></h1>
             <span className="social-readonly-badge">Read-only</span>
           </div>
-          <p className="melusi-subtitle">
-            Live Metricool analytics for Melusi&apos;s trusted brand. Scheduling
-            and publishing are not enabled in this step.
+          <p className="melusi-dash-descriptor">
+            Live Metricool analytics for Melusi&apos;s trusted brand
           </p>
-        </div>
-        <div className="social-header-actions">
-          {snapshot ? (
-            <ConnectionHealthBadge status={snapshot.connection.status} />
-          ) : null}
-          <button
-            type="button"
-            className="jv-btn jv-btn--secondary"
-            onClick={handleRefresh}
-            disabled={refreshing || snapshot?.connection.status !== "connected"}
-          >
-            {refreshing ? "Refreshing…" : "Refresh analytics"}
-          </button>
         </div>
       </header>
 
       {loadError ? <JarvisAlert variant="error">{loadError}</JarvisAlert> : null}
       {refreshError ? <JarvisAlert variant="error">{refreshError}</JarvisAlert> : null}
-      {snapshot?.limitedHistory && snapshot.limitedHistoryDetail ? (
+      {snapshot?.limitedHistory && snapshot.limitedHistoryDetail && analyticsLoaded ? (
         <JarvisAlert variant="info">{snapshot.limitedHistoryDetail}</JarvisAlert>
       ) : null}
 
-      <section className="social-summary-grid">
-        <JarvisCard title="Metricool connection" accent="purple">
-          {snapshot?.connection.status === "connected" ? (
-            <div className="social-connection-panel">
-              <ConnectionHealthBadge status={snapshot.connection.status} />
-              <p className="jv-connection-meta">
-                Verified read-only access for {snapshot.connection.brandLabel ?? "melusiai"}.
-              </p>
-              <dl className="melusi-connection-details">
-                <div>
-                  <dt>Last verified</dt>
-                  <dd>
-                    {formatDateTime(snapshot.connection.lastVerifiedAt, timeZone)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Latest refresh</dt>
-                  <dd>{formatDateTime(snapshot.refreshedAt, timeZone)}</dd>
-                </div>
-                <div>
-                  <dt>Connected networks</dt>
-                  <dd>{snapshot.connection.connectedNetworks.join(", ") || "—"}</dd>
-                </div>
-              </dl>
-              <MetricoolConnectionActions
-                canVerify={canVerify}
-                canDisconnect={canDisconnect}
-                canReconnect={canReconnect}
-              />
-            </div>
-          ) : (
-            <div className="social-connection-panel">
-              <ConnectionHealthBadge
-                status={snapshot?.connection.status ?? "disconnected"}
-              />
-              <p className="jv-connection-meta">
-                Connect Metricool to load live social analytics for the trusted
-                Melusi brand.
-              </p>
-              <MetricoolConnectionActions
-                canVerify={canVerify}
-                canDisconnect={canDisconnect}
-                canReconnect={canReconnect}
-              />
-              {!canReconnect && !canVerify ? (
-                <a
-                  href="/api/integrations/metricool/connect"
-                  className="jv-btn jv-btn--primary jv-btn--inline"
-                >
-                  Connect Metricool
-                </a>
-              ) : null}
-            </div>
-          )}
-        </JarvisCard>
+      {connectionPanel}
 
-        <JarvisCard title="Posting cadence" accent="blue">
-          {snapshot ? (
-            <div className="social-cadence-panel">
-              <div className="social-cadence-row">
-                <span>Static posts</span>
-                <strong>
-                  {snapshot.cadence.staticActual} / {snapshot.cadence.staticTarget}
-                </strong>
-                <span>{paceLabel(snapshot.cadence.staticPace)}</span>
-              </div>
-              <div className="social-cadence-row">
-                <span>Reels / short-form</span>
-                <strong>
-                  {snapshot.cadence.reelActual} / {snapshot.cadence.reelTarget}
-                </strong>
-                <span>{paceLabel(snapshot.cadence.reelPace)}</span>
-              </div>
-              <p className="social-panel-note">
-                {snapshot.cadence.countingMethod === "unique_content"
-                  ? "Unique core content items when planner relationships were available."
-                  : "Platform publications — unique content relationships could not be established reliably."}
-              </p>
-              <ul className="social-limitations-list">
-                {snapshot.cadence.limitations.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="cc-empty">Connect Metricool to calculate posting cadence.</p>
-          )}
-        </JarvisCard>
+      {analyticsUnavailable ? (
+        <section className="social-unavailable-state">
+          <h2>Analytics unavailable</h2>
+          <p>
+            Social analytics could not be loaded. Connection status is shown above.
+            Retry refresh after verifying Metricool access — unavailable sections are
+            hidden so failed data is not shown as zero performance.
+          </p>
+        </section>
+      ) : null}
 
-        <JarvisCard title="Recent published content" accent="green">
-          {snapshot ? (
-            <div className="social-summary-stat">
-              <span className="cc-stat-value">{snapshot.recentPosts.length}</span>
-              <span className="cc-stat-meta">{snapshot.recentContentPeriodLabel}</span>
-            </div>
-          ) : (
-            <p className="cc-empty">No recent content loaded.</p>
-          )}
-        </JarvisCard>
+      {!analyticsLoaded && !analyticsUnavailable && !isConnecting ? (
+        <section className="social-unavailable-state">
+          <h2>Social analytics not connected</h2>
+          <p>
+            Connect and verify Metricool to load network performance, content
+            analysis, and schedule data.
+          </p>
+        </section>
+      ) : null}
 
-        <JarvisCard title="Upcoming scheduled content" accent="amber">
-          {snapshot ? (
-            snapshot.upcomingScheduled.length > 0 ? (
-              <div className="social-summary-stat">
-                <span className="cc-stat-value">
-                  {snapshot.upcomingScheduled.length}
-                </span>
-                <span className="cc-stat-meta">
-                  {snapshot.upcomingSchedulePeriodLabel}
-                </span>
-              </div>
-            ) : (
-              <p className="cc-empty">No upcoming posts scheduled</p>
-            )
-          ) : (
-            <p className="cc-empty">Schedule data unavailable.</p>
-          )}
-        </JarvisCard>
+      {analyticsLoaded && snapshot ? (
+        <section className="social-summary-strip" aria-label="Social summary">
+          <div className="social-summary-cell">
+            <span>Static cadence</span>
+            <strong>
+              {snapshot.cadence.staticActual}/{snapshot.cadence.staticTarget}
+            </strong>
+            <em>{paceLabel(snapshot.cadence.staticPace)}</em>
+          </div>
+          <div className="social-summary-cell">
+            <span>Reel cadence</span>
+            <strong>
+              {snapshot.cadence.reelActual}/{snapshot.cadence.reelTarget}
+            </strong>
+            <em>{paceLabel(snapshot.cadence.reelPace)}</em>
+          </div>
+          <div className="social-summary-cell">
+            <span>Recent posts</span>
+            <strong>{snapshot.recentPosts.length}</strong>
+          </div>
+          <div className="social-summary-cell">
+            <span>Scheduled</span>
+            <strong>{snapshot.upcomingScheduled.length}</strong>
+          </div>
+          <div className="social-summary-cell">
+            <span>Alerts</span>
+            <strong>{importantAlerts.length}</strong>
+          </div>
+        </section>
+      ) : null}
 
-        <JarvisCard title="Important social alerts" accent="amber">
-          {snapshot ? (
-            importantAlerts.length > 0 ? (
-              <ul className="social-alert-list">
-                {importantAlerts.slice(0, 4).map((alert) => (
-                  <li key={alert.id} className="social-alert-item">
-                    <span className={alertBadgeClass(alert.category)}>
-                      {alert.category}
-                    </span>
-                    <div>
-                      <span className="social-alert-title">{alert.title}</span>
-                      <p className="social-alert-detail">{alert.detail}</p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="cc-empty">No important alerts right now.</p>
-            )
-          ) : (
-            <p className="cc-empty">Alerts unavailable.</p>
-          )}
-        </JarvisCard>
-      </section>
-
-      {snapshot ? (
+      {analyticsLoaded && snapshot ? (
         <>
           <section className="social-section">
             <div className="social-section-header">

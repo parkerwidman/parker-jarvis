@@ -7,16 +7,22 @@ type MetricoolConnectionActionsProps = {
   canVerify: boolean;
   canDisconnect: boolean;
   canReconnect: boolean;
+  canRecover?: boolean;
+  onRecover?: () => Promise<void>;
+  recoverPending?: boolean;
 };
 
 export function MetricoolConnectionActions({
   canVerify,
   canDisconnect,
   canReconnect,
+  canRecover = false,
+  onRecover,
+  recoverPending = false,
 }: MetricoolConnectionActionsProps) {
   const router = useRouter();
   const [pendingAction, setPendingAction] = useState<
-    "verify" | "disconnect" | null
+    "verify" | "disconnect" | "recover" | null
   >(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -67,8 +73,38 @@ export function MetricoolConnectionActions({
     }
   }
 
+  async function handleRecover() {
+    if (!onRecover) {
+      return;
+    }
+
+    setPendingAction("recover");
+    setActionError(null);
+
+    try {
+      await onRecover();
+    } catch {
+      setActionError("Could not recover the saved Metricool connection.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   return (
     <div className="jv-connection-actions">
+      {canRecover ? (
+        <button
+          type="button"
+          className="jv-btn jv-btn--primary"
+          onClick={handleRecover}
+          disabled={pendingAction !== null || recoverPending}
+        >
+          {pendingAction === "recover" || recoverPending
+            ? "Checking saved connection…"
+            : "Check saved connection"}
+        </button>
+      ) : null}
+
       {canReconnect ? (
         <a
           href="/api/integrations/metricool/connect"

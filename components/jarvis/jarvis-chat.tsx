@@ -79,6 +79,7 @@ type JarvisChatProps = {
   welcomeHint?: string;
   promptChips?: PromptChip[];
   compactStatusLine?: string;
+  deferCompactHistory?: boolean;
 };
 
 function JarvisCore({ size }: { size: "sm" | "md" | "lg" }) {
@@ -134,6 +135,7 @@ export function JarvisChat({
   welcomeHint,
   promptChips,
   compactStatusLine,
+  deferCompactHistory = false,
 }: JarvisChatProps) {
   const isCompact = variant === "compact";
   const isEmbedded = variant === "embedded" || isCompact;
@@ -141,8 +143,13 @@ export function JarvisChat({
   const jarvisContext = useOptionalJarvisContext();
   const conversationKey = getConversationKey(agentKey, initialThreadId);
   const initializedConversationKeyRef = useRef<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>(() =>
+  const deferredMessagesRef = useRef<Message[]>(
     normalizeMessages(initialMessages ?? EMPTY_MESSAGES),
+  );
+  const [messages, setMessages] = useState<Message[]>(() =>
+    deferCompactHistory && isCompact
+      ? EMPTY_MESSAGES
+      : normalizeMessages(initialMessages ?? EMPTY_MESSAGES),
   );
   const [threadId, setThreadId] = useState<string | null>(initialThreadId);
   const [input, setInput] = useState("");
@@ -166,12 +173,37 @@ export function JarvisChat({
     initializedConversationKeyRef.current = conversationKey;
 
     const normalized = normalizeMessages(initialMessages ?? EMPTY_MESSAGES);
+    deferredMessagesRef.current = normalized;
+
+    if (deferCompactHistory && isCompact && !isExpanded) {
+      setMessages((current) =>
+        current.length === 0 ? current : EMPTY_MESSAGES,
+      );
+      setThreadId(initialThreadId);
+      return;
+    }
 
     setMessages((current) =>
       messagesEqual(current, normalized) ? current : normalized,
     );
     setThreadId(initialThreadId);
-  }, [conversationKey]);
+  }, [conversationKey, deferCompactHistory, initialMessages, initialThreadId, isCompact, isExpanded]);
+
+  function handleCompactExpand() {
+    if (deferCompactHistory && messages.length === 0) {
+      setMessages(deferredMessagesRef.current);
+    }
+
+    setIsExpanded(true);
+  }
+
+  function handleCompactCollapse() {
+    setIsExpanded(false);
+
+    if (deferCompactHistory) {
+      setMessages(EMPTY_MESSAGES);
+    }
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -393,10 +425,16 @@ export function JarvisChat({
   if (isCompact && !isExpanded && messages.length === 0 && !loading) {
     return (
       <section
-        className="jarvis-panel jarvis-panel--compact"
+        className={`jarvis-panel jarvis-panel--compact${agentKey === "melusi" ? " jarvis-panel--melusi-compact" : ""}`}
         aria-label={`${displayName} assistant`}
       >
         <div className="jarvis-compact-inner">
+          <div className="jarvis-compact-heading">
+            <span className="jarvis-compact-label">{displayName}</span>
+            <Link href={expandTarget} className="jarvis-compact-full-link">
+              Full assistant
+            </Link>
+          </div>
           <p className="jarvis-compact-status">
             {compactStatusLine ??
               "Ask Jarvis about tasks, schedule, goals, and planning."}
@@ -432,7 +470,7 @@ export function JarvisChat({
             <button
               type="button"
               className="jarvis-compact-expand"
-              onClick={() => setIsExpanded(true)}
+              onClick={handleCompactExpand}
               aria-label="Expand Jarvis conversation"
             >
               <ExpandIcon />
@@ -490,7 +528,7 @@ export function JarvisChat({
         <button
           type="button"
           className="jarvis-expand-link jarvis-expand-link--button jarvis-collapse-link"
-          onClick={() => setIsExpanded(false)}
+          onClick={handleCompactCollapse}
           aria-label="Collapse Jarvis conversation"
         >
           Collapse

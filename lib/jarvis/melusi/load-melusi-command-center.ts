@@ -1,19 +1,31 @@
 import "server-only";
 
 import { loadLifeAreaDashboard } from "@/lib/jarvis/life-areas/load-life-area-dashboard";
+import {
+  buildMelusiCommandCenterView,
+  type MelusiActiveProject,
+  type MelusiAttentionItem,
+  type MelusiBusinessPriority,
+  type MelusiSnapshotItem,
+  type MelusiTaskGroups,
+} from "@/lib/jarvis/melusi/build-melusi-command-center-view";
+import type { SocialCommandCenterSummary } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
+import {
+  formatLocalDateLabel,
+  getLocalDateFromIso,
+  getLocalDateString,
+  resolveTimeZone,
+} from "@/lib/jarvis/dashboard/command-center-utils";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const DEFAULT_TIMEZONE = "America/Chicago";
-const MAX_TASKS = 6;
-const MAX_APPROVALS = 3;
-const MAX_UPDATES = 8;
-const MAX_RECOMMENDATIONS = 5;
+const MAX_APPROVALS = 5;
+const MAX_UPDATES = 20;
 
 type ActionRequestRow = {
   id: string;
   title: string;
   summary: string;
-  created_at: string;
+  risk_level: string | null;
 };
 
 type ProjectUpdateRow = {
@@ -22,7 +34,6 @@ type ProjectUpdateRow = {
   update_type: string;
   content: string;
   created_at: string;
-  projects: { name: string }[] | null;
 };
 
 type ProjectRow = {
@@ -31,6 +42,7 @@ type ProjectRow = {
   status: string;
   priority: string;
   due_at: string | null;
+  updated_at: string;
 };
 
 type TaskRow = {
@@ -39,42 +51,8 @@ type TaskRow = {
   priority: string;
   due_at: string | null;
   status: string;
-};
-
-export type MelusiCommandCenterTask = {
-  id: string;
-  title: string;
-  priority: string;
-  dueAt: string | null;
-  overdue: boolean;
-};
-
-export type MelusiCommandCenterApproval = {
-  id: string;
-  title: string;
-  summary: string;
-};
-
-export type MelusiCommandCenterActivity = {
-  id: string;
-  projectName: string;
-  updateType: string;
-  content: string;
-  createdAt: string;
-};
-
-export type MelusiCommandCenterAlert = {
-  id: string;
-  kind: "blocker" | "overdue" | "approval";
-  title: string;
-  detail: string;
-};
-
-export type MelusiCommandCenterRecommendation = {
-  id: string;
-  kind: "deterministic" | "recorded";
-  title: string;
-  detail: string;
+  created_at: string;
+  project_id: string | null;
 };
 
 export type MelusiCommandCenterData = {
@@ -82,86 +60,23 @@ export type MelusiCommandCenterData = {
   timezone: string;
   todayDate: string;
   todayDateLabel: string;
-  counts: {
-    activeProjects: number;
-    unfinishedTasks: number;
-    overdueTasks: number;
-    pendingApprovals: number;
-    blockers: number;
-  };
-  tasks: MelusiCommandCenterTask[];
-  approvals: MelusiCommandCenterApproval[];
-  alerts: MelusiCommandCenterAlert[];
-  recommendations: MelusiCommandCenterRecommendation[];
-  recentActivity: MelusiCommandCenterActivity[];
-  projects: Array<{
-    id: string;
-    name: string;
-    status: string;
-    priority: string;
-    dueAt: string | null;
-  }>;
+  businessPriority: MelusiBusinessPriority;
+  taskGroups: MelusiTaskGroups;
+  snapshotItems: MelusiSnapshotItem[];
+  activeProjects: MelusiActiveProject[];
+  attentionItems: MelusiAttentionItem[];
+  headerStatus: string;
+  businessContextLine: string;
 };
-
-function isValidTimeZone(timeZone: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveTimeZone(profileTimezone: string | null | undefined): string {
-  const candidate = profileTimezone?.trim();
-  if (candidate && isValidTimeZone(candidate)) {
-    return candidate;
-  }
-  return DEFAULT_TIMEZONE;
-}
-
-function getLocalDateString(timeZone: string, now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-}
-
-function getLocalDateFromIso(isoString: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(isoString));
-}
-
-function isTaskOverdue(
-  dueAt: string | null,
-  todayLocal: string,
-  timeZone: string,
-): boolean {
-  if (!dueAt) {
-    return false;
-  }
-  return getLocalDateFromIso(dueAt, timeZone) < todayLocal;
-}
-
-function formatTodayLabel(timeZone: string, now = new Date()): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(now);
-}
 
 export async function loadMelusiCommandCenter(
   supabase: SupabaseClient,
   userId: string,
+  socialInput?: {
+    summary: SocialCommandCenterSummary | null;
+    connected: boolean;
+    status: string;
+  },
 ): Promise<MelusiCommandCenterData> {
   const [{ data: profileRow }, dashboard] = await Promise.all([
     supabase
@@ -177,8 +92,8 @@ export async function loadMelusiCommandCenter(
   const preferredName = profileRow?.preferred_name?.trim() || "Parker";
   const lifeAreaId = dashboard.lifeArea?.id ?? null;
 
-  let approvals: MelusiCommandCenterApproval[] = [];
-  let projectUpdates: MelusiCommandCenterActivity[] = [];
+  let approvals: ActionRequestRow[] = [];
+  let projectUpdates: ProjectUpdateRow[] = [];
   let allMelusiTasks: TaskRow[] = [];
   let projectRows: ProjectRow[] = [];
 
@@ -187,189 +102,73 @@ export async function loadMelusiCommandCenter(
       await Promise.all([
         supabase
           .from("action_requests")
-          .select("id, title, summary, created_at")
+          .select("id, title, summary, risk_level")
           .eq("user_id", userId)
           .eq("status", "pending")
           .order("created_at", { ascending: false })
           .limit(MAX_APPROVALS),
         supabase
           .from("project_updates")
-          .select(
-            "id, project_id, update_type, content, created_at, projects(name)",
-          )
+          .select("id, project_id, update_type, content, created_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(MAX_UPDATES),
         supabase
           .from("tasks")
-          .select("id, title, priority, due_at, status")
+          .select("id, title, priority, due_at, status, created_at, project_id")
           .eq("user_id", userId)
           .eq("life_area_id", lifeAreaId)
           .neq("status", "done"),
         supabase
           .from("projects")
-          .select("id, name, status, priority, due_at")
+          .select("id, name, status, priority, due_at, updated_at")
           .eq("user_id", userId)
           .eq("life_area_id", lifeAreaId),
       ]);
 
-    approvals = ((approvalsResult.data ?? []) as ActionRequestRow[]).map(
-      (row) => ({
-        id: row.id,
-        title: row.title,
-        summary: row.summary,
-      }),
-    );
-
-    projectUpdates = ((updatesResult.data ?? []) as ProjectUpdateRow[]).map(
-      (row) => ({
-        id: row.id,
-        projectName: row.projects?.[0]?.name ?? "Project",
-        updateType: row.update_type,
-        content: row.content,
-        createdAt: row.created_at,
-      }),
-    );
-
+    approvals = (approvalsResult.data ?? []) as ActionRequestRow[];
+    projectUpdates = (updatesResult.data ?? []) as ProjectUpdateRow[];
     allMelusiTasks = (tasksResult.data ?? []) as TaskRow[];
     projectRows = (projectsResult.data ?? []) as ProjectRow[];
   }
 
-  const overdueTasks = allMelusiTasks.filter((task) =>
-    isTaskOverdue(task.due_at, todayLocal, timezone),
-  );
+  const projectNames = new Map(projectRows.map((project) => [project.id, project.name]));
 
-  const priorityTasks: MelusiCommandCenterTask[] = allMelusiTasks
-    .sort((a, b) => {
-      const aOverdue = isTaskOverdue(a.due_at, todayLocal, timezone);
-      const bOverdue = isTaskOverdue(b.due_at, todayLocal, timezone);
-      if (aOverdue !== bOverdue) {
-        return aOverdue ? -1 : 1;
-      }
-      const aDue = a.due_at
-        ? new Date(a.due_at).getTime()
-        : Number.POSITIVE_INFINITY;
-      const bDue = b.due_at
-        ? new Date(b.due_at).getTime()
-        : Number.POSITIVE_INFINITY;
-      return aDue - bDue;
-    })
-    .slice(0, MAX_TASKS)
-    .map((task) => ({
-      id: task.id,
-      title: task.title,
-      priority: task.priority,
-      dueAt: task.due_at,
-      overdue: isTaskOverdue(task.due_at, todayLocal, timezone),
-    }));
+  const overdueTaskCount = allMelusiTasks.filter((task) => {
+    if (!task.due_at) {
+      return false;
+    }
 
-  const blockers = projectUpdates.filter(
-    (update) => update.updateType === "blocker",
-  );
+    return getLocalDateFromIso(task.due_at, timezone) < todayLocal;
+  }).length;
 
-  const alerts: MelusiCommandCenterAlert[] = [];
-
-  for (const blocker of blockers.slice(0, 3)) {
-    alerts.push({
-      id: `blocker-${blocker.id}`,
-      kind: "blocker",
-      title: `Blocker on ${blocker.projectName}`,
-      detail: blocker.content,
-    });
-  }
-
-  for (const task of overdueTasks.slice(0, 3)) {
-    alerts.push({
-      id: `overdue-${task.id}`,
-      kind: "overdue",
-      title: "Overdue Melusi task",
-      detail: task.title,
-    });
-  }
-
-  for (const approval of approvals) {
-    alerts.push({
-      id: `approval-${approval.id}`,
-      kind: "approval",
-      title: approval.title,
-      detail: approval.summary,
-    });
-  }
-
-  const recommendations: MelusiCommandCenterRecommendation[] = [];
-
-  if (overdueTasks.length > 0) {
-    recommendations.push({
-      id: "rec-overdue",
-      kind: "deterministic",
-      title: "Clear overdue Melusi tasks",
-      detail: `${overdueTasks.length} Melusi task${overdueTasks.length === 1 ? "" : "s"} ${overdueTasks.length === 1 ? "is" : "are"} past due.`,
-    });
-  }
-
-  if (blockers.length > 0) {
-    recommendations.push({
-      id: "rec-blockers",
-      kind: "recorded",
-      title: "Review recorded blockers",
-      detail: `${blockers.length} blocker${blockers.length === 1 ? "" : "s"} recorded across Melusi projects.`,
-    });
-  }
-
-  const activeProjects = projectRows.filter(
-    (project) => project.status === "active",
-  );
-
-  if (activeProjects.length > 0 && priorityTasks.length > 0) {
-    recommendations.push({
-      id: "rec-priorities",
-      kind: "deterministic",
-      title: "Focus on active project tasks",
-      detail: `${activeProjects.length} active project${activeProjects.length === 1 ? "" : "s"} with ${dashboard.counts.unfinishedTasks} open Melusi task${dashboard.counts.unfinishedTasks === 1 ? "" : "s"}.`,
-    });
-  }
-
-  if (approvals.length > 0) {
-    recommendations.push({
-      id: "rec-approvals",
-      kind: "deterministic",
-      title: "Review pending approvals",
-      detail: `${approvals.length} approval${approvals.length === 1 ? "" : "s"} waiting for review.`,
-    });
-  }
-
-  if (recommendations.length === 0 && dashboard.projects.length === 0) {
-    recommendations.push({
-      id: "rec-start",
-      kind: "deterministic",
-      title: "Create your first Melusi project",
-      detail: "Add a project below to start tracking business work.",
-    });
-  }
+  const view = buildMelusiCommandCenterView({
+    unfinishedTasks: allMelusiTasks,
+    projects: projectRows,
+    projectUpdates,
+    approvals: approvals.map((row) => ({
+      id: row.id,
+      title: row.title,
+      summary: row.summary,
+      riskLevel: row.risk_level,
+    })),
+    projectNames,
+    todayLocal,
+    timeZone: timezone,
+    activeProjectCount: dashboard.counts.activeProjects,
+    openTaskCount: dashboard.counts.unfinishedTasks,
+    overdueTaskCount,
+    socialSummary: socialInput?.summary ?? null,
+    socialConnected: socialInput?.connected ?? false,
+    socialStatus: socialInput?.status ?? "disconnected",
+  });
 
   return {
     preferredName,
     timezone,
     todayDate: todayLocal,
-    todayDateLabel: formatTodayLabel(timezone),
-    counts: {
-      activeProjects: dashboard.counts.activeProjects,
-      unfinishedTasks: dashboard.counts.unfinishedTasks,
-      overdueTasks: overdueTasks.length,
-      pendingApprovals: approvals.length,
-      blockers: blockers.length,
-    },
-    tasks: priorityTasks,
-    approvals,
-    alerts: alerts.slice(0, 6),
-    recommendations: recommendations.slice(0, MAX_RECOMMENDATIONS),
-    recentActivity: projectUpdates,
-    projects: dashboard.projects.map((project) => ({
-      id: project.id,
-      name: project.name,
-      status: project.status,
-      priority: project.priority,
-      dueAt: project.dueAt,
-    })),
+    todayDateLabel: formatLocalDateLabel(timezone),
+    businessContextLine: "B2C: AI Foundations · B2B: AI Foundations for Real Estate",
+    ...view,
   };
 }

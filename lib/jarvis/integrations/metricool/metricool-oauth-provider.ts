@@ -9,11 +9,14 @@ import {
   getMetricoolRedirectUri,
 } from "./metricool-config";
 import {
-  deserializeClientInformation,
+  clientInformationSupportsRedirectUri,
+} from "./metricool-client-information-store";
+import {
   deserializeOAuthTokens,
   loadMetricoolConnectionRow,
+  loadStoredClientInformationForRedirectUri,
   saveMetricoolClientInformation,
-  serializeClientInformation,
+  serializeClientInformationForRedirectUri,
 } from "./metricool-connection-tools";
 import type { MetricoolConnectionRow } from "./metricool-types";
 
@@ -22,6 +25,8 @@ type MetricoolOAuthProviderOptions = {
   supabase: SupabaseClient;
   redirectOrigin: string;
   connectionRow?: MetricoolConnectionRow | null;
+  /** When true, ignore persisted tokens so connect can start a fresh authorization redirect. */
+  skipPersistedTokens?: boolean;
 };
 
 /**
@@ -35,6 +40,7 @@ export class MetricoolOAuthProvider implements OAuthClientProvider {
   private readonly redirectOrigin: string;
   readonly redirectUrl: string;
   private connectionRow: MetricoolConnectionRow | null;
+  private readonly skipPersistedTokens: boolean;
   private capturedAuthorizationUrl: URL | null = null;
   private pendingState?: string;
   private pendingCodeVerifier?: string;
@@ -47,6 +53,7 @@ export class MetricoolOAuthProvider implements OAuthClientProvider {
     this.redirectOrigin = options.redirectOrigin;
     this.redirectUrl = getMetricoolRedirectUri(options.redirectOrigin);
     this.connectionRow = options.connectionRow ?? null;
+    this.skipPersistedTokens = options.skipPersistedTokens ?? false;
     this.hydrateFromConnectionRow();
   }
 
@@ -77,7 +84,16 @@ export class MetricoolOAuthProvider implements OAuthClientProvider {
     | undefined
     | Promise<OAuthClientInformationMixed | undefined> {
     if (this.inMemoryClientInformation) {
-      return this.inMemoryClientInformation;
+      if (
+        clientInformationSupportsRedirectUri(
+          this.inMemoryClientInformation,
+          this.redirectUrl,
+        )
+      ) {
+        return this.inMemoryClientInformation;
+      }
+
+      this.inMemoryClientInformation = undefined;
     }
 
     const encrypted = this.connectionRow?.encrypted_client_information;
@@ -85,20 +101,42 @@ export class MetricoolOAuthProvider implements OAuthClientProvider {
       return undefined;
     }
 
-    this.inMemoryClientInformation =
-      deserializeClientInformation<OAuthClientInformationMixed>(encrypted);
-    return this.inMemoryClientInformation;
+    const stored = loadStoredClientInformationForRedirectUri(
+      encrypted,
+      this.redirectUrl,
+    );
+
+    if (!stored) {
+      return undefined;
+    }
+
+    this.inMemoryClientInformation = stored;
+    return stored;
   }
 
   async saveClientInformation(
     clientInformation: OAuthClientInformationMixed,
   ): Promise<void> {
     this.inMemoryClientInformation = clientInformation;
-    const encrypted = serializeClientInformation(clientInformation);
+    const encrypted = serializeClientInformationForRedirectUri(
+      this.connectionRow?.encrypted_client_information ?? null,
+      this.redirectUrl,
+      clientInformation,
+    );
     await saveMetricoolClientInformation(this.supabase, this.userId, encrypted);
+    if (this.connectionRow) {
+      this.connectionRow = {
+        ...this.connectionRow,
+        encrypted_client_information: encrypted,
+      };
+    }
   }
 
   tokens(): OAuthTokens | undefined | Promise<OAuthTokens | undefined> {
+    if (this.skipPersistedTokens) {
+      return undefined;
+    }
+
     if (this.inMemoryTokens) {
       return this.inMemoryTokens;
     }
@@ -155,6 +193,22 @@ export class MetricoolOAuthProvider implements OAuthClientProvider {
     return this.inMemoryTokens;
   }
 
+  clearInMemoryOAuthTokens(): void {
+    this.inMemoryTokens = undefined;
+  }
+
+  async invalidateCredentials(
+    scope: "all" | "tokens" | "client" | "discovery",
+  ): Promise<void> {
+    if (scope === "all" || scope === "tokens") {
+      this.inMemoryTokens = undefined;
+    }
+
+    if (scope === "all" || scope === "client") {
+      this.inMemoryClientInformation = undefined;
+    }
+  }
+
   async refreshConnectionRow(): Promise<void> {
     this.connectionRow = await loadMetricoolConnectionRow(
       this.supabase,
@@ -168,11 +222,17 @@ export class MetricoolOAuthProvider implements OAuthClientProvider {
       return;
     }
 
-    if (this.connectionRow.encrypted_client_information) {
-      this.inMemoryClientInformation =
-        deserializeClientInformation<OAuthClientInformationMixed>(
-          this.connectionRow.encrypted_client_information,
-        );
+    const storedClient = loadStoredClientInformationForRedirectUri(
+      this.connectionRow.encrypted_client_information,
+      this.redirectUrl,
+    );
+
+    if (storedClient) {
+      this.inMemoryClientInformation = storedClient;
+    }
+
+    if (this.skipPersistedTokens) {
+      return;
     }
 
     const stored = deserializeOAuthTokens(this.connectionRow);

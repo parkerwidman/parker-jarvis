@@ -121,6 +121,22 @@ export function readMetricoolOAuthCookies(cookieStore: {
   return { pendingState, codeVerifier };
 }
 
+export function isActiveMetricoolOAuthFlow(
+  cookieStore: {
+    get: (name: string) => { value: string } | undefined;
+  },
+  userId: string,
+): boolean {
+  const { pendingState, codeVerifier } = readMetricoolOAuthCookies(cookieStore);
+
+  return Boolean(
+    pendingState &&
+      codeVerifier &&
+      pendingState.userId === userId &&
+      !isOAuthPendingStateExpired(pendingState.issuedAt),
+  );
+}
+
 export function clearMetricoolOAuthCookies(response: NextResponse): void {
   const secure = process.env.NODE_ENV === "production";
   const clearOptions = {

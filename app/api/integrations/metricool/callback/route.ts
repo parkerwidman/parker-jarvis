@@ -9,10 +9,12 @@ import {
   getMetricoolBaseUrl,
 } from "@/lib/jarvis/integrations/metricool/metricool-config";
 import {
+  hadWorkingMetricoolConnection,
+  loadMetricoolConnectionRow,
   markMetricoolConnectionStatus,
+  markMetricoolOAuthFailure,
   saveMetricoolConnectedMetadata,
   serializeOAuthTokens,
-  loadMetricoolConnectionRow,
 } from "@/lib/jarvis/integrations/metricool/metricool-connection-tools";
 import {
   clearMetricoolOAuthCookies,
@@ -64,13 +66,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", baseUrl));
   }
 
+  const rowBeforeAttempt = await loadMetricoolConnectionRow(supabase, userId);
+
   const searchParams = request.nextUrl.searchParams;
   const oauthError = searchParams.get("error");
   const code = searchParams.get("code");
   const returnedState = searchParams.get("state");
 
   if (oauthError || !code || !returnedState) {
-    await markMetricoolConnectionStatus(supabase, userId, "error", "auth_failed");
+    await markMetricoolOAuthFailure(
+      supabase,
+      userId,
+      rowBeforeAttempt,
+      "auth_failed",
+    );
     return failureRedirect(request);
   }
 
@@ -84,10 +93,10 @@ export async function GET(request: NextRequest) {
     isOAuthPendingStateExpired(pendingState.issuedAt) ||
     !oauthStatesMatch(pendingState.state, returnedState)
   ) {
-    await markMetricoolConnectionStatus(
+    await markMetricoolOAuthFailure(
       supabase,
       userId,
-      "error",
+      rowBeforeAttempt,
       "state_invalid",
     );
     return socialRedirect(request, { error: "state_invalid" }, true);
@@ -134,13 +143,29 @@ export async function GET(request: NextRequest) {
     return socialRedirect(request, { connected: "true" }, true);
   } catch (caught) {
     const safeError = mapMetricoolError(caught);
+
+    if (safeError.code === "brand_mismatch") {
+      if (!hadWorkingMetricoolConnection(rowBeforeAttempt)) {
+        await markMetricoolConnectionStatus(
+          supabase,
+          userId,
+          "error",
+          safeError.code,
+        );
+      }
+
+      return socialRedirect(request, { error: "brand_mismatch" }, true);
+    }
+
+    if (hadWorkingMetricoolConnection(rowBeforeAttempt)) {
+      return failureRedirect(request);
+    }
+
     const status =
-      safeError.code === "brand_mismatch"
-        ? "error"
-        : safeError.code === "auth_failed" ||
-            safeError.code === "reconnect_required"
-          ? "reconnect_required"
-          : "error";
+      safeError.code === "auth_failed" ||
+      safeError.code === "reconnect_required"
+        ? "reconnect_required"
+        : "error";
 
     await markMetricoolConnectionStatus(
       supabase,
@@ -148,10 +173,6 @@ export async function GET(request: NextRequest) {
       status,
       safeError.code,
     );
-
-    if (safeError.code === "brand_mismatch") {
-      return socialRedirect(request, { error: "brand_mismatch" }, true);
-    }
 
     return failureRedirect(request);
   }

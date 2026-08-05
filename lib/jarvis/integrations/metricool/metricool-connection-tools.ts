@@ -2,9 +2,17 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  METRICOOL_OAUTH_COOKIE_MAX_AGE_SECONDS,
+} from "./metricool-config";
+import {
   decryptMetricoolSecret,
   encryptMetricoolSecret,
 } from "./metricool-token-crypto";
+import {
+  loadClientInformationForRedirectUri,
+  mergeClientInformationForRedirectUri,
+  summarizeStoredClientInformation,
+} from "./metricool-client-information-store";
 import type {
   MetricoolConnectionRow,
   MetricoolConnectionStatus,
@@ -98,6 +106,57 @@ export async function loadSafeMetricoolConnection(
   return toSafeMetricoolConnection(row);
 }
 
+export function hasUsableMetricoolCredentials(
+  row: MetricoolConnectionRow | null,
+): boolean {
+  return Boolean(row?.encrypted_access_token);
+}
+
+export function hasTrustedMetricoolMetadata(
+  row: MetricoolConnectionRow | null,
+): boolean {
+  if (!row?.brand_id || !row.brand_label || !row.brand_timezone) {
+    return false;
+  }
+
+  return normalizeConnectedNetworks(row.connected_networks).length > 0;
+}
+
+/** A connection that should remain authoritative during a failed reconnect attempt. */
+export function hadWorkingMetricoolConnection(
+  row: MetricoolConnectionRow | null,
+): boolean {
+  if (!hasUsableMetricoolCredentials(row)) {
+    return false;
+  }
+
+  return (
+    row?.status === "connected" ||
+    row?.status === "reconnect_required" ||
+    hasTrustedMetricoolMetadata(row)
+  );
+}
+
+export function isStaleConnectingState(
+  row: MetricoolConnectionRow,
+  now = Date.now(),
+): boolean {
+  if (row.status !== "connecting") {
+    return false;
+  }
+
+  const updatedAt = new Date(row.updated_at).getTime();
+  return (
+    now - updatedAt > METRICOOL_OAUTH_COOKIE_MAX_AGE_SECONDS * 1000
+  );
+}
+
+export function isRecoverableConnectingState(
+  row: MetricoolConnectionRow | null,
+): boolean {
+  return row?.status === "connecting";
+}
+
 export async function upsertMetricoolConnecting(
   supabase: SupabaseClient,
   userId: string,
@@ -114,6 +173,19 @@ export async function upsertMetricoolConnecting(
   if (error) {
     throw error;
   }
+}
+
+/** Mark connecting only for a first-time OAuth attempt with no saved credentials. */
+export async function beginInitialMetricoolOAuth(
+  supabase: SupabaseClient,
+  userId: string,
+  existing: MetricoolConnectionRow | null,
+): Promise<void> {
+  if (hasUsableMetricoolCredentials(existing)) {
+    return;
+  }
+
+  await upsertMetricoolConnecting(supabase, userId);
 }
 
 export async function saveMetricoolConnectedMetadata(
@@ -158,6 +230,27 @@ export async function saveMetricoolClientInformation(
   userId: string,
   encryptedClientInformation: string,
 ): Promise<void> {
+  const existing = await loadMetricoolConnectionRow(supabase, userId);
+
+  if (
+    hasUsableMetricoolCredentials(existing) ||
+    existing?.status === "connected" ||
+    existing?.status === "reconnect_required"
+  ) {
+    const { error } = await supabase
+      .from("metricool_connections")
+      .update({
+        encrypted_client_information: encryptedClientInformation,
+      })
+      .eq("user_id", userId);
+
+    if (error) {
+      throw error;
+    }
+
+    return;
+  }
+
   const { error } = await supabase.from("metricool_connections").upsert(
     {
       user_id: userId,
@@ -172,20 +265,121 @@ export async function saveMetricoolClientInformation(
   }
 }
 
+export function decryptClientInformationPayload(
+  encrypted: string,
+): unknown {
+  return JSON.parse(decryptMetricoolSecret(encrypted));
+}
+
+export function loadStoredClientInformationForRedirectUri(
+  encrypted: string | null | undefined,
+  redirectUri: string,
+): ReturnType<typeof loadClientInformationForRedirectUri> {
+  if (!encrypted) {
+    return undefined;
+  }
+
+  const payload = decryptClientInformationPayload(encrypted);
+  return loadClientInformationForRedirectUri(payload, redirectUri);
+}
+
+export function summarizeEncryptedClientInformation(
+  encrypted: string | null | undefined,
+): ReturnType<typeof summarizeStoredClientInformation> {
+  if (!encrypted) {
+    return summarizeStoredClientInformation(null);
+  }
+
+  try {
+    const payload = decryptClientInformationPayload(encrypted);
+    return summarizeStoredClientInformation(payload);
+  } catch {
+    return { storageVersion: "missing", redirectUris: [] };
+  }
+}
+
+export function serializeClientInformationForRedirectUri(
+  existingEncrypted: string | null | undefined,
+  redirectUri: string,
+  clientInformation: unknown,
+): string {
+  let existingPayload: unknown = null;
+
+  if (existingEncrypted) {
+    try {
+      existingPayload = decryptClientInformationPayload(existingEncrypted);
+    } catch {
+      existingPayload = null;
+    }
+  }
+
+  const envelope = mergeClientInformationForRedirectUri(
+    existingPayload,
+    redirectUri,
+    clientInformation as import("@modelcontextprotocol/sdk/shared/auth.js").OAuthClientInformationMixed,
+  );
+
+  return encryptMetricoolSecret(JSON.stringify(envelope));
+}
+
 export async function markMetricoolConnectionStatus(
   supabase: SupabaseClient,
   userId: string,
   status: MetricoolConnectionStatus,
   lastErrorCode: string | null = null,
 ): Promise<void> {
-  const { error } = await supabase.from("metricool_connections").upsert(
-    {
-      user_id: userId,
+  const { error } = await supabase
+    .from("metricool_connections")
+    .update({
       status,
       last_error_code: lastErrorCode,
-    },
-    { onConflict: "user_id" },
-  );
+    })
+    .eq("user_id", userId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+/** Preserve a working connection when an OAuth attempt fails or is abandoned. */
+export async function markMetricoolOAuthFailure(
+  supabase: SupabaseClient,
+  userId: string,
+  rowBeforeAttempt: MetricoolConnectionRow | null,
+  lastErrorCode: string,
+): Promise<void> {
+  if (hadWorkingMetricoolConnection(rowBeforeAttempt)) {
+    return;
+  }
+
+  if (!rowBeforeAttempt) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("metricool_connections")
+    .update({
+      status: "error" satisfies MetricoolConnectionStatus,
+      last_error_code: lastErrorCode,
+    })
+    .eq("user_id", userId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function clearInterruptedMetricoolConnection(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("metricool_connections")
+    .update({
+      status: "disconnected" satisfies MetricoolConnectionStatus,
+      last_error_code: null,
+    })
+    .eq("user_id", userId);
 
   if (error) {
     throw error;

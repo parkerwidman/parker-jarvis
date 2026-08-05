@@ -121,3 +121,34 @@ export async function updateMelusiProjectStatus(formData: FormData) {
 
   redirect("/melusi?updated=1");
 }
+
+export async function completeMelusiTaskFromDashboard(formData: FormData) {
+  const taskId = (formData.get("taskId") as string) ?? "";
+
+  if (!UUID_REGEX.test(taskId)) {
+    redirect("/melusi");
+  }
+
+  const supabase = await createClient();
+  await requireAuthenticatedUser(supabase);
+
+  const now = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status: "done",
+      completed_at: now,
+      updated_at: now,
+    })
+    .eq("id", taskId);
+
+  if (error) {
+    redirect("/melusi?error=Could%20not%20complete%20task");
+  }
+
+  revalidatePath("/melusi");
+  revalidatePath("/");
+  revalidatePath("/tasks");
+  redirect("/melusi");
+}

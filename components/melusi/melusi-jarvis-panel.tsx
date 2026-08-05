@@ -10,6 +10,8 @@ type MelusiJarvisPanelProps = {
   initialMessages: Array<{ role: "user" | "assistant"; content: string }>;
   expandHref: string;
   socialConnected?: boolean;
+  variant?: "embedded" | "compact";
+  compactStatusLine?: string;
 };
 
 export function MelusiJarvisPanel({
@@ -18,12 +20,14 @@ export function MelusiJarvisPanel({
   initialMessages,
   expandHref,
   socialConnected = false,
+  variant = "embedded",
+  compactStatusLine,
 }: MelusiJarvisPanelProps) {
   const quickActions: MelusiQuickAction[] = MELUSI_QUICK_ACTIONS;
 
   return (
     <JarvisChat
-      variant="embedded"
+      variant={variant}
       userName={userName}
       agentKey="melusi"
       threadId={threadId}
@@ -31,6 +35,8 @@ export function MelusiJarvisPanel({
       agentDisplayName="Melusi Jarvis"
       agentSubtitle="Melusi business advisor"
       expandHref={expandHref}
+      compactStatusLine={compactStatusLine}
+      deferCompactHistory={variant === "compact"}
       welcomeHint="Ask about Melusi projects, strategy, content, and priorities."
       promptChips={quickActions.map((action) => ({
         label: action.label,

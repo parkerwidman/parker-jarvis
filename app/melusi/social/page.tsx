@@ -9,7 +9,9 @@ import {
   loadMetricoolSocialDashboard,
 } from "@/lib/jarvis/integrations/metricool/metricool-social-dashboard";
 import type { SocialCommandCenterSnapshot } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
+import { isActiveMetricoolOAuthFlow } from "@/lib/jarvis/integrations/metricool/metricool-oauth-cookies";
 import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 function connectionAlertMessage(error: string | undefined): string | null {
@@ -18,10 +20,17 @@ function connectionAlertMessage(error: string | undefined): string | null {
       return "Metricool connected, but the account did not match the trusted Melusi brand. Reconnect with the correct Metricool brand.";
     case "state_invalid":
       return "The Metricool authorization session expired or was invalid. Please try connecting again.";
+    case "oauth_client_registration_failed":
+      return "The Metricool OAuth client could not be prepared for this environment. Please try again.";
+    case "authorization_url_failed":
+      return "The Metricool authorization redirect could not be created. Please try again.";
+    case "oauth_token_refresh_failed":
+    case "oauth_verification_failed":
+      return "Metricool authorization could not be started with the saved connection. Please try reconnecting.";
     case "connection_failed":
       return "Could not complete the Metricool connection. Please try again.";
     default:
-      return error ? "Could not complete the Metricool connection." : null;
+      return error ? "Metricool authorization could not be started." : null;
   }
 }
 
@@ -58,10 +67,25 @@ export default async function MelusiSocialPage({
     loadSafeMetricoolConnection(supabase, userId),
   ]);
 
+  if (status === "connecting" && connection.status !== "connecting") {
+    const params = new URLSearchParams();
+    if (connected === "true") {
+      params.set("connected", "true");
+    }
+    if (error) {
+      params.set("error", error);
+    }
+    const query = params.toString();
+    redirect(query ? `/melusi/social?${query}` : "/melusi/social");
+  }
+
   const timeZone = profileRow?.timezone?.trim() || TRUSTED_BRAND_TIMEZONE;
   const alertMessage = connectionAlertMessage(error);
-  const isConnecting =
-    connection.status === "connecting" || status === "connecting";
+  const cookieStore = await cookies();
+  const oauthFlowActive = isActiveMetricoolOAuthFlow(cookieStore, userId);
+  const isConnecting = connection.status === "connecting";
+  const showOAuthInProgress = isConnecting && oauthFlowActive;
+  const showConnectionRecovery = isConnecting && !oauthFlowActive;
   const isConnected = connection.status === "connected";
   const needsReconnect =
     connection.status === "reconnect_required" || connection.status === "error";
@@ -89,8 +113,8 @@ export default async function MelusiSocialPage({
   }
 
   return (
-    <JarvisAppShell mainClassName="app-main--life-area">
-      <JarvisPageContent className="jv-page-content--melusi">
+    <JarvisAppShell mainClassName="app-main--command-center">
+      <JarvisPageContent className="jv-page-content--melusi-command melusi-workspace">
         <MelusiNav />
 
         {connected === "true" ? (
@@ -103,20 +127,22 @@ export default async function MelusiSocialPage({
           <JarvisAlert variant="error">{alertMessage}</JarvisAlert>
         ) : null}
 
-        {isConnecting ? (
+        {showOAuthInProgress ? (
           <JarvisAlert variant="info">
             Metricool OAuth is in progress. Finish authorization if prompted,
-            then refresh this page.
+            then return here.
           </JarvisAlert>
         ) : null}
 
         <SocialCommandCenter
+          connection={connection}
           snapshot={snapshot}
           loadError={loadError}
           timeZone={timeZone}
           canVerify={isConnected}
           canDisconnect={isConnected || needsReconnect}
           canReconnect={needsReconnect}
+          showConnectionRecovery={showConnectionRecovery}
         />
       </JarvisPageContent>
     </JarvisAppShell>
