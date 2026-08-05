@@ -68,7 +68,7 @@ const DEFAULT_PROMPT_CHIPS: PromptChip[] = [
 ];
 
 type JarvisChatProps = {
-  variant?: "embedded" | "fullPage";
+  variant?: "embedded" | "fullPage" | "compact";
   userName?: string;
   agentKey?: AgentKey;
   threadId?: string | null;
@@ -78,6 +78,7 @@ type JarvisChatProps = {
   expandHref?: string;
   welcomeHint?: string;
   promptChips?: PromptChip[];
+  compactStatusLine?: string;
 };
 
 function JarvisCore({ size }: { size: "sm" | "md" | "lg" }) {
@@ -132,8 +133,11 @@ export function JarvisChat({
   expandHref,
   welcomeHint,
   promptChips,
+  compactStatusLine,
 }: JarvisChatProps) {
-  const isEmbedded = variant === "embedded";
+  const isCompact = variant === "compact";
+  const isEmbedded = variant === "embedded" || isCompact;
+  const [isExpanded, setIsExpanded] = useState(false);
   const jarvisContext = useOptionalJarvisContext();
   const conversationKey = getConversationKey(agentKey, initialThreadId);
   const initializedConversationKeyRef = useRef<string | null>(null);
@@ -186,6 +190,10 @@ export function JarvisChat({
     setInput("");
     setLoading(true);
     setError(null);
+
+    if (isCompact) {
+      setIsExpanded(true);
+    }
 
     try {
       const requestBody: {
@@ -382,6 +390,60 @@ export function JarvisChat({
     </>
   );
 
+  if (isCompact && !isExpanded && messages.length === 0 && !loading) {
+    return (
+      <section
+        className="jarvis-panel jarvis-panel--compact"
+        aria-label={`${displayName} assistant`}
+      >
+        <div className="jarvis-compact-inner">
+          <p className="jarvis-compact-status">
+            {compactStatusLine ??
+              "Ask Jarvis about tasks, schedule, goals, and planning."}
+          </p>
+          <form
+            onSubmit={handleSubmit}
+            className="jarvis-compact-form"
+          >
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder={`Ask ${displayName}…`}
+              rows={1}
+              maxLength={4000}
+              disabled={loading}
+              className="jarvis-compact-input"
+              aria-label={`Message to ${displayName}`}
+            />
+            <button
+              type="submit"
+              disabled={loading || input.trim().length === 0}
+              className="jarvis-compact-send"
+              aria-label="Send message"
+            >
+              <SendIcon />
+            </button>
+            <button
+              type="button"
+              className="jarvis-compact-expand"
+              onClick={() => setIsExpanded(true)}
+              aria-label="Expand Jarvis conversation"
+            >
+              <ExpandIcon />
+              Expand
+            </button>
+          </form>
+        </div>
+      </section>
+    );
+  }
+
   if (!isEmbedded) {
     return (
       <section
@@ -420,13 +482,23 @@ export function JarvisChat({
     <section
       id="jarvis-embedded-panel"
       tabIndex={-1}
-      className={`jarvis-panel jarvis-panel--embedded${agentKey === "melusi" ? " jarvis-panel--melusi" : ""}`}
+      className={`jarvis-panel jarvis-panel--embedded${isCompact ? " jarvis-panel--embedded-compact" : ""}${agentKey === "melusi" ? " jarvis-panel--melusi" : ""}`}
       aria-label={`${displayName} assistant`}
     >
       <div className="jarvis-panel-atmosphere" aria-hidden="true" />
+      {isCompact ? (
+        <button
+          type="button"
+          className="jarvis-expand-link jarvis-expand-link--button jarvis-collapse-link"
+          onClick={() => setIsExpanded(false)}
+          aria-label="Collapse Jarvis conversation"
+        >
+          Collapse
+        </button>
+      ) : null}
       <Link href={expandTarget} className="jarvis-expand-link">
         <ExpandIcon />
-        Expand
+        {isCompact ? "Full assistant" : "Expand"}
       </Link>
       {agentKey === "melusi" ? (
         <div className="jarvis-panel-agent-badge">Melusi Jarvis</div>

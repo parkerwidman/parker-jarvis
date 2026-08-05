@@ -53,6 +53,7 @@ export async function createTask(formData: FormData) {
     redirect("/tasks?error=Could not create task");
   }
 
+  revalidatePath("/");
   revalidatePath("/tasks");
   redirect("/tasks");
 }
@@ -91,6 +92,7 @@ export async function completeTask(formData: FormData) {
     redirect("/tasks?error=Could not complete task");
   }
 
+  revalidatePath("/");
   revalidatePath("/tasks");
   redirect("/tasks");
 }

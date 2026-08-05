@@ -1,22 +1,28 @@
 import "server-only";
 
+import {
+  buildCommandCenterView,
+  type AttentionItem,
+  type DashboardGoal,
+  type DashboardSchedule,
+  type FocusTask,
+  type TaskGroups,
+} from "@/lib/jarvis/dashboard/build-command-center-view";
+import {
+  formatLocalDateLabel,
+  getCalendarFetchBounds,
+  getLocalDateFromIso,
+  getLocalDateString,
+  resolveTimeZone,
+} from "@/lib/jarvis/dashboard/command-center-utils";
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
 import type { JarvisProfile, LifeArea } from "@/lib/jarvis/tools/memory-tools";
 import { listOutlookCalendar } from "@/lib/jarvis/tools/microsoft-tools";
-import { listTasks, type TaskRecord } from "@/lib/jarvis/tools/task-tools";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const DEFAULT_TIMEZONE = "America/Chicago";
-const MAX_TASKS = 6;
 const MAX_APPROVALS = 5;
 const MAX_PLAN_ITEMS = 6;
 const MAX_BRIEF_PREVIEW_LINES = 4;
-
-const PRIORITY_WEIGHT: Record<string, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
-};
 
 type MorningBriefingRow = {
   id: string;
@@ -49,6 +55,21 @@ type GoalRow = {
   priority: string;
   status: string;
   life_area_id: string | null;
+  progress: number;
+  target_date: string | null;
+  updated_at: string;
+  success_definition: string | null;
+};
+
+type TaskRow = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  life_area_id: string | null;
 };
 
 export type CommandCenterBriefing = {
@@ -80,6 +101,7 @@ export type CommandCenterTask = {
   dueAt: string | null;
   overdue: boolean;
   dueToday: boolean;
+  lifeAreaName: string | null;
 };
 
 export type CommandCenterApproval = {
@@ -105,10 +127,12 @@ export type CommandCenterCalendarEvent = {
   localStart: string;
   localEnd: string;
   isAllDay: boolean;
+  locationName: string | null;
 };
 
 export type CommandCenterOutlook = {
   connected: boolean;
+  needsReconnect: boolean;
   events: CommandCenterCalendarEvent[];
 };
 
@@ -124,61 +148,18 @@ export type CommandCenterData = {
   timezone: string;
   todayDate: string;
   todayDateLabel: string;
+  headerStatus: string;
   briefing: CommandCenterBriefing | null;
   plan: CommandCenterPlan | null;
-  tasks: CommandCenterTask[];
+  focusTask: FocusTask | null;
+  taskGroups: TaskGroups;
+  schedule: DashboardSchedule;
+  goals: DashboardGoal[];
+  attentionItems: AttentionItem[];
   approvals: CommandCenterApproval[];
-  goals: CommandCenterGoal[];
   outlook: CommandCenterOutlook;
   counts: CommandCenterCounts;
 };
-
-function isValidTimeZone(timeZone: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveTimeZone(profileTimezone: string | null | undefined): string {
-  const candidate = profileTimezone?.trim();
-
-  if (candidate && isValidTimeZone(candidate)) {
-    return candidate;
-  }
-
-  return DEFAULT_TIMEZONE;
-}
-
-function getLocalDateString(timeZone: string, now = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now);
-}
-
-function getLocalDateFromIso(isoString: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(isoString));
-}
-
-function formatLocalDateLabel(timeZone: string, now = new Date()): string {
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  }).format(now);
-}
 
 function parsePlanItems(raw: unknown): PlanItem[] {
   if (!Array.isArray(raw)) {
@@ -219,87 +200,6 @@ function extractBriefPreview(content: string): string {
   return fallback.length > 280 ? `${fallback.slice(0, 277)}…` : fallback;
 }
 
-function isTaskOverdue(task: TaskRecord, todayLocal: string, timeZone: string): boolean {
-  if (!task.due_at) {
-    return false;
-  }
-
-  const dueLocal = getLocalDateFromIso(task.due_at, timeZone);
-  return dueLocal < todayLocal;
-}
-
-function isTaskDueToday(task: TaskRecord, todayLocal: string, timeZone: string): boolean {
-  if (!task.due_at) {
-    return false;
-  }
-
-  return getLocalDateFromIso(task.due_at, timeZone) === todayLocal;
-}
-
-function compareDashboardTasks(
-  a: TaskRecord,
-  b: TaskRecord,
-  todayLocal: string,
-  timeZone: string,
-): number {
-  const aOverdue = isTaskOverdue(a, todayLocal, timeZone);
-  const bOverdue = isTaskOverdue(b, todayLocal, timeZone);
-
-  if (aOverdue !== bOverdue) {
-    return aOverdue ? -1 : 1;
-  }
-
-  const aDueToday = isTaskDueToday(a, todayLocal, timeZone);
-  const bDueToday = isTaskDueToday(b, todayLocal, timeZone);
-
-  if (aDueToday !== bDueToday) {
-    return aDueToday ? -1 : 1;
-  }
-
-  const aPriority = PRIORITY_WEIGHT[a.priority] ?? 1;
-  const bPriority = PRIORITY_WEIGHT[b.priority] ?? 1;
-
-  if (aPriority !== bPriority) {
-    return aPriority - bPriority;
-  }
-
-  const aDue = a.due_at ? new Date(a.due_at).getTime() : Number.POSITIVE_INFINITY;
-  const bDue = b.due_at ? new Date(b.due_at).getTime() : Number.POSITIVE_INFINITY;
-
-  if (aDue !== bDue) {
-    return aDue - bDue;
-  }
-
-  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-}
-
-function toCommandCenterTask(
-  task: TaskRecord,
-  todayLocal: string,
-  timeZone: string,
-): CommandCenterTask {
-  return {
-    id: task.id,
-    title: task.title,
-    priority: task.priority,
-    dueAt: task.due_at,
-    overdue: isTaskOverdue(task, todayLocal, timeZone),
-    dueToday: isTaskDueToday(task, todayLocal, timeZone),
-  };
-}
-
-function mapLifeAreaName(
-  lifeAreaId: string | null,
-  lifeAreas: LifeArea[],
-): string | null {
-  if (!lifeAreaId) {
-    return null;
-  }
-
-  const match = lifeAreas.find((area) => area.id === lifeAreaId);
-  return match?.name ?? null;
-}
-
 export async function loadCommandCenter(
   supabase: SupabaseClient,
   userId: string,
@@ -308,19 +208,20 @@ export async function loadCommandCenter(
 
   const { data: profileRow } = await supabase
     .from("jarvis_profiles")
-    .select("user_id, preferred_name, timezone")
+    .select("user_id, preferred_name, timezone, current_focus")
     .eq("user_id", userId)
     .maybeSingle();
 
   const profile = (profileRow ?? null) as Pick<
     JarvisProfile,
-    "user_id" | "preferred_name" | "timezone"
+    "user_id" | "preferred_name" | "timezone" | "current_focus"
   > | null;
 
   const timezone = resolveTimeZone(profile?.timezone);
   const todayDate = getLocalDateString(timezone, now);
   const todayDateLabel = formatLocalDateLabel(timezone, now);
   const preferredName = profile?.preferred_name?.trim() || null;
+  const currentFocus = profile?.current_focus?.trim() || null;
 
   const [
     briefingResult,
@@ -343,7 +244,12 @@ export async function loadCommandCenter(
       .eq("user_id", userId)
       .eq("plan_date", todayDate)
       .maybeSingle(),
-    listTasks(supabase, userId),
+    supabase
+      .from("tasks")
+      .select(
+        "id, title, status, priority, due_at, completed_at, created_at, life_area_id",
+      )
+      .eq("user_id", userId),
     supabase
       .from("action_requests")
       .select("id, title, summary, risk_level, created_at")
@@ -353,10 +259,12 @@ export async function loadCommandCenter(
       .limit(MAX_APPROVALS),
     supabase
       .from("goals")
-      .select("id, title, priority, status, life_area_id")
+      .select(
+        "id, title, priority, status, life_area_id, progress, target_date, updated_at, success_definition",
+      )
       .eq("user_id", userId)
       .eq("status", "active")
-      .order("created_at", { ascending: false }),
+      .order("updated_at", { ascending: false }),
     supabase
       .from("life_areas")
       .select("id, name, active, created_at")
@@ -371,6 +279,9 @@ export async function loadCommandCenter(
 
   const briefingRow = (briefingResult.data ?? null) as MorningBriefingRow | null;
   const planRow = (planResult.data ?? null) as DailyPlanRow | null;
+  const taskRows = (tasksResult.data ?? []) as TaskRow[];
+  const lifeAreas = (lifeAreasResult.data ?? []) as LifeArea[];
+  const lifeAreaNames = new Map(lifeAreas.map((area) => [area.id, area.name]));
 
   const briefing: CommandCenterBriefing | null = briefingRow
     ? {
@@ -406,19 +317,7 @@ export async function loadCommandCenter(
       }
     : null;
 
-  const unfinishedTasks =
-    tasksResult.success === true
-      ? tasksResult.tasks.filter((task) => task.status !== "done")
-      : [];
-
-  const dashboardTasks = [...unfinishedTasks]
-    .sort((a, b) => compareDashboardTasks(a, b, todayDate, timezone))
-    .slice(0, MAX_TASKS)
-    .map((task) => toCommandCenterTask(task, todayDate, timezone));
-
-  const overdueTasksCount = unfinishedTasks.filter((task) =>
-    isTaskOverdue(task, todayDate, timezone),
-  ).length;
+  const unfinishedTasks = taskRows.filter((task) => task.status !== "done");
 
   const approvalRows = (approvalsResult.data ?? []) as ActionRequestRow[];
   const approvals: CommandCenterApproval[] = approvalRows.map((row) => ({
@@ -429,30 +328,25 @@ export async function loadCommandCenter(
     createdAt: row.created_at,
   }));
 
-  const lifeAreas = (lifeAreasResult.data ?? []) as LifeArea[];
   const goalRows = (goalsResult.data ?? []) as GoalRow[];
-  const goals: CommandCenterGoal[] = goalRows.map((goal) => ({
-    id: goal.id,
-    title: goal.title,
-    priority: goal.priority,
-    lifeAreaName: mapLifeAreaName(goal.life_area_id, lifeAreas),
-  }));
 
-  const endDateTime = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const calendarBounds = getCalendarFetchBounds(todayDate, timezone);
   const calendarResult = await listOutlookCalendar(supabase, userId, {
-    startDateTime: now.toISOString(),
-    endDateTime,
+    startDateTime: calendarBounds.startDateTime,
+    endDateTime: calendarBounds.endDateTime,
     timeZone: timezone,
   });
 
   let outlook: CommandCenterOutlook = {
     connected: false,
+    needsReconnect: false,
     events: [],
   };
 
   if (calendarResult.success) {
     outlook = {
       connected: true,
+      needsReconnect: false,
       events: calendarResult.events
         .filter((event) => !event.isCancelled)
         .map((event) => ({
@@ -463,20 +357,43 @@ export async function loadCommandCenter(
           localStart: event.localStart,
           localEnd: event.localEnd,
           isAllDay: event.isAllDay,
+          locationName: event.locationName,
         })),
     };
-  } else if (
-    !("needsConnection" in calendarResult) &&
-    !("needsReconnect" in calendarResult)
-  ) {
-    outlook = { connected: true, events: [] };
+  } else if ("needsReconnect" in calendarResult && calendarResult.needsReconnect) {
+    outlook = { connected: false, needsReconnect: true, events: [] };
+  } else if ("needsConnection" in calendarResult && calendarResult.needsConnection) {
+    outlook = { connected: false, needsReconnect: false, events: [] };
+  } else {
+    outlook = { connected: true, needsReconnect: false, events: [] };
   }
+
+  const view = buildCommandCenterView({
+    unfinishedTasks,
+    allTasks: taskRows,
+    todayLocal: todayDate,
+    timeZone: timezone,
+    lifeAreaNames,
+    goalRows,
+    calendarEvents: outlook.events,
+    outlookConnected: outlook.connected,
+    outlookNeedsReconnect: outlook.needsReconnect,
+    approvals,
+    briefing,
+    plan,
+    currentFocus,
+    now,
+  });
+
+  const overdueTasksCount = unfinishedTasks.filter(
+    (task) => task.due_at !== null && getLocalDateFromIso(task.due_at, timezone) < todayDate,
+  ).length;
 
   const counts: CommandCenterCounts = {
     unfinishedTasks: unfinishedTasks.length,
     overdueTasks: overdueTasksCount,
     pendingApprovals: pendingCountResult.count ?? approvals.length,
-    activeGoals: goals.length,
+    activeGoals: goalRows.length,
   };
 
   return {
@@ -484,11 +401,15 @@ export async function loadCommandCenter(
     timezone,
     todayDate,
     todayDateLabel,
+    headerStatus: view.headerStatus,
     briefing,
     plan,
-    tasks: dashboardTasks,
+    focusTask: view.focusTask,
+    taskGroups: view.taskGroups,
+    schedule: view.schedule,
+    goals: view.goals,
+    attentionItems: view.attentionItems,
     approvals,
-    goals,
     outlook,
     counts,
   };
