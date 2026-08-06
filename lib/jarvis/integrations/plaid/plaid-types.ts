@@ -85,6 +85,9 @@ export type PlaidConnectionSyncResult = {
   transactionsAdded: number;
   transactionsModified: number;
   transactionsRemoved: number;
+  transactionsMatchedExisting: number;
+  transactionsReviewRequired: number;
+  rocketMoneyMappingsRemoved: number;
   unclassifiedCount: number;
   errorCode?: PlaidSafeErrorCode;
 };

@@ -18,8 +18,30 @@ type SyncResult = {
   transactionsAdded: number;
   transactionsModified: number;
   transactionsRemoved: number;
+  transactionsMatchedExisting: number;
+  transactionsReviewRequired: number;
+  rocketMoneyMappingsRemoved: number;
   unclassifiedCount: number;
 };
+
+function formatSyncSummary(result: SyncResult): string {
+  if (result.status === "reconnect_required") {
+    return "Reconnection required.";
+  }
+
+  if (result.status === "error") {
+    return "Sync failed.";
+  }
+
+  return [
+    `Accounts +${result.accountsCreated}/${result.accountsUpdated}`,
+    `transactions +${result.transactionsAdded}/${result.transactionsModified}/${result.transactionsRemoved}`,
+    `matched ${result.transactionsMatchedExisting}`,
+    `review ${result.transactionsReviewRequired}`,
+    `protected removals ${result.rocketMoneyMappingsRemoved}`,
+    `unclassified ${result.unclassifiedCount}`,
+  ].join(", ");
+}
 
 export function PlaidSyncButton({
   connectionId,
@@ -60,17 +82,7 @@ export function PlaidSyncButton({
         return;
       }
 
-      const summaries = payload.results.map((result) => {
-        if (result.status === "reconnect_required") {
-          return "Reconnection required.";
-        }
-
-        if (result.status === "error") {
-          return "Sync failed.";
-        }
-
-        return `Accounts +${result.accountsCreated}/${result.accountsUpdated}, transactions +${result.transactionsAdded}/${result.transactionsModified}/${result.transactionsRemoved}, unclassified ${result.unclassifiedCount}.`;
-      });
+      const summaries = payload.results.map((result) => formatSyncSummary(result));
 
       setLastSummary(summaries.join(" "));
       router.refresh();

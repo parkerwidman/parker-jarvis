@@ -27,6 +27,9 @@ import {
   resolvePlaidPostedDate,
   resolvePlaidTransactionDate,
 } from "@/lib/jarvis/integrations/plaid/plaid-sync-mappers";
+import { matchPlaidPostedTransaction } from "@/lib/jarvis/integrations/plaid/plaid-transaction-match-service";
+import type { PlaidPostedTransactionMatchInput } from "@/lib/jarvis/integrations/plaid/plaid-transaction-match-types";
+import { resolvePlaidMappingRemovalDecision } from "@/lib/jarvis/integrations/plaid/plaid-transaction-removal-safety";
 import type {
   PlaidConnectionRow,
   PlaidConnectionSyncResult,
@@ -61,6 +64,7 @@ type FinanceAccountRow = {
 
 type FinanceTransactionRow = {
   id: string;
+  source: string;
   category_user_edited: boolean;
   personal_or_business_user_edited: boolean;
   notes_user_edited: boolean;
@@ -69,13 +73,31 @@ type FinanceTransactionRow = {
   notes: string | null;
 };
 
-type SyncCounts = {
+export type PlaidSyncCounts = {
   accountsCreated: number;
   accountsUpdated: number;
   transactionsAdded: number;
   transactionsModified: number;
   transactionsRemoved: number;
+  transactionsMatchedExisting: number;
+  transactionsReviewRequired: number;
+  rocketMoneyMappingsRemoved: number;
   unclassifiedCount: number;
+};
+
+type SyncCounts = PlaidSyncCounts;
+
+type UpsertResult = {
+  added: boolean;
+  modified: boolean;
+  unclassified: boolean;
+  matchedExisting: boolean;
+  reviewRequired: boolean;
+};
+
+type RemoveResult = {
+  voided: boolean;
+  rocketMoneyMappingRemoved: boolean;
 };
 
 type SyncContext = {
@@ -113,6 +135,9 @@ function emptySyncCounts(): SyncCounts {
     transactionsAdded: 0,
     transactionsModified: 0,
     transactionsRemoved: 0,
+    transactionsMatchedExisting: 0,
+    transactionsReviewRequired: 0,
+    rocketMoneyMappingsRemoved: 0,
     unclassifiedCount: 0,
   };
 }
@@ -131,9 +156,112 @@ function toSyncResult(
     transactionsAdded: counts.transactionsAdded,
     transactionsModified: counts.transactionsModified,
     transactionsRemoved: counts.transactionsRemoved,
+    transactionsMatchedExisting: counts.transactionsMatchedExisting,
+    transactionsReviewRequired: counts.transactionsReviewRequired,
+    rocketMoneyMappingsRemoved: counts.rocketMoneyMappingsRemoved,
     unclassifiedCount: counts.unclassifiedCount,
     errorCode,
   };
+}
+
+function buildPostedMatchInput(
+  context: SyncContext,
+  transaction: Transaction,
+): PlaidPostedTransactionMatchInput {
+  const jarvisAmount = normalizePlaidTransactionAmount(transaction.amount);
+
+  return {
+    providerTransactionId: transaction.transaction_id,
+    pendingProviderTransactionId: transaction.pending_transaction_id,
+    transactionDate: resolvePlaidTransactionDate(transaction),
+    postedDate: resolvePlaidPostedDate(transaction),
+    amount: jarvisAmount,
+    merchant: resolvePlaidMerchant(transaction),
+    description: null,
+    transactionType: mapPlaidTransactionType(transaction, jarvisAmount),
+    status: transaction.pending ? "pending" : "posted",
+  };
+}
+
+async function loadMappedFinanceTransaction(
+  context: SyncContext,
+  financeTransactionId: string,
+): Promise<FinanceTransactionRow | null> {
+  const { data, error } = await context.supabase
+    .from("finance_transactions")
+    .select(
+      "id, source, category_user_edited, personal_or_business_user_edited, notes_user_edited, personal_or_business, category_id, notes",
+    )
+    .eq("id", financeTransactionId)
+    .eq("user_id", context.userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return (data as FinanceTransactionRow | null) ?? null;
+}
+
+function assertSafeMappedFinanceSource(source: string | null | undefined): void {
+  if (source === "plaid" || source === "rocket_money_csv") {
+    return;
+  }
+
+  throw new PlaidSafeError("sync_failed");
+}
+
+async function updateRocketMoneyMappingState(
+  context: SyncContext,
+  mapping: TransactionMappingRow,
+  transaction: Transaction,
+): Promise<void> {
+  const { error: mappingError } = await context.supabase
+    .from("plaid_finance_transaction_mappings")
+    .update({
+      provider_pending_transaction_id: transaction.pending_transaction_id,
+      removed_at: null,
+      provider_observed_at: context.syncTimestamp,
+    })
+    .eq("id", mapping.id)
+    .eq("user_id", context.userId);
+
+  if (mappingError) {
+    throw mappingError;
+  }
+}
+
+async function invokePostedTransactionMatcher(
+  context: SyncContext,
+  financeAccountId: string,
+  matchInput: PlaidPostedTransactionMatchInput,
+): Promise<
+  | { outcome: "matched_existing" }
+  | { outcome: "review_required" }
+  | { outcome: "no_match" }
+> {
+  try {
+    const result = await matchPlaidPostedTransaction(
+      context.supabase,
+      context.userId,
+      context.connection.id,
+      financeAccountId,
+      matchInput,
+      { observedAt: context.syncTimestamp },
+    );
+
+    if (result.outcome === "matched_existing") {
+      return { outcome: "matched_existing" };
+    }
+
+    if (result.outcome === "review_required") {
+      return { outcome: "review_required" };
+    }
+
+    return { outcome: "no_match" };
+  } catch {
+    throw new PlaidSafeError("sync_failed");
+  }
 }
 
 async function acquireSyncLock(
@@ -496,13 +624,58 @@ function buildProviderTransactionPayload(
   };
 }
 
+type CreatePlaidFinanceTransactionRpcResult = {
+  success: boolean;
+  code?: string;
+  finance_transaction_id?: string;
+};
+
+async function createPlaidFinanceTransactionAtomically(
+  context: SyncContext,
+  financeAccountId: string,
+  transaction: Transaction,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const { data, error } = await context.supabase.rpc("create_plaid_finance_transaction", {
+    p_user_id: context.userId,
+    p_plaid_connection_id: context.connection.id,
+    p_finance_account_id: financeAccountId,
+    p_provider_transaction_id: transaction.transaction_id,
+    p_provider_pending_transaction_id: transaction.pending_transaction_id,
+    p_transaction_date: payload.transaction_date,
+    p_posted_date: payload.posted_date,
+    p_amount: payload.amount,
+    p_merchant: payload.merchant,
+    p_description: payload.description,
+    p_transaction_type: payload.transaction_type,
+    p_status: payload.status,
+    p_category_id: payload.category_id,
+    p_observed_at: context.syncTimestamp,
+  });
+
+  if (error) {
+    throw new PlaidSafeError("sync_failed");
+  }
+
+  const result = data as CreatePlaidFinanceTransactionRpcResult | null;
+  if (!result?.success || !result.finance_transaction_id) {
+    throw new PlaidSafeError("sync_failed");
+  }
+}
+
 async function upsertPlaidTransaction(
   context: SyncContext,
   transaction: Transaction,
   mode: "added" | "modified",
-): Promise<{ added: boolean; modified: boolean; unclassified: boolean }> {
+): Promise<UpsertResult> {
   if (context.investmentAccountIds.has(transaction.account_id)) {
-    return { added: false, modified: false, unclassified: false };
+    return {
+      added: false,
+      modified: false,
+      unclassified: false,
+      matchedExisting: false,
+      reviewRequired: false,
+    };
   }
 
   if (
@@ -529,32 +702,36 @@ async function upsertPlaidTransaction(
     transaction.transaction_id,
   );
 
-  let existingFinance: FinanceTransactionRow | null = null;
   if (existingMapping) {
-    const { data, error } = await context.supabase
-      .from("finance_transactions")
-      .select(
-        "id, category_user_edited, personal_or_business_user_edited, notes_user_edited, personal_or_business, category_id, notes",
-      )
-      .eq("id", existingMapping.finance_transaction_id)
-      .eq("user_id", context.userId)
-      .eq("source", "plaid")
-      .maybeSingle();
+    const mappedFinance = await loadMappedFinanceTransaction(
+      context,
+      existingMapping.finance_transaction_id,
+    );
 
-    if (error) {
-      throw error;
+    if (!mappedFinance) {
+      throw new PlaidSafeError("sync_failed");
     }
 
-    existingFinance = (data as FinanceTransactionRow | null) ?? null;
-  }
+    assertSafeMappedFinanceSource(mappedFinance.source);
 
-  const { payload, unclassified } = buildProviderTransactionPayload(
-    context,
-    transaction,
-    existingFinance,
-  );
+    if (mappedFinance.source === "rocket_money_csv") {
+      await updateRocketMoneyMappingState(context, existingMapping, transaction);
 
-  if (existingMapping && existingFinance) {
+      return {
+        added: false,
+        modified: false,
+        unclassified: false,
+        matchedExisting: true,
+        reviewRequired: false,
+      };
+    }
+
+    const { payload, unclassified } = buildProviderTransactionPayload(
+      context,
+      transaction,
+      mappedFinance,
+    );
+
     const { error: updateError } = await context.supabase
       .from("finance_transactions")
       .update(payload)
@@ -584,53 +761,161 @@ async function upsertPlaidTransaction(
       added: false,
       modified: true,
       unclassified,
+      matchedExisting: false,
+      reviewRequired: false,
     };
   }
 
-  const { data: createdTransaction, error: insertError } = await context.supabase
-    .from("finance_transactions")
-    .insert({
-      user_id: context.userId,
-      notes: null,
-      ...payload,
-    })
-    .select("id")
-    .single();
+  if (transaction.pending) {
+    const { payload, unclassified } = buildProviderTransactionPayload(
+      context,
+      transaction,
+      null,
+    );
 
-  if (insertError || !createdTransaction) {
-    throw insertError ?? new Error("transaction_insert_failed");
+    await createPlaidFinanceTransactionAtomically(
+      context,
+      financeAccountMapping.finance_account_id,
+      transaction,
+      payload,
+    );
+
+    return {
+      added: mode === "added",
+      modified: mode === "modified",
+      unclassified,
+      matchedExisting: false,
+      reviewRequired: false,
+    };
   }
 
-  const { error: mappingInsertError } = await context.supabase
-    .from("plaid_finance_transaction_mappings")
-    .insert({
-      user_id: context.userId,
-      plaid_connection_id: context.connection.id,
-      finance_transaction_id: createdTransaction.id,
-      provider_transaction_id: transaction.transaction_id,
-      provider_pending_transaction_id: transaction.pending_transaction_id,
-      provider_observed_at: context.syncTimestamp,
-    });
+  const matchInput = buildPostedMatchInput(context, transaction);
+  const matchResult = await invokePostedTransactionMatcher(
+    context,
+    financeAccountMapping.finance_account_id,
+    matchInput,
+  );
 
-  if (mappingInsertError) {
-    throw mappingInsertError;
+  if (matchResult.outcome === "matched_existing") {
+    return {
+      added: false,
+      modified: false,
+      unclassified: false,
+      matchedExisting: true,
+      reviewRequired: false,
+    };
   }
+
+  if (matchResult.outcome === "review_required") {
+    return {
+      added: false,
+      modified: false,
+      unclassified: false,
+      matchedExisting: false,
+      reviewRequired: true,
+    };
+  }
+
+  const { payload, unclassified } = buildProviderTransactionPayload(
+    context,
+    transaction,
+    null,
+  );
+
+  await createPlaidFinanceTransactionAtomically(
+    context,
+    financeAccountMapping.finance_account_id,
+    transaction,
+    payload,
+  );
 
   return {
     added: mode === "added" || !existingMapping,
     modified: Boolean(existingMapping),
-    unclassified: !existingFinance || existingFinance.personal_or_business === "unclassified",
+    unclassified,
+    matchedExisting: false,
+    reviewRequired: false,
   };
+}
+
+async function markReviewItemRemoved(
+  context: SyncContext,
+  providerTransactionId: string,
+): Promise<boolean> {
+  const { data: reviewItem, error } = await context.supabase
+    .from("plaid_transaction_match_review_items")
+    .select("id, review_status")
+    .eq("plaid_connection_id", context.connection.id)
+    .eq("plaid_transaction_id", providerTransactionId)
+    .eq("user_id", context.userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!reviewItem || reviewItem.review_status !== "pending") {
+    return false;
+  }
+
+  const { error: updateError } = await context.supabase
+    .from("plaid_transaction_match_review_items")
+    .update({
+      review_status: "removed",
+      resolved_at: context.syncTimestamp,
+    })
+    .eq("id", reviewItem.id)
+    .eq("user_id", context.userId)
+    .eq("review_status", "pending");
+
+  if (updateError) {
+    throw updateError;
+  }
+
+  return true;
 }
 
 async function removePlaidTransaction(
   context: SyncContext,
   removed: RemovedTransaction,
-): Promise<boolean> {
+): Promise<RemoveResult> {
   const existingMapping = await findTransactionMapping(context, removed.transaction_id);
 
   if (!existingMapping || existingMapping.removed_at) {
-    return false;
+    await markReviewItemRemoved(context, removed.transaction_id);
+    return { voided: false, rocketMoneyMappingRemoved: false };
+  }
+
+  const mappedFinance = await loadMappedFinanceTransaction(
+    context,
+    existingMapping.finance_transaction_id,
+  );
+
+  if (!mappedFinance) {
+    throw new PlaidSafeError("sync_failed");
+  }
+
+  const removalDecision = resolvePlaidMappingRemovalDecision(mappedFinance.source);
+
+  if (removalDecision.action === "fail_closed") {
+    throw new PlaidSafeError("sync_failed");
+  }
+
+  if (removalDecision.action === "remove_mapping_only") {
+    const { error: mappingError } = await context.supabase
+      .from("plaid_finance_transaction_mappings")
+      .update({
+        removed_at: context.syncTimestamp,
+        provider_observed_at: context.syncTimestamp,
+      })
+      .eq("id", existingMapping.id)
+      .eq("user_id", context.userId);
+
+    if (mappingError) {
+      throw mappingError;
+    }
+
+    return { voided: false, rocketMoneyMappingRemoved: true };
   }
 
   const { error: transactionError } = await context.supabase
@@ -657,7 +942,7 @@ async function removePlaidTransaction(
     throw mappingError;
   }
 
-  return true;
+  return { voided: true, rocketMoneyMappingRemoved: false };
 }
 
 async function processTransactionsSyncPage(
@@ -671,7 +956,11 @@ async function processTransactionsSyncPage(
 ): Promise<void> {
   for (const transaction of page.added) {
     const result = await upsertPlaidTransaction(context, transaction, "added");
-    if (result.added) {
+    if (result.matchedExisting) {
+      counts.transactionsMatchedExisting += 1;
+    } else if (result.reviewRequired) {
+      counts.transactionsReviewRequired += 1;
+    } else if (result.added) {
       counts.transactionsAdded += 1;
     } else if (result.modified) {
       counts.transactionsModified += 1;
@@ -683,7 +972,11 @@ async function processTransactionsSyncPage(
 
   for (const transaction of page.modified) {
     const result = await upsertPlaidTransaction(context, transaction, "modified");
-    if (result.modified) {
+    if (result.matchedExisting) {
+      counts.transactionsMatchedExisting += 1;
+    } else if (result.reviewRequired) {
+      counts.transactionsReviewRequired += 1;
+    } else if (result.modified) {
       counts.transactionsModified += 1;
     } else if (result.added) {
       counts.transactionsAdded += 1;
@@ -694,9 +987,12 @@ async function processTransactionsSyncPage(
   }
 
   for (const removed of page.removed) {
-    const removedCount = await removePlaidTransaction(context, removed);
-    if (removedCount) {
+    const removeResult = await removePlaidTransaction(context, removed);
+    if (removeResult.voided) {
       counts.transactionsRemoved += 1;
+    }
+    if (removeResult.rocketMoneyMappingRemoved) {
+      counts.rocketMoneyMappingsRemoved += 1;
     }
   }
 }
@@ -883,6 +1179,9 @@ export async function syncPlaidConnection(
     counts.transactionsAdded = transactionCounts.transactionsAdded;
     counts.transactionsModified = transactionCounts.transactionsModified;
     counts.transactionsRemoved = transactionCounts.transactionsRemoved;
+    counts.transactionsMatchedExisting = transactionCounts.transactionsMatchedExisting;
+    counts.transactionsReviewRequired = transactionCounts.transactionsReviewRequired;
+    counts.rocketMoneyMappingsRemoved = transactionCounts.rocketMoneyMappingsRemoved;
     counts.unclassifiedCount = transactionCounts.unclassifiedCount;
 
     await markSuccessfulSync(
@@ -940,4 +1239,55 @@ export async function syncAllPlaidConnectionsForUser(
   }
 
   return results;
+}
+
+export async function processPlaidTransactionsSyncPageForTests(
+  supabase: SupabaseClient,
+  userId: string,
+  connection: PlaidConnectionRow,
+  page: {
+    added: Transaction[];
+    modified: Transaction[];
+    removed: RemovedTransaction[];
+  },
+  options: {
+    accountMappings: Map<string, AccountMappingRow>;
+    categorySlugToId?: Map<string, string>;
+    syncTimestamp?: string;
+  },
+): Promise<PlaidSyncCounts> {
+  const syncTimestamp = options.syncTimestamp ?? new Date().toISOString();
+  const context: SyncContext = {
+    supabase,
+    userId,
+    connection,
+    accessToken: "test-token",
+    syncTimestamp,
+    syncDate: syncTimestamp.slice(0, 10),
+    institutionName: connection.institution_name,
+    categorySlugToId: options.categorySlugToId ?? new Map(),
+    accountMappings: options.accountMappings,
+    investmentAccountIds: new Set(),
+  };
+
+  const counts = emptySyncCounts();
+  await processTransactionsSyncPage(context, page, counts);
+  return counts;
+}
+
+export async function persistPlaidTransactionsCursorForTests(
+  supabase: SupabaseClient,
+  userId: string,
+  connectionId: string,
+  cursor: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("plaid_connections")
+    .update({ transactions_cursor: cursor })
+    .eq("id", connectionId)
+    .eq("user_id", userId);
+
+  if (error) {
+    throw error;
+  }
 }
