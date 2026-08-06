@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   AUTO_EXECUTE_RISK_LEVEL,
   EXECUTION_MODE_AUTO_EXECUTE,
+  ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
 } from "./action-type-constants";
 
 export type AutoExecuteAuditRecord = {
@@ -129,6 +130,22 @@ export async function claimAutoExecuteAction(
       record.status === "failed" &&
       record.provider_outcome_certainty === "uncertain"
     ) {
+      if (input.actionType === ACTION_TYPE_CREATE_OUTLOOK_DRAFT) {
+        logAutoExecuteAuditDiagnostic({
+          stage: "claim_lookup",
+          actionType: input.actionType,
+          success: true,
+        });
+        return {
+          success: true,
+          auditId: record.id,
+          isReplay: true,
+          priorResult: record.result ?? {},
+          priorStatus: record.status,
+          providerOutcomeCertainty: record.provider_outcome_certainty,
+        };
+      }
+
       logAutoExecuteAuditDiagnostic({
         stage: "claim_lookup",
         actionType: input.actionType,

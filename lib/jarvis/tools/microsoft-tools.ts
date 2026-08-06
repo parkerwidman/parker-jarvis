@@ -16,6 +16,7 @@ import type { ValidatedDirectCalendarEventPayload } from "@/lib/jarvis/action-re
 import type { ValidatedEmailSendPayload } from "@/lib/jarvis/action-requests/email-send-action-payload";
 import type { ValidatedReminderPayload } from "@/lib/jarvis/action-requests/reminder-action-payload";
 import {
+  logOutlookDraftStageDiagnostic,
   markOutlookDraftReferenceSent,
   resolveOutlookDraftReference,
   storeOutlookDraftReference,
@@ -484,6 +485,7 @@ export async function createOutlookDraft(
     ccRecipients: string[];
     subject: string;
     body: string;
+    actionRequestId?: string;
   },
 ): Promise<CreateOutlookDraftResult> {
   const toResult = normalizeRecipientList(
@@ -583,6 +585,7 @@ export async function createOutlookDraft(
       userId,
       graphResult,
       { subject, toRecipients, ccRecipients },
+      input.actionRequestId,
     );
   }
 
@@ -607,6 +610,7 @@ export async function createOutlookDraft(
     userId,
     graphResult.data,
     { subject, toRecipients, ccRecipients },
+    input.actionRequestId,
   );
 }
 
@@ -619,17 +623,43 @@ async function completeDraftFromGraphResponse(
     toRecipients: string[];
     ccRecipients: string[];
   },
+  actionRequestId?: string,
 ): Promise<CreateOutlookDraftResult> {
   const payload = data as GraphMessage;
 
   if (typeof payload.id !== "string") {
+    logOutlookDraftStageDiagnostic({
+      stage: "graph_draft_created",
+      success: false,
+      hasGraphMessageId: false,
+      errorCode: "draft_creation_failed",
+    });
     return { success: false, error: "Could not create Outlook draft." };
+  }
+
+  const graphMessageId = payload.id;
+
+  logOutlookDraftStageDiagnostic({
+    stage: "graph_draft_created",
+    success: true,
+    hasGraphMessageId: true,
+  });
+
+  if (!actionRequestId) {
+    logOutlookDraftStageDiagnostic({
+      stage: "draft_reference_persistence",
+      success: false,
+      errorCode: "draft_reference_persistence_failed",
+      hasGraphMessageId: true,
+    });
+    return { success: false, outcome: "uncertain" };
   }
 
   const draftReference = await storeOutlookDraftReference(
     supabase,
     userId,
-    payload.id,
+    graphMessageId,
+    actionRequestId,
   );
 
   if (!draftReference.success) {
@@ -661,10 +691,17 @@ async function finalizeUnknownStateDraftResult(
     toRecipients: string[];
     ccRecipients: string[];
   },
+  actionRequestId?: string,
 ): Promise<CreateOutlookDraftResult> {
   if (result.success) {
     await recordMailReadWriteVerified(supabase, userId);
-    return completeDraftFromGraphResponse(supabase, userId, result.data, input);
+    return completeDraftFromGraphResponse(
+      supabase,
+      userId,
+      result.data,
+      input,
+      actionRequestId,
+    );
   }
 
   if ("needsConnection" in result) {

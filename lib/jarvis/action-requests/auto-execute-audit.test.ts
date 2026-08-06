@@ -117,6 +117,32 @@ describe("auto-execute audit claim failures", () => {
     expect(createOutlookDraft).not.toHaveBeenCalled();
   });
 
+  it("returns uncertain failed audits as replay candidates for reconciliation", async () => {
+    const supabase = buildClaimSupabase({
+      existingRecord: {
+        id: "audit-hidden",
+        status: "failed",
+        result: null,
+        provider_outcome_certainty: "uncertain",
+      },
+    });
+
+    const result = await claimAutoExecuteAction(supabase as never, {
+      userId: USER_ID,
+      actionType: ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
+      idempotencyKey: `${ACTION_TYPE_CREATE_OUTLOOK_DRAFT}:${TOOL_CALL_ID}`,
+      title: "Create Outlook draft",
+      summary: "Draft summary",
+      payload: { subject: "Test", toRecipientCount: 1, ccRecipientCount: 0 },
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      isReplay: true,
+      providerOutcomeCertainty: "uncertain",
+    });
+  });
+
   it("claims draft audit successfully before Graph on a valid insert", async () => {
     vi.mocked(createOutlookDraft).mockResolvedValue({
       success: true,

@@ -14,6 +14,7 @@ import {
 import { createOutlookDraft } from "@/lib/jarvis/tools/microsoft-tools";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
+const ACTION_REQUEST_ID = "22222222-2222-4222-8222-222222222222";
 
 const graphPostMock = vi.fn();
 const graphPostDetailedMock = vi.fn();
@@ -26,11 +27,16 @@ vi.mock("@/lib/microsoft/graph-client", () => ({
   microsoftGraphPatch: vi.fn(),
 }));
 
-vi.mock("@/lib/jarvis/tools/outlook-draft-references", () => ({
-  resolveOutlookDraftReference: vi.fn(),
-  markOutlookDraftReferenceSent: vi.fn(),
-  storeOutlookDraftReference: (...args: unknown[]) => storeDraftReferenceMock(...args),
-}));
+vi.mock("@/lib/jarvis/tools/outlook-draft-references", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/jarvis/tools/outlook-draft-references")>();
+  return {
+    ...actual,
+    resolveOutlookDraftReference: vi.fn(),
+    markOutlookDraftReferenceSent: vi.fn(),
+    storeOutlookDraftReference: (...args: unknown[]) => storeDraftReferenceMock(...args),
+  };
+});
 
 function buildScopesSupabase(grantedScopes: string | null) {
   const update = vi.fn().mockReturnValue({
@@ -94,7 +100,10 @@ describe("createOutlookDraft permission gating", () => {
   it("blocks Graph and returns microsoft_permission_required when Mail.ReadWrite is known missing", async () => {
     buildScopesSupabase("Mail.Send Calendars.ReadWrite");
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result).toMatchObject({
       success: false,
@@ -112,7 +121,10 @@ describe("createOutlookDraft permission gating", () => {
       data: { id: "graph-message-hidden" },
     });
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result.success).toBe(true);
     if (result.success) {
@@ -130,7 +142,10 @@ describe("createOutlookDraft permission gating", () => {
       data: { id: "graph-message-hidden" },
     });
 
-    await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(graphPostMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -152,7 +167,10 @@ describe("createOutlookDraft permission gating", () => {
       data: { id: "graph-message-hidden" },
     });
 
-    await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     for (const call of [...graphPostMock.mock.calls, ...graphPostDetailedMock.mock.calls]) {
       expect(String(call[2])).not.toContain("sendMail");
@@ -168,7 +186,10 @@ describe("createOutlookDraft permission gating", () => {
       failureKind: "permission_denied",
     });
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result).toMatchObject({
       success: false,
@@ -185,7 +206,10 @@ describe("createOutlookDraft permission gating", () => {
       failureKind: "ambiguous",
     });
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result).toEqual({ success: false, outcome: "uncertain" });
   });
@@ -194,7 +218,10 @@ describe("createOutlookDraft permission gating", () => {
     buildScopesSupabase("Mail.ReadWrite Mail.Send Calendars.ReadWrite");
     graphPostMock.mockResolvedValue({ success: true, data: { subject: "No id" } });
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result).toMatchObject({ success: false, error: "Could not create Outlook draft." });
   });
@@ -207,9 +234,25 @@ describe("createOutlookDraft permission gating", () => {
     });
     storeDraftReferenceMock.mockResolvedValue({ success: false });
 
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
+
+    expect(result).toEqual({ success: false, outcome: "uncertain" });
+  });
+
+  it("returns uncertain when Graph succeeds without an actionRequestId for reference storage", async () => {
+    buildScopesSupabase("Mail.ReadWrite Mail.Send Calendars.ReadWrite");
+    graphPostMock.mockResolvedValue({
+      success: true,
+      data: { id: "graph-message-hidden" },
+    });
+
     const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
 
     expect(result).toEqual({ success: false, outcome: "uncertain" });
+    expect(storeDraftReferenceMock).not.toHaveBeenCalled();
   });
 
   it("stores an opaque draftKey and exposes no Graph id on success", async () => {
@@ -219,7 +262,10 @@ describe("createOutlookDraft permission gating", () => {
       data: { id: "graph-message-hidden" },
     });
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result.success).toBe(true);
     const serialized = JSON.stringify(result);
@@ -229,6 +275,7 @@ describe("createOutlookDraft permission gating", () => {
       expect.anything(),
       USER_ID,
       "graph-message-hidden",
+      ACTION_REQUEST_ID,
     );
   });
 
@@ -251,7 +298,10 @@ describe("createOutlookDraft permission gating", () => {
       data: { id: "graph-message-hidden" },
     });
 
-    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, VALID_DRAFT_INPUT);
+    const result = await createOutlookDraft({ from: fromMock } as never, USER_ID, {
+      ...VALID_DRAFT_INPUT,
+      actionRequestId: ACTION_REQUEST_ID,
+    });
 
     expect(result.success).toBe(true);
     expect(graphPostMock).toHaveBeenCalledTimes(1);

@@ -17,6 +17,7 @@ import {
   failAutoExecuteAction,
   mapAutoExecuteClaimFailure,
 } from "@/lib/jarvis/action-requests/auto-execute-audit";
+import type { ValidatedDraftPayload } from "@/lib/jarvis/action-requests/draft-action-payload";
 import {
   buildDirectCalendarSummary,
   validateDirectCalendarEventPayload,
@@ -43,6 +44,10 @@ import {
   createOutlookReminder,
   sendOutlookEmail,
 } from "@/lib/jarvis/tools/microsoft-tools";
+import {
+  findOutlookDraftReferenceByActionRequest,
+  logOutlookDraftStageDiagnostic,
+} from "@/lib/jarvis/tools/outlook-draft-references";
 import { createTask } from "@/lib/jarvis/tools/task-tools";
 
 type SafeToolError = {
@@ -535,13 +540,12 @@ export async function executeDirectCreateDraft(
 
   if (claim.isReplay) {
     if (claim.providerOutcomeCertainty === "uncertain") {
-      return {
-        success: false,
-        errorCode: "draft_creation_outcome_uncertain",
-        draftCreationOutcomeUncertain: true,
-        message:
-          "A prior draft attempt had an uncertain outcome. Do not retry automatically.",
-      };
+      return reconcileUncertainDraftExecution(
+        supabase,
+        userId,
+        claim.auditId,
+        validated.payload,
+      );
     }
 
     return mapStoredDraftResult(claim.priorResult);
@@ -550,7 +554,10 @@ export async function executeDirectCreateDraft(
   const graphResult = await createOutlookDraft(
     supabase,
     userId,
-    validated.payload,
+    {
+      ...validated.payload,
+      actionRequestId: claim.auditId,
+    },
   );
 
   if ("outcome" in graphResult && graphResult.outcome === "uncertain") {
@@ -581,24 +588,120 @@ export async function executeDirectCreateDraft(
     return mapMicrosoftDraftFailure(graphResult);
   }
 
-  const safeResult = {
-    success: true as const,
-    status: "completed" as const,
-    subject: validated.payload.subject,
-    toRecipientCount: validated.payload.toRecipients.length,
-    ccRecipientCount: validated.payload.ccRecipients.length,
-    draftKey: graphResult.draftKey,
-    savedToDrafts: true as const,
-    notSent: true as const,
-    message: graphResult.message,
-  };
+  const safeResult = buildSafeDraftResult(validated.payload, graphResult.draftKey);
 
-  await completeAutoExecuteAction(supabase, {
+  const auditCompleted = await completeAutoExecuteAction(supabase, {
     auditId: claim.auditId,
     userId,
     result: safeResult,
     providerOutcomeCertainty: "confirmed",
   });
+
+  logOutlookDraftStageDiagnostic({
+    stage: "draft_audit_completion",
+    success: auditCompleted.success,
+    ...(auditCompleted.success
+      ? {}
+      : { errorCode: "draft_audit_completion_failed" }),
+  });
+
+  if (!auditCompleted.success) {
+    const reconciled = await reconcileUncertainDraftExecution(
+      supabase,
+      userId,
+      claim.auditId,
+      validated.payload,
+    );
+
+    if (reconciled.success) {
+      return reconciled;
+    }
+  }
+
+  return safeResult;
+}
+
+type SafeDraftResult = {
+  success: true;
+  status: "completed";
+  subject: string;
+  toRecipientCount: number;
+  ccRecipientCount: number;
+  draftKey: string;
+  savedToDrafts: true;
+  notSent: true;
+  message: string;
+};
+
+function buildSafeDraftResult(
+  payload: ValidatedDraftPayload,
+  draftKey: string,
+): SafeDraftResult {
+  return {
+    success: true,
+    status: "completed",
+    subject: payload.subject,
+    toRecipientCount: payload.toRecipients.length,
+    ccRecipientCount: payload.ccRecipients.length,
+    draftKey,
+    savedToDrafts: true,
+    notSent: true,
+    message: "The message was saved as a draft in Outlook and was not sent.",
+  };
+}
+
+async function reconcileUncertainDraftExecution(
+  supabase: SupabaseClient,
+  userId: string,
+  auditId: string,
+  payload: ValidatedDraftPayload,
+): Promise<SafeDraftResult | SafeToolError> {
+  const existingReference = await findOutlookDraftReferenceByActionRequest(
+    supabase,
+    userId,
+    auditId,
+  );
+
+  logOutlookDraftStageDiagnostic({
+    stage: "draft_reconciliation",
+    success: existingReference.success,
+    existingReferenceFound: existingReference.success,
+    ...(existingReference.success
+      ? {}
+      : { errorCode: "draft_creation_outcome_uncertain" }),
+  });
+
+  if (!existingReference.success) {
+    return {
+      success: false,
+      errorCode: "draft_creation_outcome_uncertain",
+      draftCreationOutcomeUncertain: true,
+      message:
+        "Outlook may have created the draft, but the outcome is uncertain and I can't confirm it was saved. Do not retry automatically.",
+    };
+  }
+
+  const safeResult = buildSafeDraftResult(payload, existingReference.reference.id);
+
+  const auditCompleted = await completeAutoExecuteAction(supabase, {
+    auditId,
+    userId,
+    result: safeResult,
+    providerOutcomeCertainty: "confirmed",
+  });
+
+  logOutlookDraftStageDiagnostic({
+    stage: "draft_audit_completion",
+    success: auditCompleted.success,
+    existingReferenceFound: true,
+    ...(auditCompleted.success
+      ? {}
+      : { errorCode: "draft_audit_completion_failed" }),
+  });
+
+  if (!auditCompleted.success) {
+    return safeResult;
+  }
 
   return safeResult;
 }

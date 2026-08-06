@@ -705,7 +705,7 @@ describe("low-friction personal productivity actions", () => {
     expect(result).not.toMatchObject({ needsConnection: true, needsReconnect: true });
   });
 
-  it("blocks blind retry after uncertain draft outcomes", async () => {
+  it("remains uncertain on replay when no linked draft reference exists", async () => {
     const supabase = buildAutoExecuteSupabase({
       existingRecord: {
         id: "audit-hidden",
@@ -727,7 +727,11 @@ describe("low-friction personal productivity actions", () => {
       },
     );
 
-    expect(result).toMatchObject({ errorCode: "duplicate_execution_blocked" });
+    expect(result).toMatchObject({
+      success: false,
+      errorCode: "draft_creation_outcome_uncertain",
+      draftCreationOutcomeUncertain: true,
+    });
     expect(createOutlookDraft).not.toHaveBeenCalled();
   });
 
