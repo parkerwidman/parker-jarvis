@@ -47,6 +47,32 @@ export function logToolCallDiagnostic(
       console.log("[Jarvis tool diagnostic]", payload);
       return;
     }
+
+    if (toolName === "get_melusi_expenses") {
+      const payload: Record<string, unknown> = {
+        round,
+        toolName,
+      };
+
+      if (typeof parsed.success === "boolean") {
+        payload.success = parsed.success;
+      }
+      if (typeof parsed.focus === "string") {
+        payload.focus = parsed.focus;
+      }
+      if (typeof parsed.historyResultCount === "number") {
+        payload.historyResultCount = parsed.historyResultCount;
+      }
+      if (typeof parsed.upcomingResultCount === "number") {
+        payload.upcomingResultCount = parsed.upcomingResultCount;
+      }
+      if (typeof parsed.importSummaryCount === "number") {
+        payload.importSummaryCount = parsed.importSummaryCount;
+      }
+
+      console.log("[Jarvis tool diagnostic]", payload);
+      return;
+    }
   } catch {
     // Ignore unparsable tool output.
   }

@@ -31,6 +31,7 @@ import {
   listMelusiProjectUpdates,
 } from "@/lib/jarvis/projects/project-update-tools";
 import { getMelusiSocialPerformance } from "@/lib/jarvis/melusi/melusi-social-tools";
+import { getMelusiExpenses } from "@/lib/jarvis/melusi/melusi-expense-tools";
 import { logAssistantError } from "./agent-diagnostics";
 
 function nullableString(value: unknown): string | null {
@@ -280,6 +281,13 @@ export async function executeJarvisTool(
           await getMelusiSocialPerformance(supabase, userId, {
             focus: args.focus,
             network: args.network,
+          }),
+        );
+      case "get_melusi_expenses":
+        return JSON.stringify(
+          await getMelusiExpenses(supabase, userId, {
+            focus: args.focus,
+            historyLimit: args.historyLimit,
           }),
         );
       default:
