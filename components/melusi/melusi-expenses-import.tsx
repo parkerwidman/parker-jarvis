@@ -1,7 +1,10 @@
 "use client";
 
 import {
+  importRocketMoneyBusinessCsv,
   previewRocketMoneyBusinessCsv,
+  type ClassificationOverridePayload,
+  type RocketMoneyImportActionResult,
   type RocketMoneyPreviewActionResult,
   type SanitizedPreviewTransaction,
   type SanitizedRocketMoneyPreview,
@@ -25,6 +28,8 @@ import Link from "next/link";
 import { useMemo, useRef, useState, useTransition } from "react";
 
 const CSV_FIELD_NAME = "csvFile";
+const OVERRIDES_FIELD_NAME = "classificationOverrides";
+const CONFIRMATION_FIELD_NAME = "confirmed";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -66,8 +71,15 @@ const RECURRENCE_FREQUENCY_OPTIONS: { value: FinanceFrequency; label: string }[]
     { value: "annual", label: "Annual" },
   ];
 
-type EditablePreviewRow = SanitizedPreviewTransaction & {
-  clientId: number;
+type EditablePreviewRow = SanitizedPreviewTransaction;
+
+type ImportSuccessState = {
+  importedTransactionCount: number;
+  recurringItemCount: number;
+  ownerFundedSpendingTotal: number;
+  monthlyRecurringAmount: number;
+  annualRecurringAmount: number;
+  estimatedAnnualRecurringRunRate: number;
 };
 
 function formatCurrency(value: number): string {
@@ -130,13 +142,40 @@ function descriptionIsUseful(
 function clonePreviewRows(
   transactions: SanitizedPreviewTransaction[],
 ): EditablePreviewRow[] {
-  return transactions.map((transaction, index) => ({
+  return transactions.map((transaction) => ({
     ...transaction,
-    clientId: index,
     recurrenceProposal: transaction.recurrenceProposal
       ? { ...transaction.recurrenceProposal }
       : null,
   }));
+}
+
+function buildClassificationOverrides(
+  rows: EditablePreviewRow[],
+): ClassificationOverridePayload[] {
+  return rows.map((row) => ({
+    previewRowKey: row.previewRowKey,
+    fundingSource: row.fundingSource,
+    costTreatment: row.costTreatment,
+    prepaidMonths: row.prepaidMonths,
+    serviceThroughDate: row.serviceThroughDate,
+    classificationStatus: row.classificationStatus,
+    recurrenceFrequency: row.recurrenceProposal?.frequency ?? null,
+    notes: row.notes,
+  }));
+}
+
+function canReviewImport(
+  rows: EditablePreviewRow[],
+  fileErrors: SanitizedRocketMoneyPreview["errors"],
+): boolean {
+  if (fileErrors.length > 0 || rows.length === 0) {
+    return false;
+  }
+
+  return rows.every(
+    (row) => !row.isDuplicate && getRowValidationIssues(row).length === 0,
+  );
 }
 
 function buildRecurrenceProposal(
@@ -438,15 +477,18 @@ function RowStateBadge({ row }: { row: EditablePreviewRow }) {
 function PreviewTransactionTable({
   rows,
   onRowChange,
+  readOnly = false,
 }: {
   rows: EditablePreviewRow[];
-  onRowChange: (clientId: number, nextRow: EditablePreviewRow) => void;
+  onRowChange: (previewRowKey: number, nextRow: EditablePreviewRow) => void;
+  readOnly?: boolean;
 }) {
   return (
     <JarvisCard title="Transactions" className="melusi-expenses-table-card">
       <p className="melusi-expenses-preview-edit-note">
-        Preview edits below adjust local totals only. Nothing is saved until
-        import is enabled in a later step.
+        {readOnly
+          ? "Preview is locked after a successful import."
+          : "Preview edits below adjust local totals only. The server re-verifies the CSV on import."}
       </p>
 
       <div className="finance-table-wrap melusi-expenses-table-wrap">
@@ -490,7 +532,7 @@ function PreviewTransactionTable({
 
               return (
                 <tr
-                  key={row.clientId}
+                  key={row.previewRowKey}
                   className={
                     issues.length > 0 || row.isDuplicate
                       ? "melusi-expenses-row--flagged"
@@ -516,8 +558,9 @@ function PreviewTransactionTable({
                       className="melusi-expenses-inline-select"
                       value={row.fundingSource}
                       aria-label={`Funding source for ${row.merchant}`}
+                      disabled={readOnly}
                       onChange={(event) =>
-                        onRowChange(row.clientId, {
+                        onRowChange(row.previewRowKey, {
                           ...row,
                           fundingSource: event.target
                             .value as RocketMoneyFundingSource,
@@ -536,9 +579,10 @@ function PreviewTransactionTable({
                       className="melusi-expenses-inline-select"
                       value={row.costTreatment}
                       aria-label={`Cost treatment for ${row.merchant}`}
+                      disabled={readOnly}
                       onChange={(event) =>
                         onRowChange(
-                          row.clientId,
+                          row.previewRowKey,
                           applyCostTreatmentChange(
                             row,
                             event.target.value as RocketMoneyCostTreatment,
@@ -559,9 +603,10 @@ function PreviewTransactionTable({
                         className="melusi-expenses-inline-select"
                         value={row.recurrenceProposal?.frequency ?? ""}
                         aria-label={`Recurrence for ${row.merchant}`}
+                        disabled={readOnly}
                         onChange={(event) =>
                           onRowChange(
-                            row.clientId,
+                            row.previewRowKey,
                             applyRecurrenceFrequencyChange(
                               row,
                               event.target.value as FinanceFrequency | "",
@@ -596,8 +641,9 @@ function PreviewTransactionTable({
                       className="melusi-expenses-inline-select"
                       value={row.classificationStatus}
                       aria-label={`Classification status for ${row.merchant}`}
+                      disabled={readOnly}
                       onChange={(event) =>
-                        onRowChange(row.clientId, {
+                        onRowChange(row.previewRowKey, {
                           ...row,
                           classificationStatus: event.target
                             .value as RocketMoneyClassificationStatus,
@@ -619,10 +665,11 @@ function PreviewTransactionTable({
                         min={1}
                         step={1}
                         aria-label={`Prepaid months for ${row.merchant}`}
+                        disabled={readOnly}
                         value={row.prepaidMonths ?? ""}
                         onChange={(event) => {
                           const parsed = Number(event.target.value);
-                          onRowChange(row.clientId, {
+                          onRowChange(row.previewRowKey, {
                             ...row,
                             prepaidMonths: Number.isFinite(parsed)
                               ? parsed
@@ -639,9 +686,10 @@ function PreviewTransactionTable({
                       className="melusi-expenses-inline-input"
                       type="date"
                       aria-label={`Service through date for ${row.merchant}`}
+                      disabled={readOnly}
                       value={row.serviceThroughDate ?? ""}
                       onChange={(event) =>
-                        onRowChange(row.clientId, {
+                        onRowChange(row.previewRowKey, {
                           ...row,
                           serviceThroughDate: event.target.value || null,
                         })
@@ -653,10 +701,11 @@ function PreviewTransactionTable({
                       className="melusi-expenses-inline-input melusi-expenses-inline-input--notes"
                       type="text"
                       aria-label={`Notes for ${row.merchant}`}
+                      disabled={readOnly}
                       value={row.notes ?? ""}
-                      placeholder="Preview only"
+                      placeholder="Optional notes"
                       onChange={(event) =>
-                        onRowChange(row.clientId, {
+                        onRowChange(row.previewRowKey, {
                           ...row,
                           notes: event.target.value || null,
                         })
@@ -695,7 +744,7 @@ function PreviewTransactionTable({
 
           return (
             <article
-              key={row.clientId}
+              key={row.previewRowKey}
               className={`melusi-expenses-mobile-card${
                 issues.length > 0 || row.isDuplicate
                   ? " melusi-expenses-mobile-card--flagged"
@@ -736,8 +785,9 @@ function PreviewTransactionTable({
                   <select
                     {...jarvisInputProps("melusi-expenses-select")}
                     value={row.fundingSource}
+                    disabled={readOnly}
                     onChange={(event) =>
-                      onRowChange(row.clientId, {
+                      onRowChange(row.previewRowKey, {
                         ...row,
                         fundingSource: event.target
                           .value as RocketMoneyFundingSource,
@@ -756,9 +806,10 @@ function PreviewTransactionTable({
                   <select
                     {...jarvisInputProps("melusi-expenses-select")}
                     value={row.costTreatment}
+                    disabled={readOnly}
                     onChange={(event) =>
                       onRowChange(
-                        row.clientId,
+                        row.previewRowKey,
                         applyCostTreatmentChange(
                           row,
                           event.target.value as RocketMoneyCostTreatment,
@@ -781,10 +832,11 @@ function PreviewTransactionTable({
                       type="number"
                       min={1}
                       step={1}
+                      disabled={readOnly}
                       value={row.prepaidMonths ?? ""}
                       onChange={(event) => {
                         const parsed = Number(event.target.value);
-                        onRowChange(row.clientId, {
+                        onRowChange(row.previewRowKey, {
                           ...row,
                           prepaidMonths: Number.isFinite(parsed)
                             ? parsed
@@ -799,9 +851,10 @@ function PreviewTransactionTable({
                   <input
                     {...jarvisInputProps()}
                     type="date"
+                    disabled={readOnly}
                     value={row.serviceThroughDate ?? ""}
                     onChange={(event) =>
-                      onRowChange(row.clientId, {
+                      onRowChange(row.previewRowKey, {
                         ...row,
                         serviceThroughDate: event.target.value || null,
                       })
@@ -813,8 +866,9 @@ function PreviewTransactionTable({
                   <select
                     {...jarvisInputProps("melusi-expenses-select")}
                     value={row.classificationStatus}
+                    disabled={readOnly}
                     onChange={(event) =>
-                      onRowChange(row.clientId, {
+                      onRowChange(row.previewRowKey, {
                         ...row,
                         classificationStatus: event.target
                           .value as RocketMoneyClassificationStatus,
@@ -834,9 +888,10 @@ function PreviewTransactionTable({
                     <select
                       {...jarvisInputProps("melusi-expenses-select")}
                       value={row.recurrenceProposal?.frequency ?? ""}
+                      disabled={readOnly}
                       onChange={(event) =>
                         onRowChange(
-                          row.clientId,
+                          row.previewRowKey,
                           applyRecurrenceFrequencyChange(
                             row,
                             event.target.value as FinanceFrequency | "",
@@ -872,9 +927,10 @@ function PreviewTransactionTable({
                   <input
                     {...jarvisInputProps()}
                     type="text"
+                    disabled={readOnly}
                     value={row.notes ?? ""}
                     onChange={(event) =>
-                      onRowChange(row.clientId, {
+                      onRowChange(row.previewRowKey, {
                         ...row,
                         notes: event.target.value || null,
                       })
@@ -898,6 +954,162 @@ function PreviewTransactionTable({
   );
 }
 
+function ImportConfirmationPanel({
+  transactionCount,
+  totals,
+  confirmChecked,
+  onConfirmCheckedChange,
+  onCancel,
+  onImport,
+  isImporting,
+}: {
+  transactionCount: number;
+  totals: RocketMoneyImportTotals;
+  confirmChecked: boolean;
+  onConfirmCheckedChange: (checked: boolean) => void;
+  onCancel: () => void;
+  onImport: () => void;
+  isImporting: boolean;
+}) {
+  return (
+    <JarvisCard
+      title="Confirm import"
+      accent="cyan"
+      className="melusi-expenses-confirm-panel"
+    >
+      <p className="melusi-expenses-confirm-lead">
+        This will permanently add Finance records for Melusi business expenses.
+        Transaction amounts and merchants are verified server-side from your
+        uploaded CSV.
+      </p>
+
+      <div className="melusi-expenses-spending-grid">
+        <SummaryMetric
+          label="Transactions to import"
+          value={String(transactionCount)}
+          emphasis
+        />
+        <SummaryMetric
+          label="Owner-funded spending"
+          value={formatCurrency(totals.ownerFundedSpending)}
+          emphasis
+        />
+        <SummaryMetric
+          label="Monthly recurring"
+          value={formatCurrency(totals.monthlyRecurringAmount)}
+          emphasis
+        />
+        <SummaryMetric
+          label="Annual recurring"
+          value={formatCurrency(totals.annualRecurringAmount)}
+        />
+        <SummaryMetric
+          label="Estimated annual recurring run rate"
+          value={formatCurrency(totals.estimatedAnnualRecurringRunRate)}
+          emphasis
+        />
+      </div>
+
+      <label className="melusi-expenses-confirm-checkbox">
+        <input
+          type="checkbox"
+          checked={confirmChecked}
+          disabled={isImporting}
+          onChange={(event) => onConfirmCheckedChange(event.target.checked)}
+        />
+        <span>
+          I reviewed these expenses and confirm they belong to Melusi.
+        </span>
+      </label>
+
+      <div className="melusi-expenses-actions">
+        <button
+          type="button"
+          className="jv-btn jv-btn--primary"
+          disabled={!confirmChecked || isImporting}
+          onClick={onImport}
+        >
+          {isImporting
+            ? "Importing…"
+            : `Import ${transactionCount} expense${transactionCount === 1 ? "" : "s"}`}
+        </button>
+        <button
+          type="button"
+          className="jv-btn jv-btn--secondary"
+          onClick={onCancel}
+          disabled={isImporting}
+        >
+          Cancel
+        </button>
+      </div>
+    </JarvisCard>
+  );
+}
+
+function ImportSuccessPanel({
+  success,
+  onImportAnother,
+}: {
+  success: ImportSuccessState;
+  onImportAnother: () => void;
+}) {
+  return (
+    <JarvisCard
+      title="Import complete"
+      accent="cyan"
+      className="melusi-expenses-success-panel"
+    >
+      <JarvisAlert variant="info">
+        These expenses were added to Jarvis Finance.
+      </JarvisAlert>
+
+      <div className="melusi-expenses-spending-grid">
+        <SummaryMetric
+          label="Transactions imported"
+          value={String(success.importedTransactionCount)}
+          emphasis
+        />
+        <SummaryMetric
+          label="Recurring items created"
+          value={String(success.recurringItemCount)}
+        />
+        <SummaryMetric
+          label="Owner-funded spending"
+          value={formatCurrency(success.ownerFundedSpendingTotal)}
+          emphasis
+        />
+        <SummaryMetric
+          label="Monthly recurring"
+          value={formatCurrency(success.monthlyRecurringAmount)}
+          emphasis
+        />
+        <SummaryMetric
+          label="Annual recurring"
+          value={formatCurrency(success.annualRecurringAmount)}
+        />
+        <SummaryMetric
+          label="Estimated annual recurring run rate"
+          value={formatCurrency(success.estimatedAnnualRecurringRunRate)}
+          emphasis
+        />
+      </div>
+
+      <div className="melusi-expenses-actions">
+        <Link href="/finance" className="jv-btn jv-btn--primary">
+          Open Finance
+        </Link>
+        <button
+          type="button"
+          className="jv-btn jv-btn--secondary"
+          onClick={onImportAnother}
+        >
+          Import another file
+        </button>
+      </div>
+    </JarvisCard>
+  );
+}
+
 export function MelusiExpensesImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -908,27 +1120,58 @@ export function MelusiExpensesImport() {
   >([]);
   const [editableRows, setEditableRows] = useState<EditablePreviewRow[]>([]);
   const [hasPreview, setHasPreview] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [showConfirmPanel, setShowConfirmPanel] = useState(false);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<ImportSuccessState | null>(
+    null,
+  );
+  const [isPreviewPending, startPreviewTransition] = useTransition();
+  const [isImportPending, startImportTransition] = useTransition();
+
+  const isImporting = isImportPending;
+  const isPending = isPreviewPending;
 
   const displayTotals = useMemo(
     () => computePreviewTotals(editableRows, previewErrors),
     [editableRows, previewErrors],
   );
 
+  const reviewImportEnabled = useMemo(
+    () =>
+      canReviewImport(editableRows, previewErrors) &&
+      !importSuccess &&
+      !isImporting,
+    [editableRows, previewErrors, importSuccess, isImporting],
+  );
+
+  const importableTransactionCount = editableRows.filter(
+    (row) => !row.isDuplicate && getRowValidationIssues(row).length === 0,
+  ).length;
+
   const selectedFileTooLarge =
     selectedFile !== null && selectedFile.size > ROCKET_MONEY_MAX_FILE_BYTES;
 
   function resetPreviewState() {
     setActionError(null);
+    setImportError(null);
     setPreviewErrors([]);
     setEditableRows([]);
     setHasPreview(false);
+    setShowConfirmPanel(false);
+    setConfirmChecked(false);
+  }
+
+  function resetAllState() {
+    resetPreviewState();
+    setImportSuccess(null);
   }
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     setSelectedFile(file);
     setClientError(null);
+    setImportSuccess(null);
     resetPreviewState();
 
     if (!file) {
@@ -948,16 +1191,24 @@ export function MelusiExpensesImport() {
   function handleClear() {
     setSelectedFile(null);
     setClientError(null);
-    resetPreviewState();
+    resetAllState();
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
+  function handleImportAnother() {
+    handleClear();
+  }
+
   function handlePreview() {
     setClientError(null);
     setActionError(null);
+    setImportError(null);
+    setImportSuccess(null);
+    setShowConfirmPanel(false);
+    setConfirmChecked(false);
 
     if (!selectedFile) {
       setClientError("Select a CSV file before previewing.");
@@ -977,7 +1228,7 @@ export function MelusiExpensesImport() {
     const formData = new FormData();
     formData.set(CSV_FIELD_NAME, selectedFile);
 
-    startTransition(async () => {
+    startPreviewTransition(async () => {
       let result: RocketMoneyPreviewActionResult;
 
       try {
@@ -1000,10 +1251,76 @@ export function MelusiExpensesImport() {
     });
   }
 
-  function handleRowChange(clientId: number, nextRow: EditablePreviewRow) {
+  function handleRowChange(previewRowKey: number, nextRow: EditablePreviewRow) {
+    if (importSuccess) {
+      return;
+    }
+
     setEditableRows((currentRows) =>
-      currentRows.map((row) => (row.clientId === clientId ? nextRow : row)),
+      currentRows.map((row) =>
+        row.previewRowKey === previewRowKey ? nextRow : row,
+      ),
     );
+  }
+
+  function handleReviewImport() {
+    setImportError(null);
+    setConfirmChecked(false);
+    setShowConfirmPanel(true);
+  }
+
+  function handleCancelConfirm() {
+    if (isImporting) {
+      return;
+    }
+
+    setShowConfirmPanel(false);
+    setConfirmChecked(false);
+    setImportError(null);
+  }
+
+  function handleImport() {
+    setImportError(null);
+
+    if (!selectedFile || !confirmChecked || importSuccess) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.set(CSV_FIELD_NAME, selectedFile);
+    formData.set(CONFIRMATION_FIELD_NAME, "true");
+    formData.set(
+      OVERRIDES_FIELD_NAME,
+      JSON.stringify(buildClassificationOverrides(editableRows)),
+    );
+
+    startImportTransition(async () => {
+      let result: RocketMoneyImportActionResult;
+
+      try {
+        result = await importRocketMoneyBusinessCsv(formData);
+      } catch {
+        setImportError("Could not import expenses. Try again.");
+        return;
+      }
+
+      if (!result.success) {
+        setImportError(result.error);
+        return;
+      }
+
+      setImportSuccess({
+        importedTransactionCount: result.importedTransactionCount,
+        recurringItemCount: result.recurringItemCount,
+        ownerFundedSpendingTotal: result.ownerFundedSpendingTotal,
+        monthlyRecurringAmount: result.monthlyRecurringAmount,
+        annualRecurringAmount: result.annualRecurringAmount,
+        estimatedAnnualRecurringRunRate:
+          result.estimatedAnnualRecurringRunRate,
+      });
+      setShowConfirmPanel(false);
+      setConfirmChecked(false);
+    });
   }
 
   const showEmptyPreviewNotice =
@@ -1022,8 +1339,8 @@ export function MelusiExpensesImport() {
           <h1 className="melusi-title">Melusi Expenses</h1>
           <p className="melusi-subtitle">
             Track owner-funded Melusi business costs from your private Rocket
-            Money export. This step previews the file in memory before any import
-            is available.
+            Money export. Preview and classify expenses, then confirm import
+            to add verified records to Finance.
           </p>
         </div>
       </header>
@@ -1064,7 +1381,13 @@ export function MelusiExpensesImport() {
               type="button"
               className="jv-btn jv-btn--primary"
               onClick={handlePreview}
-              disabled={!selectedFile || selectedFileTooLarge || isPending}
+              disabled={
+                !selectedFile ||
+                selectedFileTooLarge ||
+                isPending ||
+                isImporting ||
+                importSuccess !== null
+              }
             >
               {isPending ? "Previewing…" : "Preview CSV"}
             </button>
@@ -1087,7 +1410,7 @@ export function MelusiExpensesImport() {
             Account names, account numbers, and institutions are discarded during
             parsing.
           </li>
-          <li>Nothing is imported into Jarvis during preview.</li>
+          <li>Nothing is imported until you explicitly confirm.</li>
           <li>The uploaded CSV is not stored anywhere.</li>
         </ul>
       </JarvisCard>
@@ -1098,6 +1421,17 @@ export function MelusiExpensesImport() {
 
       {actionError ? (
         <JarvisAlert variant="error">{actionError}</JarvisAlert>
+      ) : null}
+
+      {importError ? (
+        <JarvisAlert variant="error">{importError}</JarvisAlert>
+      ) : null}
+
+      {importSuccess ? (
+        <ImportSuccessPanel
+          success={importSuccess}
+          onImportAnother={handleImportAnother}
+        />
       ) : null}
 
       {hasPreview && previewErrors.length > 0 ? (
@@ -1129,17 +1463,46 @@ export function MelusiExpensesImport() {
           <PreviewTransactionTable
             rows={editableRows}
             onRowChange={handleRowChange}
+            readOnly={importSuccess !== null}
           />
 
-          <section className="melusi-expenses-import-next">
-            <button type="button" className="jv-btn jv-btn--primary" disabled>
-              Import expenses
-            </button>
-            <p>
-              Import confirmation will be enabled in the next step after you
-              review this preview.
-            </p>
-          </section>
+          {showConfirmPanel && !importSuccess ? (
+            <ImportConfirmationPanel
+              transactionCount={importableTransactionCount}
+              totals={displayTotals}
+              confirmChecked={confirmChecked}
+              onConfirmCheckedChange={setConfirmChecked}
+              onCancel={handleCancelConfirm}
+              onImport={handleImport}
+              isImporting={isImporting}
+            />
+          ) : null}
+
+          {!importSuccess ? (
+            <section className="melusi-expenses-import-next">
+              <button
+                type="button"
+                className="jv-btn jv-btn--primary"
+                disabled={!reviewImportEnabled || showConfirmPanel}
+                onClick={handleReviewImport}
+              >
+                Review import
+              </button>
+              {!reviewImportEnabled ? (
+                <p>
+                  Resolve all file issues, duplicates, and classification flags
+                  before importing.
+                </p>
+              ) : showConfirmPanel ? (
+                <p>Complete the confirmation panel above to import.</p>
+              ) : (
+                <p>
+                  Review totals and classifications, then continue to confirm
+                  import.
+                </p>
+              )}
+            </section>
+          ) : null}
         </>
       ) : null}
 
