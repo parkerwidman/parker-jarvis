@@ -2,14 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
-const MICROSOFT_SCOPES = [
-  "openid",
-  "profile",
-  "offline_access",
-  "User.Read",
-  "Mail.ReadWrite",
-  "Calendars.ReadWrite",
-].join(" ");
+import { MICROSOFT_SCOPES_STRING } from "@/lib/microsoft/scopes";
+
+const MICROSOFT_SCOPES = MICROSOFT_SCOPES_STRING;
 
 function getOAuthConfig() {
   const tenantId = process.env.MICROSOFT_TENANT_ID;

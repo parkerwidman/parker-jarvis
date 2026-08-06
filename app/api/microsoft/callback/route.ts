@@ -4,14 +4,9 @@ import { timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-const MICROSOFT_SCOPES = [
-  "openid",
-  "profile",
-  "offline_access",
-  "User.Read",
-  "Mail.ReadWrite",
-  "Calendars.ReadWrite",
-].join(" ");
+import { MICROSOFT_SCOPES_STRING } from "@/lib/microsoft/scopes";
+
+const MICROSOFT_SCOPES = MICROSOFT_SCOPES_STRING;
 
 const STATE_COOKIE = "microsoft_oauth_state";
 

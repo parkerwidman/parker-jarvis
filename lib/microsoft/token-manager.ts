@@ -1,16 +1,13 @@
 import "server-only";
 
 import { decryptToken, encryptToken } from "@/lib/microsoft/encryption";
+import {
+  grantedScopesIncludeMailSend,
+  MICROSOFT_SCOPES_STRING,
+} from "@/lib/microsoft/scopes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const MICROSOFT_SCOPES = [
-  "openid",
-  "profile",
-  "offline_access",
-  "User.Read",
-  "Mail.ReadWrite",
-  "Calendars.ReadWrite",
-].join(" ");
+const MICROSOFT_SCOPES = MICROSOFT_SCOPES_STRING;
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
@@ -201,4 +198,29 @@ export async function getValidMicrosoftAccessToken(
   }
 
   return refreshMicrosoftAccessToken(supabase, userId, connection);
+}
+
+export async function getMicrosoftGrantedScopes(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("microsoft_connections")
+    .select("granted_scopes")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data?.granted_scopes) {
+    return null;
+  }
+
+  return data.granted_scopes;
+}
+
+export async function userHasMailSendPermission(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<boolean> {
+  const scopes = await getMicrosoftGrantedScopes(supabase, userId);
+  return scopes ? grantedScopesIncludeMailSend(scopes) : false;
 }

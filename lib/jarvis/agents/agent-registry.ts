@@ -168,7 +168,7 @@ export const MAIN_JARVIS_AGENT: AgentConfig = {
     "projects",
     "memory",
     "microsoft",
-    "action_requests",
+    "main_personal_writes",
     "personal_finance",
     "melusi_expenses",
   ],

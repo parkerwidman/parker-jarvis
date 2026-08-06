@@ -42,6 +42,7 @@ export type ToolCapabilityGroup =
   | "projects"
   | "memory"
   | "microsoft"
+  | "main_personal_writes"
   | "action_requests"
   | "personal_finance"
   | "melusi_social"

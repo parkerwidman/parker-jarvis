@@ -65,6 +65,16 @@ export const TASK_TOOLS: OpenAI.Responses.Tool[] = [
           description:
             "Due date in YYYY-MM-DD format, such as 2026-07-29. Pass null when Parker did not specify a due date.",
         },
+        description: {
+          type: ["string", "null"],
+          description:
+            "Optional task description. Pass null when not specified.",
+        },
+        context: {
+          type: ["string", "null"],
+          description:
+            "Optional plain-text context for why the task is being created. Pass null when not specified.",
+        },
         lifeAreaModuleKey: {
           type: ["string", "null"],
           enum: ["melusi", null],
@@ -86,6 +96,8 @@ export const TASK_TOOLS: OpenAI.Responses.Tool[] = [
         "title",
         "priority",
         "dueDate",
+        "description",
+        "context",
         "lifeAreaModuleKey",
         "projectId",
         "projectName",
@@ -533,6 +545,170 @@ export const MICROSOFT_TOOLS: OpenAI.Responses.Tool[] = [
   },
 ];
 
+export const MAIN_PERSONAL_WRITE_TOOLS: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    name: "create_outlook_reminder",
+    description:
+      "Creates a real Outlook calendar reminder that notifies Parker outside Jarvis. Use when Parker clearly asks for a reminder. remindAt must be the intended notification time as an absolute ISO 8601 datetime. Resolve relative times like 'in 30 minutes' to an absolute time before calling. No attendees are added.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Reminder title, between 1 and 250 characters.",
+        },
+        remindAt: {
+          type: "string",
+          description:
+            "Intended notification time as ISO 8601 with Z or explicit offset.",
+        },
+        timeZone: {
+          type: "string",
+          description:
+            "IANA timezone, such as America/Chicago. Use Parker's saved profile timezone when available.",
+        },
+        notes: {
+          type: ["string", "null"],
+          description: "Optional reminder notes. Pass null when not specified.",
+        },
+        durationMinutes: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 240,
+          description:
+            "Optional event duration in minutes from 1 through 240. Pass null for the default of 15.",
+        },
+        reminderMinutesBeforeStart: {
+          type: ["integer", "null"],
+          minimum: 0,
+          maximum: 10080,
+          description:
+            "Optional minutes before event start when Outlook should notify. Pass null for 0 so remindAt is the notification time.",
+        },
+      },
+      required: [
+        "title",
+        "remindAt",
+        "timeZone",
+        "notes",
+        "durationMinutes",
+        "reminderMinutesBeforeStart",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "create_outlook_calendar_event",
+    description:
+      "Creates an Outlook calendar event immediately, including invitations when attendees are explicitly requested. Use when Parker clearly asks to schedule, add, create, or put an event on his Outlook calendar. Resolve relative times to absolute datetimes before calling.",
+    parameters: {
+      type: "object",
+      properties: {
+        subject: {
+          type: "string",
+          description: "The calendar event subject line.",
+        },
+        startDateTime: {
+          type: "string",
+          description:
+            "Event start as ISO 8601 with Z or explicit numeric offset.",
+        },
+        endDateTime: {
+          type: "string",
+          description:
+            "Event end as ISO 8601 with Z or explicit numeric offset.",
+        },
+        timeZone: {
+          type: "string",
+          description:
+            "IANA timezone for the event, such as America/Chicago.",
+        },
+        locationName: {
+          type: ["string", "null"],
+          description: "Optional location name. Pass null when not specified.",
+        },
+        notes: {
+          type: ["string", "null"],
+          description: "Optional event notes. Pass null when not specified.",
+        },
+        attendees: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          description:
+            "Optional attendee email addresses when Parker explicitly requests invitations. Pass null or an empty array for a solo event.",
+        },
+      },
+      required: [
+        "subject",
+        "startDateTime",
+        "endDateTime",
+        "timeZone",
+        "locationName",
+        "notes",
+        "attendees",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "send_outlook_email",
+    description:
+      "Sends an Outlook email immediately when Parker explicitly asks to send. Do not use for drafting. Requires resolved recipients, subject, and body. Use draftKey only when sending a previously saved draft by reference.",
+    parameters: {
+      type: "object",
+      properties: {
+        to: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 10,
+          description: "To recipients, from 1 through 10 email addresses.",
+        },
+        cc: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          minItems: 0,
+          maxItems: 10,
+          description: "Optional CC recipients. Pass null when none.",
+        },
+        bcc: {
+          type: ["array", "null"],
+          items: { type: "string" },
+          minItems: 0,
+          maxItems: 10,
+          description: "Optional BCC recipients. Pass null when none.",
+        },
+        subject: {
+          type: "string",
+          description: "Email subject line.",
+        },
+        body: {
+          type: "string",
+          description: "Complete email body.",
+        },
+        bodyType: {
+          type: ["string", "null"],
+          enum: ["text", "html", null],
+          description: "Body format. Pass null for plain text.",
+        },
+        draftKey: {
+          type: ["string", "null"],
+          description:
+            "Optional opaque draft reference from create_outlook_draft. Pass null when sending a new message.",
+        },
+      },
+      required: ["to", "cc", "bcc", "subject", "body", "bodyType", "draftKey"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
 export const ACTION_REQUEST_TOOLS: OpenAI.Responses.Tool[] = [
   {
     type: "function",
@@ -785,15 +961,14 @@ const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {
   projects: PROJECT_TOOLS,
   memory: MEMORY_TOOLS,
   microsoft: MICROSOFT_TOOLS,
+  main_personal_writes: MAIN_PERSONAL_WRITE_TOOLS,
   action_requests: ACTION_REQUEST_TOOLS,
   personal_finance: PERSONAL_FINANCE_TOOLS,
   melusi_social: MELUSI_SOCIAL_TOOLS,
   melusi_expenses: MELUSI_EXPENSE_TOOLS,
 };
 
-export const MAIN_TASK_TOOLS: OpenAI.Responses.Tool[] = TASK_TOOLS.filter(
-  (tool) => tool.type === "function" && tool.name !== "create_task",
-);
+export const MAIN_TASK_TOOLS: OpenAI.Responses.Tool[] = TASK_TOOLS;
 
 export function getToolsForGroups(
   groups: readonly ToolCapabilityGroup[],
@@ -807,15 +982,23 @@ export function getToolsForGroups(
   return tools;
 }
 
-export const MAIN_JARVIS_TOOLS = [
-  ...MAIN_TASK_TOOLS,
-  ...PROJECT_TOOLS,
-  ...MEMORY_TOOLS,
-  ...MICROSOFT_TOOLS,
-  ...ACTION_REQUEST_TOOLS,
-  ...PERSONAL_FINANCE_TOOLS,
-  ...MELUSI_EXPENSE_TOOLS,
-];
+export function getToolsForAgent(agentKey: "main" | "melusi"): OpenAI.Responses.Tool[] {
+  const config = agentKey === "main"
+    ? [
+        "tasks",
+        "projects",
+        "memory",
+        "microsoft",
+        "main_personal_writes",
+        "personal_finance",
+        "melusi_expenses",
+      ] as const
+    : (["tasks", "projects", "melusi_social", "melusi_expenses"] as const);
+
+  return getToolsForGroups(config);
+}
+
+export const MAIN_JARVIS_TOOLS = getToolsForAgent("main");
 
 export const MELUSI_JARVIS_TOOLS = getToolsForGroups([
   "tasks",

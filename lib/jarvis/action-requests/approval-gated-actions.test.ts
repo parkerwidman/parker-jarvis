@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  MAIN_JARVIS_AGENT,
   MELUSI_JARVIS_AGENT,
 } from "@/lib/jarvis/agents/agent-registry";
 import { BASE_MAIN_JARVIS_INSTRUCTIONS } from "@/lib/jarvis/agents/main-instructions-content";
 import {
-  getToolsForGroups,
   MAIN_JARVIS_TOOLS,
   MELUSI_JARVIS_TOOLS,
 } from "@/lib/jarvis/agents/tool-definitions";
@@ -103,12 +101,12 @@ describe("approval-gated task creation", () => {
     vi.clearAllMocks();
   });
 
-  it("registers propose_task on main Jarvis", () => {
-    expect(MAIN_JARVIS_TOOLS.map((tool) => tool.name)).toContain("propose_task");
+  it("registers direct create_task on main Jarvis", () => {
+    expect(MAIN_JARVIS_TOOLS.map((tool) => tool.name)).toContain("create_task");
   });
 
-  it("does not register direct create_task on main Jarvis", () => {
-    expect(MAIN_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("create_task");
+  it("does not register propose_task on main Jarvis", () => {
+    expect(MAIN_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("propose_task");
   });
 
   it("keeps Melusi task registration unchanged", () => {
@@ -126,14 +124,10 @@ describe("approval-gated task creation", () => {
 
   it("does not register propose_task on Melusi or other specialists", () => {
     expect(MELUSI_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("propose_task");
-    const mainOnlyGroups = MAIN_JARVIS_AGENT.toolGroups.filter(
-      (group) => !MELUSI_JARVIS_AGENT.toolGroups.includes(group),
+    expect(MELUSI_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain(
+      "create_outlook_reminder",
     );
-    const specialistTools = getToolsForGroups(mainOnlyGroups).map((tool) => tool.name);
-    expect(specialistTools).toContain("propose_task");
-    expect(MELUSI_JARVIS_TOOLS).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "propose_task" })]),
-    );
+    expect(MELUSI_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("send_outlook_email");
   });
 
   it("creates one pending action_request for a valid proposal", async () => {
@@ -711,13 +705,10 @@ describe("approval-gated task creation", () => {
     expect(approvals.some((approval) => approval.riskLevel === "high")).toBe(false);
   });
 
-  it("distinguishes proposed versus completed task wording in main instructions", () => {
-    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("prepared a task for approval");
-    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("waiting for Parker's approval");
+  it("distinguishes direct versus failed task wording in main instructions", () => {
+    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("say you created the task");
     expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("task creation failed");
-    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain(
-      'Never say "Done.", "I created the task.", or "The task is scheduled."',
-    );
+    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).not.toContain("propose_task");
   });
 
   it("keeps Outlook proposal from creating events initially", async () => {

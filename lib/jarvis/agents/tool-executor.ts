@@ -3,6 +3,13 @@ import "server-only";
 import type OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { JarvisContextTarget } from "@/lib/jarvis/context/types";
+import type { JarvisToolExecutionContext } from "./tool-execution-context";
+import {
+  executeDirectCreateCalendarEvent,
+  executeDirectCreateReminder,
+  executeDirectCreateTask,
+  executeDirectSendEmail,
+} from "@/lib/jarvis/tools/direct-action-tools";
 import {
   proposeOutlookCalendarEvent,
   proposeTask,
@@ -85,6 +92,7 @@ export async function executeJarvisTool(
   userId: string,
   call: OpenAI.Responses.ResponseFunctionToolCall,
   contextTarget: JarvisContextTarget | null,
+  executionContext: JarvisToolExecutionContext,
 ): Promise<string> {
   let args: Record<string, unknown>;
 
@@ -114,6 +122,24 @@ export async function executeJarvisTool(
       }
       case "create_task": {
         const projectArgs = resolveProjectToolArgs(args, contextTarget);
+
+        if (
+          executionContext.agentKey === "main" &&
+          executionContext.isInteractiveMainJarvisTurn
+        ) {
+          return JSON.stringify(
+            await executeDirectCreateTask(supabase, userId, executionContext, {
+              title: String(args.title ?? ""),
+              description: nullableString(args.description),
+              priority: nullableString(args.priority),
+              dueDate: nullableString(args.dueDate),
+              context: nullableString(args.context),
+              lifeAreaModuleKey: nullableModuleKey(args.lifeAreaModuleKey),
+              projectId: projectArgs.projectId,
+              projectName: projectArgs.projectName,
+            }),
+          );
+        }
 
         return JSON.stringify(
           await createTask(supabase, userId, {
@@ -271,6 +297,57 @@ export async function executeJarvisTool(
             body: String(args.body ?? ""),
           }),
         );
+      case "create_outlook_reminder":
+        return JSON.stringify(
+          await executeDirectCreateReminder(supabase, userId, executionContext, {
+            title: String(args.title ?? ""),
+            remindAt: String(args.remindAt ?? ""),
+            timeZone: String(args.timeZone ?? ""),
+            notes: nullableString(args.notes),
+            durationMinutes:
+              typeof args.durationMinutes === "number"
+                ? args.durationMinutes
+                : null,
+            reminderMinutesBeforeStart:
+              typeof args.reminderMinutesBeforeStart === "number"
+                ? args.reminderMinutesBeforeStart
+                : null,
+          }),
+        );
+      case "create_outlook_calendar_event":
+        return JSON.stringify(
+          await executeDirectCreateCalendarEvent(
+            supabase,
+            userId,
+            executionContext,
+            {
+              subject: String(args.subject ?? ""),
+              startDateTime: String(args.startDateTime ?? ""),
+              endDateTime: String(args.endDateTime ?? ""),
+              timeZone: String(args.timeZone ?? ""),
+              locationName: nullableString(args.locationName),
+              notes: nullableString(args.notes),
+              attendees: Array.isArray(args.attendees)
+                ? args.attendees.map(String)
+                : null,
+            },
+          ),
+        );
+      case "send_outlook_email":
+        return JSON.stringify(
+          await executeDirectSendEmail(supabase, userId, executionContext, {
+            to: Array.isArray(args.to) ? args.to.map(String) : [],
+            cc: Array.isArray(args.cc) ? args.cc.map(String) : [],
+            bcc: Array.isArray(args.bcc) ? args.bcc.map(String) : [],
+            subject: String(args.subject ?? ""),
+            body: String(args.body ?? ""),
+            bodyType:
+              args.bodyType === "html" || args.bodyType === "text"
+                ? args.bodyType
+                : null,
+            draftKey: nullableString(args.draftKey),
+          }),
+        );
       case "propose_outlook_calendar_event":
         return JSON.stringify(
           await proposeOutlookCalendarEvent(supabase, userId, {
@@ -329,7 +406,7 @@ export async function executeJarvisTool(
       default:
         return JSON.stringify({
           success: false,
-          error: "Unknown tool.",
+          errorCode: "action_forbidden",
         });
     }
   } catch (error) {

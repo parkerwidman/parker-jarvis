@@ -32,8 +32,12 @@ import {
   resolveMelusiThreadForMessage,
   validateThreadAgentConsistency,
 } from "./agent-thread-tools";
-import { getToolsForGroups } from "./tool-definitions";
+import { getToolsForAgent } from "./tool-definitions";
 import { executeJarvisTool } from "./tool-executor";
+import {
+  createInteractiveMainJarvisContext,
+  createMelusiInteractiveContext,
+} from "./tool-execution-context";
 import type { AgentKey, MelusiThreadType } from "./types";
 
 const MAX_TOOL_ROUNDS = 5;
@@ -58,7 +62,7 @@ export async function runAgentChat(
     params;
 
   const agentConfig = getAgentConfig(agentKey);
-  const tools = getToolsForGroups(agentConfig.toolGroups);
+  const tools = getToolsForAgent(agentKey);
 
   let activeThreadId: string | null = threadId;
   let melusiThreadType: MelusiThreadType | undefined;
@@ -185,11 +189,17 @@ export async function runAgentChat(
     input.push(...toResponseInputItems(response.output));
 
     for (const call of functionCalls) {
+      const executionContext =
+        agentKey === "main"
+          ? createInteractiveMainJarvisContext(call.call_id)
+          : createMelusiInteractiveContext(call.call_id);
+
       const toolOutput = await executeJarvisTool(
         supabase,
         userId,
         call,
         contextTarget,
+        executionContext,
       );
       logToolCallDiagnostic(toolRound, call.name, toolOutput);
       input.push({

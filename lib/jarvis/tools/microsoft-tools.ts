@@ -1,4 +1,14 @@
 import { microsoftGraphGet, microsoftGraphPost } from "@/lib/microsoft/graph-client";
+import { MICROSOFT_MAIL_SEND_SCOPE } from "@/lib/microsoft/scopes";
+import { userHasMailSendPermission } from "@/lib/microsoft/token-manager";
+import type { ValidatedDirectCalendarEventPayload } from "@/lib/jarvis/action-requests/direct-calendar-action-payload";
+import type { ValidatedEmailSendPayload } from "@/lib/jarvis/action-requests/email-send-action-payload";
+import type { ValidatedReminderPayload } from "@/lib/jarvis/action-requests/reminder-action-payload";
+import {
+  markOutlookDraftReferenceSent,
+  resolveOutlookDraftReference,
+  storeOutlookDraftReference,
+} from "@/lib/jarvis/tools/outlook-draft-references";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ISO8601_OFFSET_PATTERN = /[Zz]|[+-]\d{2}:\d{2}$|[+-]\d{4}$/;
@@ -111,12 +121,13 @@ export type ListOutlookCalendarResult =
 export type CreateOutlookDraftResult =
   | {
       success: true;
-      draftId: string;
+      draftKey: string;
       subject: string;
       toRecipients: string[];
       ccRecipients: string[];
-      webLink: string | null;
       savedToDrafts: true;
+      notSent: true;
+      message: string;
     }
   | MicrosoftToolFailure;
 
@@ -548,14 +559,25 @@ export async function createOutlookDraft(
     return { success: false, error: "Could not create Outlook draft." };
   }
 
+  const draftReference = await storeOutlookDraftReference(
+    supabase,
+    userId,
+    payload.id,
+  );
+
+  if (!draftReference.success) {
+    return { success: false, error: "Could not create Outlook draft." };
+  }
+
   return {
     success: true,
-    draftId: payload.id,
+    draftKey: draftReference.draftKey,
     subject,
     toRecipients,
     ccRecipients,
-    webLink: typeof payload.webLink === "string" ? payload.webLink : null,
     savedToDrafts: true,
+    notSent: true,
+    message: "The message was saved as a draft in Outlook and was not sent.",
   };
 }
 
@@ -704,4 +726,235 @@ export async function createOutlookCalendarEvent(
     end: utcEnd,
     webLink: typeof payload.webLink === "string" ? payload.webLink : null,
   };
+}
+
+export async function createOutlookReminder(
+  supabase: SupabaseClient,
+  userId: string,
+  input: {
+    transactionId: string;
+    payload: ValidatedReminderPayload;
+  },
+): Promise<
+  | { success: true }
+  | MicrosoftToolFailure
+> {
+  const { payload } = input;
+  const utcStart = toUtcGraphDateTime(payload.eventStartDateTime);
+  const utcEnd = toUtcGraphDateTime(payload.eventEndDateTime);
+
+  const eventBody: Record<string, unknown> = {
+    subject: payload.title,
+    start: {
+      dateTime: utcStart,
+      timeZone: "UTC",
+    },
+    end: {
+      dateTime: utcEnd,
+      timeZone: "UTC",
+    },
+    isReminderOn: true,
+    reminderMinutesBeforeStart: payload.reminderMinutesBeforeStart,
+    showAs: "free",
+    sensitivity: "private",
+    transactionId: input.transactionId,
+  };
+
+  if (payload.notes) {
+    eventBody.body = {
+      contentType: "Text",
+      content: payload.notes,
+    };
+  }
+
+  const graphResult = await microsoftGraphPost(
+    supabase,
+    userId,
+    "/v1.0/me/events",
+    eventBody,
+  );
+
+  const graphError = mapGraphResult(graphResult);
+  if (graphError) {
+    return graphError;
+  }
+
+  if (!graphResult.success) {
+    return { success: false, error: "Could not create Outlook reminder." };
+  }
+
+  const response = graphResult.data as GraphEvent;
+
+  if (typeof response.id !== "string") {
+    return { success: false, error: "Could not create Outlook reminder." };
+  }
+
+  return { success: true };
+}
+
+export async function createOutlookCalendarEventDirect(
+  supabase: SupabaseClient,
+  userId: string,
+  input: {
+    transactionId: string;
+    payload: ValidatedDirectCalendarEventPayload;
+  },
+): Promise<
+  | { success: true }
+  | MicrosoftToolFailure
+> {
+  const { payload } = input;
+  const utcStart = toUtcGraphDateTime(payload.startDateTime);
+  const utcEnd = toUtcGraphDateTime(payload.endDateTime);
+
+  const eventBody: Record<string, unknown> = {
+    subject: payload.subject,
+    start: {
+      dateTime: utcStart,
+      timeZone: "UTC",
+    },
+    end: {
+      dateTime: utcEnd,
+      timeZone: "UTC",
+    },
+    transactionId: input.transactionId,
+  };
+
+  if (payload.locationName) {
+    eventBody.location = { displayName: payload.locationName };
+  }
+
+  if (payload.notes) {
+    eventBody.body = {
+      contentType: "Text",
+      content: payload.notes,
+    };
+  }
+
+  if (payload.attendees.length > 0) {
+    eventBody.attendees = payload.attendees.map((address) => ({
+      emailAddress: { address },
+      type: "required",
+    }));
+  }
+
+  const graphResult = await microsoftGraphPost(
+    supabase,
+    userId,
+    "/v1.0/me/events",
+    eventBody,
+  );
+
+  const graphError = mapGraphResult(graphResult);
+  if (graphError) {
+    return graphError;
+  }
+
+  if (!graphResult.success) {
+    return { success: false, error: "Could not create Outlook calendar event." };
+  }
+
+  const response = graphResult.data as GraphEvent;
+
+  if (typeof response.id !== "string") {
+    return { success: false, error: "Could not create Outlook calendar event." };
+  }
+
+  return { success: true };
+}
+
+export type SendOutlookEmailResult =
+  | { success: true }
+  | { success: false; outcome: "uncertain" }
+  | (MicrosoftToolFailure & {
+      microsoftPermissionRequired?: true;
+      requiredPermission?: string;
+    });
+
+export async function sendOutlookEmail(
+  supabase: SupabaseClient,
+  userId: string,
+  input: {
+    payload: ValidatedEmailSendPayload;
+  },
+): Promise<SendOutlookEmailResult> {
+  const hasMailSend = await userHasMailSendPermission(supabase, userId);
+
+  if (!hasMailSend) {
+    return {
+      success: false,
+      microsoftPermissionRequired: true,
+      requiredPermission: MICROSOFT_MAIL_SEND_SCOPE,
+      error: "Microsoft Mail.Send permission is required.",
+    };
+  }
+
+  if (input.payload.draftKey) {
+    const draft = await resolveOutlookDraftReference(
+      supabase,
+      userId,
+      input.payload.draftKey,
+    );
+
+    if (!draft.success) {
+      return { success: false, error: "Could not send Outlook email." };
+    }
+
+    const sendResult = await microsoftGraphPost(
+      supabase,
+      userId,
+      `/v1.0/me/messages/${encodeURIComponent(draft.reference.graph_message_id)}/send`,
+    );
+
+    const graphError = mapGraphResult(sendResult);
+
+    if (graphError) {
+      return graphError;
+    }
+
+    if (!sendResult.success) {
+      return { success: false, error: "Could not send Outlook email." };
+    }
+
+    await markOutlookDraftReferenceSent(
+      supabase,
+      userId,
+      input.payload.draftKey,
+    );
+
+    return { success: true };
+  }
+
+  const messageBody = {
+    message: {
+      subject: input.payload.subject,
+      body: {
+        contentType: input.payload.bodyType === "html" ? "HTML" : "Text",
+        content: input.payload.body,
+      },
+      toRecipients: toGraphRecipients(input.payload.to),
+      ccRecipients: toGraphRecipients(input.payload.cc),
+      bccRecipients: toGraphRecipients(input.payload.bcc),
+    },
+    saveToSentItems: true,
+  };
+
+  const graphResult = await microsoftGraphPost(
+    supabase,
+    userId,
+    "/v1.0/me/sendMail",
+    messageBody,
+  );
+
+  const graphError = mapGraphResult(graphResult);
+
+  if (graphError) {
+    return graphError;
+  }
+
+  if (!graphResult.success) {
+    return { success: false, error: "Could not send Outlook email." };
+  }
+
+  return { success: true };
 }

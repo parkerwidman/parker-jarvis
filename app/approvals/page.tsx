@@ -135,9 +135,10 @@ export default async function ApprovalsPage({
   const { data: actionRequests } = await supabase
     .from("action_requests")
     .select(
-      "id, action_type, status, risk_level, title, summary, payload, expires_at, created_at, result, safe_error_message",
+      "id, action_type, status, risk_level, execution_mode, title, summary, payload, expires_at, created_at, result, safe_error_message",
     )
     .eq("user_id", userId)
+    .eq("execution_mode", "approval_required")
     .order("created_at", { ascending: false });
 
   const sortedRequests = [...(actionRequests ?? [])].sort(compareActionRequests);
