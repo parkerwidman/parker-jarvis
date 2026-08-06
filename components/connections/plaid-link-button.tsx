@@ -107,7 +107,15 @@ export function PlaidLinkButton({
       };
 
       if (!response.ok || !payload.ok || !payload.linkToken) {
-        setActionError("Could not start Plaid Link. Please try again.");
+        const diagnosticCode =
+          typeof payload.error === "string" && payload.error.length > 0
+            ? payload.error
+            : null;
+        setActionError(
+          diagnosticCode
+            ? `Could not start Plaid Link. Please try again. (${diagnosticCode})`
+            : "Could not start Plaid Link. Please try again.",
+        );
         setPending(false);
         return;
       }

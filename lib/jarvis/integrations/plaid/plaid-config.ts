@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { PlaidEnvironment } from "./plaid-types";
+import { PlaidSafeError } from "./plaid-types";
 
 export const PLAID_CLIENT_NAME = "Parker Jarvis";
 export const PLAID_PRODUCTS = ["transactions"] as const;
@@ -18,14 +19,14 @@ export function getPlaidEnvironment(): PlaidEnvironment {
 
   if (!env) {
     if (requiresExplicitPlaidEnvironment()) {
-      throw new Error("PLAID_ENV must be set to sandbox or production");
+      throw new PlaidSafeError("invalid_runtime_environment");
     }
 
     return "sandbox";
   }
 
   if (!VALID_ENVIRONMENTS.includes(env as PlaidEnvironment)) {
-    throw new Error("PLAID_ENV must be sandbox or production");
+    throw new PlaidSafeError("invalid_runtime_environment");
   }
 
   return env as PlaidEnvironment;
@@ -33,6 +34,6 @@ export function getPlaidEnvironment(): PlaidEnvironment {
 
 export function validatePlaidCredentials(): void {
   if (!process.env.PLAID_CLIENT_ID || !process.env.PLAID_SECRET) {
-    throw new Error("Plaid credentials are not configured");
+    throw new PlaidSafeError("missing_server_configuration");
   }
 }

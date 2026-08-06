@@ -32,6 +32,10 @@ function resolvePlaidBasePath(): string {
 
 let cachedClient: PlaidApi | null = null;
 
+export function resetPlaidClientCacheForTests(): void {
+  cachedClient = null;
+}
+
 export function getPlaidClient(): PlaidApi {
   if (cachedClient) {
     return cachedClient;
@@ -39,19 +43,27 @@ export function getPlaidClient(): PlaidApi {
 
   validatePlaidCredentials();
 
-  const configuration = new Configuration({
-    basePath: resolvePlaidBasePath(),
-    baseOptions: {
-      timeout: PLAID_TIMEOUT_MS,
-      headers: {
-        "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-        "PLAID-SECRET": process.env.PLAID_SECRET!,
+  try {
+    const configuration = new Configuration({
+      basePath: resolvePlaidBasePath(),
+      baseOptions: {
+        timeout: PLAID_TIMEOUT_MS,
+        headers: {
+          "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
+          "PLAID-SECRET": process.env.PLAID_SECRET!,
+        },
       },
-    },
-  });
+    });
 
-  cachedClient = new PlaidApi(configuration);
-  return cachedClient;
+    cachedClient = new PlaidApi(configuration);
+    return cachedClient;
+  } catch (error) {
+    if (error instanceof PlaidSafeError) {
+      throw error;
+    }
+
+    throw new PlaidSafeError("plaid_client_initialization_failed");
+  }
 }
 
 const PLAID_RECONNECT_ERROR_CODES = new Set([

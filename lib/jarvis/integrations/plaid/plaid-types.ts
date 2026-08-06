@@ -58,7 +58,13 @@ export type PlaidSafeConnectionSummary = {
 export type PlaidSafeErrorCode =
   | "not_configured"
   | "unauthorized"
+  | "unauthenticated"
   | "invalid_request"
+  | "invalid_origin"
+  | "invalid_runtime_environment"
+  | "missing_server_configuration"
+  | "plaid_client_initialization_failed"
+  | "plaid_request_failed"
   | "exchange_failed"
   | "disconnect_failed"
   | "sync_failed"
@@ -74,6 +80,16 @@ export type PlaidSafeErrorCode =
   | "sync_mutation_during_pagination"
   | "update_failed"
   | "token_not_repairable";
+
+export type PlaidLinkTokenDiagnosticCode =
+  | "unauthenticated"
+  | "invalid_request"
+  | "invalid_origin"
+  | "invalid_runtime_environment"
+  | "missing_server_configuration"
+  | "plaid_client_initialization_failed"
+  | "plaid_request_failed"
+  | "connection_failed";
 
 export type PlaidSyncStatus = "success" | "reconnect_required" | "error";
 
