@@ -20,6 +20,14 @@ import {
   type MelusiPlanningSnapshot,
 } from "@/lib/jarvis/projects/load-melusi-planning-snapshot";
 import { listTasks, type TaskRecord } from "@/lib/jarvis/tools/task-tools";
+import {
+  buildMelusiExpenseBriefContext,
+  extractMelusiExpenseSourceCounts,
+  formatMelusiExpenseBriefContextForPrompt,
+  mergeMelusiExpenseSourceCountsIntoRoot,
+  type MelusiExpenseBriefContext,
+} from "@/lib/jarvis/briefings/build-melusi-expense-brief-context";
+import { loadMelusiExpenseBriefSnapshot } from "@/lib/jarvis/briefings/load-melusi-expense-brief-snapshot";
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const SAFE_ERROR_MESSAGE = "Jarvis could not generate the morning brief.";
@@ -65,6 +73,10 @@ type SourceCounts = {
   melusiProjects: number;
   melusiProjectTasks: number;
   melusiProjectUpdates: number;
+  melusiExpenses?: {
+    recurringOverheadStateKey: string | null;
+    surfacedSignalKeys: string[];
+  };
 };
 
 function isValidTimeZone(timeZone: string): boolean {
@@ -306,6 +318,15 @@ Include urgent and high-priority messages first. For each included message show 
 ## Tasks and Deadlines
 Include overdue tasks, tasks due soon, and important undated high-priority tasks.
 
+## Melusi Business Expenses
+Include this section only when Melusi business expense signals were returned below. Omit it entirely when no meaningful expense signals were returned.
+When included, prioritize overdue and due-soon recurring charges first.
+Distinguish current recurring overhead from historical spending.
+Describe owner-funded refunds as reducing operational owner-funded spending.
+Use only the supplied expense values. Do not invent expenses, due dates, totals, or recommendations.
+Do not describe owner-funded spending as equity, ownership value, investment basis, or tax basis.
+Do not repeat static spending totals unless a recurring-overhead summary was explicitly supplied.
+
 ## Melusi Projects
 Include this section only when Melusi project data was returned below. Omit it entirely when no Melusi project data was returned or when there is no meaningful project activity.
 When included, summarize active Melusi projects needing attention: overdue project tasks, project tasks due soon, high-priority unfinished project tasks, and active projects with no open next task.
@@ -345,6 +366,7 @@ function buildGenerationPrompt(input: {
   goals: Goal[];
   memories: Memory[];
   tasks: BriefingTask[];
+  melusiExpenses: MelusiExpenseBriefContext | null;
   melusiProjects: MelusiPlanningSnapshot | null;
   emails: BriefingEmail[];
   events: BriefingEvent[];
@@ -374,6 +396,14 @@ function buildGenerationPrompt(input: {
     sections.push(`\nUnfinished tasks:\n${JSON.stringify(input.tasks, null, 2)}`);
   } else {
     sections.push("\nUnfinished tasks: none returned.");
+  }
+
+  if (input.melusiExpenses?.hasMeaningfulSignals) {
+    sections.push(
+      `\nMelusi business expense signals (trusted snapshot):\n${formatMelusiExpenseBriefContextForPrompt(input.melusiExpenses)}`,
+    );
+  } else {
+    sections.push("\nMelusi business expense signals: none returned.");
   }
 
   if (input.melusiProjects?.hasMeaningfulActivity) {
@@ -476,6 +506,44 @@ export async function generateMorningBrief(
   const briefingDate = getLocalDateString(timeZone, now);
   const localDateLabel = formatLocalDateLabel(timeZone, now);
 
+  const [{ data: existingTodayRow }, { data: priorBriefRow }] = await Promise.all([
+    supabase
+      .from("morning_briefings")
+      .select("generated_at, source_counts, status")
+      .eq("user_id", userId)
+      .eq("briefing_date", briefingDate)
+      .maybeSingle(),
+    supabase
+      .from("morning_briefings")
+      .select("generated_at, source_counts")
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .not("generated_at", "is", null)
+      .lt("briefing_date", briefingDate)
+      .order("briefing_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const preservedSourceCounts =
+    existingTodayRow?.source_counts &&
+    typeof existingTodayRow.source_counts === "object" &&
+    !Array.isArray(existingTodayRow.source_counts)
+      ? (existingTodayRow.source_counts as Record<string, unknown>)
+      : {};
+
+  const storedMelusiSourceCounts =
+    existingTodayRow?.status === "completed"
+      ? extractMelusiExpenseSourceCounts(existingTodayRow.source_counts)
+      : extractMelusiExpenseSourceCounts(priorBriefRow?.source_counts);
+
+  const sinceTimestamp =
+    typeof existingTodayRow?.generated_at === "string"
+      ? existingTodayRow.generated_at
+      : typeof priorBriefRow?.generated_at === "string"
+        ? priorBriefRow.generated_at
+        : undefined;
+
   const { error: upsertError } = await supabase.from("morning_briefings").upsert(
     {
       user_id: userId,
@@ -485,7 +553,7 @@ export async function generateMorningBrief(
       content: null,
       safe_error_message: null,
       generated_at: null,
-      source_counts: {},
+      source_counts: preservedSourceCounts,
     },
     { onConflict: "user_id,briefing_date" },
   );
@@ -494,10 +562,39 @@ export async function generateMorningBrief(
     return { success: false, error: SAFE_ERROR_MESSAGE };
   }
 
-  const [tasksResult, melusiSnapshot] = await Promise.all([
-    listTasks(supabase, userId),
-    loadMelusiPlanningSnapshot(supabase, userId, { timeZone, now }),
-  ]);
+  const [tasksResult, melusiSnapshot, melusiExpenseSnapshotResult] =
+    await Promise.all([
+      listTasks(supabase, userId),
+      loadMelusiPlanningSnapshot(supabase, userId, { timeZone, now }),
+      loadMelusiExpenseBriefSnapshot(supabase, userId, {
+        now,
+        ...(sinceTimestamp ? { since: sinceTimestamp } : {}),
+      }),
+    ]);
+
+  let melusiExpenseContext: MelusiExpenseBriefContext | null = null;
+
+  if (melusiExpenseSnapshotResult.success) {
+    melusiExpenseContext = buildMelusiExpenseBriefContext({
+      snapshot: melusiExpenseSnapshotResult.snapshot,
+      storedSourceCounts: storedMelusiSourceCounts,
+      localDate: briefingDate,
+    });
+  }
+
+  console.info("[morning-brief] melusi-expenses", {
+    snapshotSuccess: melusiExpenseSnapshotResult.success,
+    hasMeaningfulSignals: melusiExpenseContext?.hasMeaningfulSignals ?? false,
+    dueSoonCount: melusiExpenseContext?.dueSoonCharges.length ?? 0,
+    overdueCount: melusiExpenseContext?.overdueCharges.length ?? 0,
+    refundCount: melusiExpenseContext?.recentRefunds.length ?? 0,
+    largeExpenseCount: melusiExpenseContext?.recentLargeExpenses.length ?? 0,
+    importCount: melusiExpenseContext?.recentImports.length ?? 0,
+    needsReviewCount: melusiExpenseContext?.needsReviewCount ?? 0,
+    recurringOverheadSummaryIncluded:
+      melusiExpenseContext?.recurringOverheadSummary !== null &&
+      melusiExpenseContext?.recurringOverheadSummary !== undefined,
+  });
 
   const unfinishedTasks = tasksResult.success
     ? prepareTasks(tasksResult.tasks, timeZone, now)
@@ -562,16 +659,19 @@ export async function generateMorningBrief(
     calendarNote = "Outlook calendar could not be retrieved.";
   }
 
-  const sourceCounts: SourceCounts = {
-    tasks: unfinishedTasks.length,
-    goals: activeGoals.length,
-    memories: memories.length,
-    emails: emails.length,
-    events: events.length,
-    melusiProjects: melusiSnapshot.activeProjects.length,
-    melusiProjectTasks: Object.keys(melusiSnapshot.projectNameByTaskId).length,
-    melusiProjectUpdates: melusiSnapshot.projectUpdates.length,
-  };
+  const sourceCounts = mergeMelusiExpenseSourceCountsIntoRoot(
+    {
+      tasks: unfinishedTasks.length,
+      goals: activeGoals.length,
+      memories: memories.length,
+      emails: emails.length,
+      events: events.length,
+      melusiProjects: melusiSnapshot.activeProjects.length,
+      melusiProjectTasks: Object.keys(melusiSnapshot.projectNameByTaskId).length,
+      melusiProjectUpdates: melusiSnapshot.projectUpdates.length,
+    },
+    melusiExpenseContext?.nextSourceCounts ?? storedMelusiSourceCounts,
+  ) as SourceCounts;
 
   const instructions = buildInstructions(context, timeZone);
   const prompt = buildGenerationPrompt({
@@ -580,6 +680,9 @@ export async function generateMorningBrief(
     goals: activeGoals,
     memories,
     tasks: unfinishedTasks,
+    melusiExpenses: melusiExpenseContext?.hasMeaningfulSignals
+      ? melusiExpenseContext
+      : null,
     melusiProjects: melusiSnapshot.hasMeaningfulActivity
       ? melusiSnapshot
       : null,
