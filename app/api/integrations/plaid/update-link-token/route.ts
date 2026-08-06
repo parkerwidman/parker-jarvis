@@ -6,9 +6,9 @@ import {
 import {
   decryptStoredAccessToken,
   hasStoredPlaidAccessToken,
-  loadPlaidConnectionRowById,
   markPlaidConnectionErrorById,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { loadRuntimePlaidConnectionRowById } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const connection = await loadPlaidConnectionRowById(
+    const connection = await loadRuntimePlaidConnectionRowById(
       supabase,
       userId,
       connectionId,
@@ -65,8 +65,8 @@ export async function POST(request: NextRequest) {
 
     if (!connection || !hasStoredPlaidAccessToken(connection)) {
       return NextResponse.json(
-        { ok: false, error: "invalid_request" },
-        { status: 404 },
+        { ok: false, error: "item_not_found" },
+        { status: 400 },
       );
     }
 

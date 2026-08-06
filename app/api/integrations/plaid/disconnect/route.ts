@@ -4,9 +4,9 @@ import {
   decryptStoredAccessToken,
   disconnectPlaidConnectionById,
   hasUsablePlaidCredentials,
-  loadPlaidConnectionRowById,
   markPlaidConnectionErrorById,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { loadRuntimePlaidConnectionRowById } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const row = await loadPlaidConnectionRowById(supabase, userId, connectionId);
+  const row = await loadRuntimePlaidConnectionRowById(supabase, userId, connectionId);
 
   if (!row || row.status === "disconnected") {
     return NextResponse.json(

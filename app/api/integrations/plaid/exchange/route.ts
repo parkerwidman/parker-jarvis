@@ -9,6 +9,7 @@ import {
   markPlaidConnectionErrorByItemId,
   savePlaidConnectedConnection,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { connectionMatchesRuntimeEnvironment } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -73,6 +74,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (existingItem && !connectionMatchesRuntimeEnvironment(existingItem)) {
+      return NextResponse.json(
+        { ok: false, error: "exchange_failed" },
+        { status: 400 },
+      );
+    }
+
     const institutionId = await fetchItemInstitutionId(accessToken);
 
     let institutionName: string | null = null;
@@ -98,12 +106,23 @@ export async function POST(request: NextRequest) {
 
     if (exchangedItemId) {
       try {
-        await markPlaidConnectionErrorByItemId(
+        const existingItem = await loadPlaidConnectionRowByItemId(
           supabase,
-          userId,
           exchangedItemId,
-          code,
         );
+
+        if (
+          existingItem &&
+          existingItem.user_id === userId &&
+          connectionMatchesRuntimeEnvironment(existingItem)
+        ) {
+          await markPlaidConnectionErrorByItemId(
+            supabase,
+            userId,
+            exchangedItemId,
+            code,
+          );
+        }
       } catch {
         // Best-effort per-Item status update; original error still returned.
       }

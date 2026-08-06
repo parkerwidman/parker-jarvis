@@ -9,11 +9,23 @@ export const PLAID_LANGUAGE = "en";
 
 const VALID_ENVIRONMENTS: PlaidEnvironment[] = ["sandbox", "production"];
 
+function requiresExplicitPlaidEnvironment(): boolean {
+  return process.env.VERCEL_ENV === "production";
+}
+
 export function getPlaidEnvironment(): PlaidEnvironment {
   const env = process.env.PLAID_ENV?.toLowerCase();
 
-  if (!env || !VALID_ENVIRONMENTS.includes(env as PlaidEnvironment)) {
+  if (!env) {
+    if (requiresExplicitPlaidEnvironment()) {
+      throw new Error("PLAID_ENV must be set to sandbox or production");
+    }
+
     return "sandbox";
+  }
+
+  if (!VALID_ENVIRONMENTS.includes(env as PlaidEnvironment)) {
+    throw new Error("PLAID_ENV must be sandbox or production");
   }
 
   return env as PlaidEnvironment;

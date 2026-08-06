@@ -24,6 +24,7 @@ import type {
   FinanceTransactionType,
 } from "@/lib/jarvis/finance/finance-types";
 import { loadSafePlaidConnections } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { loadCurrentRuntimePlaidFinanceIds } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const TRANSACTION_LOOKBACK_DAYS = 45;
@@ -33,7 +34,7 @@ const MAX_TOP_CATEGORIES = 8;
 const MAX_ALERTS = 8;
 
 const FINANCE_ACCOUNT_COLUMNS =
-  "id, user_id, name, institution_name, account_type, current_balance, available_balance, balance_as_of, currency, last_four, active, hidden, notes, created_at, updated_at";
+  "id, user_id, name, institution_name, account_type, current_balance, available_balance, balance_as_of, currency, last_four, active, hidden, notes, source, created_at, updated_at";
 
 const FINANCE_CATEGORY_COLUMNS =
   "id, user_id, name, slug, category_kind, is_system, sort_order, active, created_at, updated_at";
@@ -68,6 +69,7 @@ type FinanceAccountRow = {
   active: boolean;
   hidden: boolean;
   notes: string | null;
+  source: "manual" | "plaid";
   created_at: string;
   updated_at: string;
 };
@@ -98,7 +100,7 @@ type FinanceTransactionRow = {
   transaction_type: FinanceTransactionType;
   status: FinanceTransactionStatus;
   notes: string | null;
-  source: "manual" | "plaid";
+  source: "manual" | "plaid" | "rocket_money_csv";
   deduplication_fingerprint: string | null;
   recurring_item_id: string | null;
   personal_or_business: FinancePersonalOrBusiness;
@@ -270,7 +272,7 @@ function mapFinanceTransactionRow(row: FinanceTransactionRow): FinanceTransactio
     transactionType: row.transaction_type,
     status: row.status,
     notes: row.notes,
-    source: row.source,
+    source: row.source === "plaid" ? "plaid" : "manual",
     deduplicationFingerprint: row.deduplication_fingerprint,
     recurringItemId: row.recurring_item_id,
     personalOrBusiness: row.personal_or_business,
@@ -386,6 +388,28 @@ function buildTopSpendingCategories(
     .filter((entry) => entry.amount > 0)
     .sort((left, right) => right.amount - left.amount)
     .slice(0, MAX_TOP_CATEGORIES);
+}
+
+function isPlaidAccountInRuntimeEnvironment(
+  row: FinanceAccountRow,
+  runtimePlaidAccountIds: Set<string>,
+): boolean {
+  if (row.source !== "plaid") {
+    return true;
+  }
+
+  return runtimePlaidAccountIds.has(row.id);
+}
+
+function isPlaidTransactionInRuntimeEnvironment(
+  row: FinanceTransactionRow,
+  runtimePlaidTransactionIds: Set<string>,
+): boolean {
+  if (row.source !== "plaid") {
+    return true;
+  }
+
+  return runtimePlaidTransactionIds.has(row.id);
 }
 
 function buildVisibleAccounts(
@@ -534,6 +558,7 @@ export async function loadFinanceCommandCenter(
     transactionsResult,
     recurringItemsResult,
     plaidConnectionsResult,
+    runtimePlaidFinanceIdsResult,
   ] = await Promise.all([
     supabase
       .from("finance_accounts")
@@ -557,6 +582,7 @@ export async function loadFinanceCommandCenter(
       .eq("user_id", userId)
       .eq("active", true),
     loadSafePlaidConnections(supabase, userId).catch(() => null),
+    loadCurrentRuntimePlaidFinanceIds(supabase, userId).catch(() => null),
   ]);
 
   if (accountsResult.error) {
@@ -579,13 +605,25 @@ export async function loadFinanceCommandCenter(
     return { success: false, error: "Could not load Plaid connection summaries." };
   }
 
-  const accounts = ((accountsResult.data ?? []) as FinanceAccountRow[]).map(
-    mapFinanceAccountRow,
-  );
+  if (!runtimePlaidFinanceIdsResult) {
+    return { success: false, error: "Could not load Plaid finance mappings." };
+  }
+
+  const accounts = ((accountsResult.data ?? []) as FinanceAccountRow[])
+    .filter((row) =>
+      isPlaidAccountInRuntimeEnvironment(row, runtimePlaidFinanceIdsResult.accountIds),
+    )
+    .map(mapFinanceAccountRow);
   const categories = ((categoriesResult.data ?? []) as FinanceCategoryRow[]).map(
     mapFinanceCategoryRow,
   );
   const transactions = ((transactionsResult.data ?? []) as FinanceTransactionRow[])
+    .filter((row) =>
+      isPlaidTransactionInRuntimeEnvironment(
+        row,
+        runtimePlaidFinanceIdsResult.transactionIds,
+      ),
+    )
     .map(mapFinanceTransactionRow)
     .filter((transaction): transaction is FinanceTransaction => transaction !== null);
   const recurringItems = ((recurringItemsResult.data ?? []) as FinanceRecurringItemRow[])

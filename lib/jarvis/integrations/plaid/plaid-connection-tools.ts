@@ -8,6 +8,7 @@ import {
 } from "./plaid-token-crypto";
 import { verifyPlaidItemAccess } from "./plaid-client";
 import { getPlaidEnvironment } from "./plaid-config";
+import { loadRuntimePlaidConnectionRowById } from "./plaid-environment-guard";
 import type {
   PlaidConnectionRow,
   PlaidConnectionStatus,
@@ -131,6 +132,7 @@ export async function loadSafePlaidConnections(
     .from("plaid_connections")
     .select(SAFE_SUMMARY_COLUMNS)
     .eq("user_id", userId)
+    .eq("environment", getPlaidEnvironment())
     .in("status", ACTIVE_CONNECTION_STATUSES)
     .order("connected_at", { ascending: false, nullsFirst: false })
     .limit(MAX_SAFE_PLAID_CONNECTIONS);
@@ -184,6 +186,10 @@ export async function savePlaidConnectedConnection(
   );
 
   if (existing && existing.user_id !== userId) {
+    throw new PlaidSafeError("exchange_failed");
+  }
+
+  if (existing && existing.environment !== getPlaidEnvironment()) {
     throw new PlaidSafeError("exchange_failed");
   }
 
@@ -258,7 +264,8 @@ export async function disconnectPlaidConnectionById(
       disconnected_at: now,
     })
     .eq("id", connectionId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .eq("environment", getPlaidEnvironment());
 
   if (error) {
     throw error;
@@ -339,7 +346,11 @@ export async function completePlaidConnectionUpdate(
   userId: string,
   connectionId: string,
 ): Promise<PlaidConnectionUpdateResult> {
-  const connection = await loadPlaidConnectionRowById(supabase, userId, connectionId);
+  const connection = await loadRuntimePlaidConnectionRowById(
+    supabase,
+    userId,
+    connectionId,
+  );
 
   if (!connection || !hasStoredPlaidAccessToken(connection)) {
     throw new PlaidSafeError("item_not_found");

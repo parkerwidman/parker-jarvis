@@ -9,6 +9,7 @@ import {
   JarvisPageContent,
 } from "@/components/jarvis/jarvis-ui";
 import { loadSafePlaidConnections } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { getCurrentPlaidRuntimeEnvironment } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import type { PlaidSafeConnectionSummary } from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
@@ -83,6 +84,7 @@ export default async function PlaidConnectionPage() {
   }
 
   const connections = await loadSafePlaidConnections(supabase, userId);
+  const runtimeEnvironment = getCurrentPlaidRuntimeEnvironment();
   const connectedInstitutionNames = connections
     .map((connection) => connection.institutionName)
     .filter((name): name is string => Boolean(name));
@@ -108,7 +110,7 @@ export default async function PlaidConnectionPage() {
               </div>
 
               <p className="jv-connection-meta">
-                Environment: {formatEnvironment("sandbox")}
+                Environment: {formatEnvironment(runtimeEnvironment)}
               </p>
 
               <p className="jv-connection-meta">Purpose: read-only</p>
@@ -129,7 +131,7 @@ export default async function PlaidConnectionPage() {
           ) : (
             <div className="jv-connection-status">
               <p className="jv-connection-meta">
-                Environment: {formatEnvironment(connections[0]?.environment ?? "sandbox")}
+                Environment: {formatEnvironment(runtimeEnvironment)}
               </p>
 
               <p className="jv-connection-meta">Purpose: read-only</p>

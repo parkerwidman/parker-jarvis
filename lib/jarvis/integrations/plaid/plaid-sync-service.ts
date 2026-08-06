@@ -9,9 +9,10 @@ import {
 import {
   decryptStoredAccessToken,
   hasUsablePlaidCredentials,
-  loadPlaidConnectionRowById,
   markPlaidConnectionErrorById,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { getPlaidEnvironment } from "@/lib/jarvis/integrations/plaid/plaid-config";
+import { loadRuntimePlaidConnectionRowById } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import {
   isInvestmentPlaidAccount,
   isSupportedUsdCurrency,
@@ -816,7 +817,7 @@ export async function syncPlaidConnection(
   userId: string,
   connectionId: string,
 ): Promise<PlaidConnectionSyncResult> {
-  const connection = await loadPlaidConnectionRowById(supabase, userId, connectionId);
+  const connection = await loadRuntimePlaidConnectionRowById(supabase, userId, connectionId);
 
   if (!connection) {
     throw new PlaidSafeError("item_not_found");
@@ -909,6 +910,7 @@ export async function syncAllPlaidConnectionsForUser(
     .from("plaid_connections")
     .select("id")
     .eq("user_id", userId)
+    .eq("environment", getPlaidEnvironment())
     .eq("status", "connected")
     .not("encrypted_access_token", "is", null)
     .order("connected_at", { ascending: true });
