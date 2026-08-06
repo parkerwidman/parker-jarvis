@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 export type JarvisNavIconName =
   | "command"
   | "melusi"
+  | "finance"
   | "tasks"
   | "brief"
   | "plan"
@@ -23,6 +24,17 @@ const ICONS: Record<JarvisNavIconName, ReactNode> = {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
       <path d="M5 6.5h6M5 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  ),
+  finance: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 5.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1.5 1.5 0 0 1-1.5-1.5v-5a1.5 1.5 0 0 1 1.5-1.5z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <path d="M2 6.5V5.5a2 2 0 0 1 2-2h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="11.5" cy="9.5" r="1" fill="currentColor" />
     </svg>
   ),
   tasks: (
