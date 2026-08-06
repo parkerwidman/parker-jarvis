@@ -116,6 +116,26 @@ export type PlaidApiFailureDetails = {
   requestId: string | null;
 };
 
+function isPlaidNetworkError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const candidate = error as { response?: unknown; code?: string };
+
+  if (candidate.response !== undefined) {
+    return false;
+  }
+
+  return (
+    candidate.code === "ECONNABORTED" ||
+    candidate.code === "ENOTFOUND" ||
+    candidate.code === "ECONNREFUSED" ||
+    candidate.code === "ETIMEDOUT" ||
+    candidate.code === "ERR_NETWORK"
+  );
+}
+
 function sanitizePlaidErrorMessage(message: string | undefined): string | null {
   if (!message) {
     return null;
@@ -171,12 +191,18 @@ export function mapPlaidApiError(
   const failure = extractPlaidApiFailure(error, operation);
   logPlaidApiFailure(failure);
 
+  const metadata = {
+    plaidErrorType: failure.errorType ?? undefined,
+    httpStatus: failure.httpStatus,
+    isNetworkFailure: isPlaidNetworkError(error),
+  };
+
   if (failure.errorCode) {
     const mappedCode = PLAID_ERROR_CODE_MAP[failure.errorCode] ?? "plaid_error";
-    return new PlaidSafeError(mappedCode, mappedCode, failure.errorCode);
+    return new PlaidSafeError(mappedCode, mappedCode, failure.errorCode, metadata);
   }
 
-  return new PlaidSafeError("plaid_error");
+  return new PlaidSafeError("plaid_error", "plaid_error", undefined, metadata);
 }
 
 export function isPlaidReconnectErrorCode(plaidErrorCode: string | undefined): boolean {

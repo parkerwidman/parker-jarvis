@@ -24,12 +24,17 @@ import {
   validatePlaidCredentials,
 } from "@/lib/jarvis/integrations/plaid/plaid-config";
 import {
+  extractSafePlaidApiError,
+  formatPlaidLinkTokenClientError,
   isPlaidLinkTokenPlaidApiFailure,
   isPlaidLinkTokenPrePlaidFailure,
   linkTokenFailureHttpStatus,
   logPlaidLinkTokenDiagnostic,
   mapPlaidSafeErrorToLinkTokenDiagnostic,
   resolvePlaidLinkTokenDiagnosticCode,
+  resolvePlaidLinkTokenFailure,
+  sanitizePlaidDiagnosticToken,
+  UNKNOWN_PLAID_ERROR,
 } from "@/lib/jarvis/integrations/plaid/plaid-link-token-errors";
 import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
 
@@ -59,6 +64,32 @@ function restoreEnv(snapshot: EnvSnapshot): void {
   }
 }
 
+function buildPlaidAxiosError({
+  status = 400,
+  errorType,
+  errorCode,
+  errorMessage,
+  requestId,
+}: {
+  status?: number;
+  errorType: string;
+  errorCode: string;
+  errorMessage?: string;
+  requestId?: string;
+}) {
+  return {
+    response: {
+      status,
+      data: {
+        error_type: errorType,
+        error_code: errorCode,
+        error_message: errorMessage,
+        request_id: requestId,
+      },
+    },
+  };
+}
+
 describe("plaid link-token diagnostics", () => {
   let envSnapshot: EnvSnapshot;
 
@@ -84,13 +115,13 @@ describe("plaid link-token diagnostics", () => {
       expect.objectContaining({ code: "missing_server_configuration" }),
     );
 
-    const code = resolvePlaidLinkTokenDiagnosticCode(
+    const failure = resolvePlaidLinkTokenFailure(
       new PlaidSafeError("missing_server_configuration"),
     );
-    expect(code).toBe("missing_server_configuration");
-    expect(linkTokenFailureHttpStatus(code)).toBe(500);
-    expect(isPlaidLinkTokenPrePlaidFailure(code)).toBe(true);
-    expect(isPlaidLinkTokenPlaidApiFailure(code)).toBe(false);
+    expect(failure.code).toBe("missing_server_configuration");
+    expect(linkTokenFailureHttpStatus(failure.code)).toBe(500);
+    expect(isPlaidLinkTokenPrePlaidFailure(failure.code)).toBe(true);
+    expect(isPlaidLinkTokenPlaidApiFailure(failure.code)).toBe(false);
   });
 
   it("maps invalid runtime environment to a safe diagnostic code", () => {
@@ -101,31 +132,160 @@ describe("plaid link-token diagnostics", () => {
       expect.objectContaining({ code: "invalid_runtime_environment" }),
     );
 
-    const code = mapPlaidSafeErrorToLinkTokenDiagnostic(
+    const failure = resolvePlaidLinkTokenFailure(
       new PlaidSafeError("invalid_runtime_environment"),
     );
-    expect(code).toBe("invalid_runtime_environment");
-    expect(linkTokenFailureHttpStatus(code)).toBe(500);
+    expect(failure.code).toBe("invalid_runtime_environment");
+    expect(linkTokenFailureHttpStatus(failure.code)).toBe(500);
   });
 
-  it("maps generic failures to connection_failed", () => {
-    const code = resolvePlaidLinkTokenDiagnosticCode(new Error("unexpected"));
-    expect(code).toBe("connection_failed");
-    expect(linkTokenFailureHttpStatus(code)).toBe(400);
+  it("maps unexpected local failures to plaid_request_failed", () => {
+    const failure = resolvePlaidLinkTokenFailure(new Error("unexpected"));
+    expect(failure.code).toBe("plaid_request_failed");
+    expect(failure.clientError).toBe("plaid_request_failed");
+    expect(linkTokenFailureHttpStatus(failure.code)).toBe(400);
   });
 
-  it("maps Plaid API failures to plaid_request_failed", () => {
-    const code = mapPlaidSafeErrorToLinkTokenDiagnostic(new PlaidSafeError("plaid_error"));
-    expect(code).toBe("plaid_request_failed");
-    expect(linkTokenFailureHttpStatus(code)).toBe(400);
-    expect(isPlaidLinkTokenPlaidApiFailure(code)).toBe(true);
-    expect(isPlaidLinkTokenPrePlaidFailure(code)).toBe(false);
+  it("extracts INVALID_API_KEYS safely from Plaid API responses", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      buildPlaidAxiosError({
+        errorType: "INVALID_INPUT",
+        errorCode: "INVALID_API_KEYS",
+      }),
+    );
+
+    expect(failure.code).toBe("plaid_api_error");
+    expect(failure.plaidErrorCode).toBe("INVALID_API_KEYS");
+    expect(failure.clientError).toBe("plaid_api_error: INVALID_API_KEYS");
   });
 
-  it("logs only the generic diagnostic code", () => {
+  it("extracts INVALID_CONFIGURATION safely from Plaid API responses", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      buildPlaidAxiosError({
+        errorType: "INVALID_REQUEST",
+        errorCode: "INVALID_CONFIGURATION",
+      }),
+    );
+
+    expect(failure.code).toBe("plaid_api_error");
+    expect(failure.plaidErrorType).toBe("INVALID_REQUEST");
+    expect(failure.plaidErrorCode).toBe("INVALID_CONFIGURATION");
+  });
+
+  it("extracts INVALID_FIELD safely from PlaidSafeError metadata", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      new PlaidSafeError("update_failed", "update_failed", "INVALID_FIELD", {
+        plaidErrorType: "INVALID_REQUEST",
+        httpStatus: 400,
+      }),
+    );
+
+    expect(failure.code).toBe("plaid_api_error");
+    expect(failure.plaidErrorCode).toBe("INVALID_FIELD");
+    expect(failure.plaidErrorType).toBe("INVALID_REQUEST");
+    expect(failure.status).toBe(400);
+  });
+
+  it("keeps unknown valid-format Plaid codes visible safely", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      buildPlaidAxiosError({
+        errorType: "ITEM_ERROR",
+        errorCode: "NEW_FUTURE_CODE",
+      }),
+    );
+
+    expect(failure.plaidErrorCode).toBe("NEW_FUTURE_CODE");
+    expect(failure.clientError).toBe("plaid_api_error: NEW_FUTURE_CODE");
+  });
+
+  it("maps malformed error_code values to UNKNOWN_PLAID_ERROR", () => {
+    expect(sanitizePlaidDiagnosticToken("bad-code")).toBe(UNKNOWN_PLAID_ERROR);
+    expect(
+      resolvePlaidLinkTokenFailure(
+        buildPlaidAxiosError({
+          errorType: "INVALID_REQUEST",
+          errorCode: "bad-code",
+        }),
+      ).plaidErrorCode,
+    ).toBe(UNKNOWN_PLAID_ERROR);
+  });
+
+  it("never returns raw error_message in client diagnostics", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      buildPlaidAxiosError({
+        errorType: "INVALID_REQUEST",
+        errorCode: "INVALID_CONFIGURATION",
+        errorMessage: "client_id must be a properly formatted string",
+      }),
+    );
+
+    expect(JSON.stringify(failure)).not.toContain("client_id");
+    expect(failure.clientError).not.toMatch(/must be|formatted|string/i);
+  });
+
+  it("never returns request_id in client diagnostics", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      buildPlaidAxiosError({
+        errorType: "INVALID_REQUEST",
+        errorCode: "INVALID_CONFIGURATION",
+        requestId: "req-secret-123",
+      }),
+    );
+
+    expect(JSON.stringify(failure)).not.toContain("req-secret-123");
+    expect(JSON.stringify(failure)).not.toContain("request_id");
+  });
+
+  it("never returns credentials or headers in client diagnostics", () => {
+    const failure = resolvePlaidLinkTokenFailure(
+      new PlaidSafeError("missing_server_configuration"),
+    );
+
+    expect(JSON.stringify(failure)).not.toMatch(/secret|PLAID-CLIENT-ID|cookie|header/i);
+    expect(failure.clientError).toBe("missing_server_configuration");
+  });
+
+  it("distinguishes network failure from Plaid API rejection", () => {
+    const networkFailure = resolvePlaidLinkTokenFailure({ code: "ECONNABORTED" });
+    const apiFailure = resolvePlaidLinkTokenFailure(
+      buildPlaidAxiosError({
+        errorType: "INVALID_INPUT",
+        errorCode: "INVALID_API_KEYS",
+      }),
+    );
+
+    expect(networkFailure.code).toBe("plaid_network_failed");
+    expect(apiFailure.code).toBe("plaid_api_error");
+    expect(isPlaidLinkTokenPlaidApiFailure(networkFailure.code)).toBe(true);
+    expect(isPlaidLinkTokenPlaidApiFailure(apiFailure.code)).toBe(true);
+  });
+
+  it("logs only safe Plaid API fields for API failures", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    logPlaidLinkTokenDiagnostic("missing_server_configuration");
+    logPlaidLinkTokenDiagnostic({
+      code: "plaid_api_error",
+      clientError: "plaid_api_error: INVALID_CONFIGURATION",
+      plaidErrorType: "INVALID_REQUEST",
+      plaidErrorCode: "INVALID_CONFIGURATION",
+      status: 400,
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith("[plaid-link-token]", {
+      error: "plaid_api_error",
+      plaidErrorType: "INVALID_REQUEST",
+      plaidErrorCode: "INVALID_CONFIGURATION",
+      status: 400,
+    });
+  });
+
+  it("logs only the generic diagnostic code for non-API failures", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    logPlaidLinkTokenDiagnostic({
+      code: "missing_server_configuration",
+      clientError: "missing_server_configuration",
+    });
 
     expect(errorSpy).toHaveBeenCalledWith("[plaid-link-token]", {
       error: "missing_server_configuration",
@@ -178,46 +338,33 @@ describe("plaid link-token diagnostics", () => {
     });
   });
 
-  it("distinguishes Plaid API errors from pre-Plaid rejections", async () => {
+  it("maps createLinkToken Plaid API rejections to plaid_api_error diagnostics", async () => {
     process.env.PLAID_ENV = "sandbox";
     process.env.PLAID_CLIENT_ID = "client-id";
     process.env.PLAID_SECRET = "secret";
 
-    linkTokenCreateMock.mockRejectedValue({
-      response: {
-        status: 400,
-        data: {
-          error_code: "INVALID_FIELD",
-          error_type: "INVALID_REQUEST",
-        },
-      },
-    });
+    linkTokenCreateMock.mockRejectedValue(
+      buildPlaidAxiosError({
+        errorType: "INVALID_REQUEST",
+        errorCode: "INVALID_FIELD",
+      }),
+    );
 
     await expect(createLinkToken("user-123")).rejects.toMatchObject({
       code: "update_failed",
+      plaidErrorCode: "INVALID_FIELD",
     });
 
-    const prePlaidCode = resolvePlaidLinkTokenDiagnosticCode(
-      new PlaidSafeError("missing_server_configuration"),
+    const failure = resolvePlaidLinkTokenFailure(
+      new PlaidSafeError("update_failed", "update_failed", "INVALID_FIELD", {
+        plaidErrorType: "INVALID_REQUEST",
+        httpStatus: 400,
+      }),
     );
-    const plaidApiCode = resolvePlaidLinkTokenDiagnosticCode(
-      new PlaidSafeError("plaid_error"),
-    );
 
-    expect(isPlaidLinkTokenPrePlaidFailure(prePlaidCode)).toBe(true);
-    expect(isPlaidLinkTokenPlaidApiFailure(plaidApiCode)).toBe(true);
-  });
-
-  it("does not expose secrets or private identifiers in diagnostic codes", () => {
-    const responseBody = {
-      ok: false,
-      error: resolvePlaidLinkTokenDiagnosticCode(
-        new PlaidSafeError("missing_server_configuration"),
-      ),
-    };
-
-    expect(JSON.stringify(responseBody)).not.toMatch(/secret|token|user|cookie|header/i);
-    expect(responseBody.error).toBe("missing_server_configuration");
+    expect(failure.code).toBe("plaid_api_error");
+    expect(isPlaidLinkTokenPrePlaidFailure("missing_server_configuration")).toBe(true);
+    expect(isPlaidLinkTokenPlaidApiFailure(failure.code)).toBe(true);
   });
 
   it("maps invalid origin to HTTP 403 without weakening other protections", () => {
@@ -238,13 +385,86 @@ describe("plaid link-token diagnostics", () => {
     });
     expect(linkTokenCreateMock).not.toHaveBeenCalled();
   });
+
+  it("formats browser diagnostics with the safe Plaid error code only", () => {
+    expect(
+      formatPlaidLinkTokenClientError({
+        code: "plaid_api_error",
+        clientError: "",
+        plaidErrorCode: "INVALID_API_KEYS",
+      }),
+    ).toBe("plaid_api_error: INVALID_API_KEYS");
+  });
+
+  it("extracts safe fields via extractSafePlaidApiError without sensitive data", () => {
+    const extracted = extractSafePlaidApiError(
+      buildPlaidAxiosError({
+        errorType: "INVALID_REQUEST",
+        errorCode: "INVALID_CONFIGURATION",
+        errorMessage: "sensitive details",
+        requestId: "req-123",
+      }),
+    );
+
+    expect(extracted).toEqual({
+      status: 400,
+      errorType: "INVALID_REQUEST",
+      errorCode: "INVALID_CONFIGURATION",
+    });
+    expect(JSON.stringify(extracted)).not.toContain("sensitive");
+    expect(JSON.stringify(extracted)).not.toContain("req-123");
+  });
 });
 
 describe("plaid link-token auth expectations", () => {
   it("uses unauthenticated as the safe rejection code", () => {
     expect(linkTokenFailureHttpStatus("unauthenticated")).toBe(401);
     expect(resolvePlaidLinkTokenDiagnosticCode(new PlaidSafeError("unauthorized"))).toBe(
-      "connection_failed",
+      "plaid_request_failed",
     );
+  });
+});
+
+describe("plaid link-token create request shape", () => {
+  let envSnapshot: EnvSnapshot;
+
+  beforeEach(() => {
+    envSnapshot = snapshotEnv();
+    resetPlaidClientCacheForTests();
+    linkTokenCreateMock.mockReset();
+    process.env.PLAID_ENV = "sandbox";
+    process.env.PLAID_CLIENT_ID = "client-id";
+    process.env.PLAID_SECRET = "secret";
+  });
+
+  afterEach(() => {
+    restoreEnv(envSnapshot);
+    resetPlaidClientCacheForTests();
+  });
+
+  it("sends the expected non-secret link-token request fields", async () => {
+    linkTokenCreateMock.mockResolvedValue({
+      data: {
+        link_token: "link-token",
+        expiration: "2026-08-07T00:00:00Z",
+      },
+    });
+
+    await createLinkToken("user-123");
+
+    expect(linkTokenCreateMock).toHaveBeenCalledWith({
+      user: { client_user_id: "user-123" },
+      client_name: "Parker Jarvis",
+      products: ["transactions"],
+      country_codes: ["US"],
+      language: "en",
+      transactions: {
+        days_requested: 730,
+      },
+    });
+
+    const request = linkTokenCreateMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request).not.toHaveProperty("redirect_uri");
+    expect(request).not.toHaveProperty("webhook");
   });
 });

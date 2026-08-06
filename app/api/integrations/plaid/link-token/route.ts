@@ -3,7 +3,7 @@ import { createLinkToken } from "@/lib/jarvis/integrations/plaid/plaid-client";
 import {
   linkTokenFailureHttpStatus,
   logPlaidLinkTokenDiagnostic,
-  resolvePlaidLinkTokenDiagnosticCode,
+  resolvePlaidLinkTokenFailure,
 } from "@/lib/jarvis/integrations/plaid/plaid-link-token-errors";
 import { NextResponse } from "next/server";
 
@@ -12,7 +12,10 @@ export async function POST() {
   const { data, error } = await supabase.auth.getClaims();
 
   if (error || !data?.claims) {
-    logPlaidLinkTokenDiagnostic("unauthenticated");
+    logPlaidLinkTokenDiagnostic({
+      code: "unauthenticated",
+      clientError: "unauthenticated",
+    });
     return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
   }
 
@@ -20,7 +23,10 @@ export async function POST() {
     typeof data.claims.sub === "string" ? data.claims.sub : null;
 
   if (!userId) {
-    logPlaidLinkTokenDiagnostic("unauthenticated");
+    logPlaidLinkTokenDiagnostic({
+      code: "unauthenticated",
+      clientError: "unauthenticated",
+    });
     return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
   }
 
@@ -33,12 +39,12 @@ export async function POST() {
       expiration,
     });
   } catch (caught) {
-    const code = resolvePlaidLinkTokenDiagnosticCode(caught);
-    logPlaidLinkTokenDiagnostic(code);
+    const failure = resolvePlaidLinkTokenFailure(caught);
+    logPlaidLinkTokenDiagnostic(failure);
 
     return NextResponse.json(
-      { ok: false, error: code },
-      { status: linkTokenFailureHttpStatus(code) },
+      { ok: false, error: failure.clientError },
+      { status: linkTokenFailureHttpStatus(failure.code) },
     );
   }
 }

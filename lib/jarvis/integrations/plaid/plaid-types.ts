@@ -88,6 +88,8 @@ export type PlaidLinkTokenDiagnosticCode =
   | "invalid_runtime_environment"
   | "missing_server_configuration"
   | "plaid_client_initialization_failed"
+  | "plaid_api_error"
+  | "plaid_network_failed"
   | "plaid_request_failed"
   | "connection_failed";
 
@@ -108,14 +110,31 @@ export type PlaidConnectionSyncResult = {
   errorCode?: PlaidSafeErrorCode;
 };
 
+export type PlaidSafeErrorMetadata = {
+  plaidErrorType?: string;
+  httpStatus?: number | null;
+  isNetworkFailure?: boolean;
+};
+
 export class PlaidSafeError extends Error {
   readonly code: PlaidSafeErrorCode;
   readonly plaidErrorCode?: string;
+  readonly plaidErrorType?: string;
+  readonly httpStatus?: number | null;
+  readonly isNetworkFailure?: boolean;
 
-  constructor(code: PlaidSafeErrorCode, message?: string, plaidErrorCode?: string) {
+  constructor(
+    code: PlaidSafeErrorCode,
+    message?: string,
+    plaidErrorCode?: string,
+    metadata?: PlaidSafeErrorMetadata,
+  ) {
     super(message ?? code);
     this.name = "PlaidSafeError";
     this.code = code;
     this.plaidErrorCode = plaidErrorCode;
+    this.plaidErrorType = metadata?.plaidErrorType;
+    this.httpStatus = metadata?.httpStatus;
+    this.isNetworkFailure = metadata?.isNetworkFailure;
   }
 }
