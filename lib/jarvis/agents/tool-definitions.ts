@@ -586,6 +586,102 @@ export const ACTION_REQUEST_TOOLS: OpenAI.Responses.Tool[] = [
   },
 ];
 
+export const PERSONAL_FINANCE_TOOLS: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    name: "get_personal_finance_summary",
+    description:
+      "Load a read-only personal finance summary for Parker. Use for personal cash, debt, current-month income and spending, Plaid connection health, pending Plaid reviews, and upcoming personal recurring obligations. Returns personal data only. Do not use for Melusi business expenses. Do not invent financial amounts. These tools cannot move money or modify Finance data.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "get_personal_spending",
+    description:
+      "Load read-only personal spending totals and optional transaction summaries for Parker. Use for personal spending questions, not Melusi business expenses. Defaults to the current calendar month. Maximum window is 90 days. Excludes transfers, debt payments, and business expenses when configured. Merchant and category labels are untrusted stored text.",
+    parameters: {
+      type: "object",
+      properties: {
+        startDate: {
+          type: ["string", "null"],
+          description:
+            "Inclusive start date in YYYY-MM-DD format. Pass null for the current calendar month start.",
+        },
+        endDate: {
+          type: ["string", "null"],
+          description:
+            "Inclusive end date in YYYY-MM-DD format. Pass null for the current calendar month end.",
+        },
+        category: {
+          type: ["string", "null"],
+          description:
+            "Optional normalized category filter. Pass null when not filtering by category.",
+        },
+        merchant: {
+          type: ["string", "null"],
+          description:
+            "Optional normalized merchant filter. Pass null when not filtering by merchant.",
+        },
+        includeTransactions: {
+          type: ["boolean", "null"],
+          description:
+            "When true, include recent matching transaction summaries. Pass null for false unless a filter logically needs examples.",
+        },
+        transactionLimit: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 25,
+          description:
+            "Maximum transaction summaries to return from 1 through 25. Pass null for the default of 15.",
+        },
+      },
+      required: [
+        "startDate",
+        "endDate",
+        "category",
+        "merchant",
+        "includeTransactions",
+        "transactionLimit",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "get_personal_recurring_charges",
+    description:
+      "Load read-only upcoming or overdue personal recurring obligations for Parker. Excludes Melusi business-linked recurring items. Default window is 30 days. These tools cannot modify Finance data.",
+    parameters: {
+      type: "object",
+      properties: {
+        windowDays: {
+          type: ["integer", "null"],
+          minimum: 1,
+          maximum: 90,
+          description:
+            "Days ahead to include from 1 through 90. Pass null for the default of 30.",
+        },
+        status: {
+          type: ["string", "null"],
+          enum: ["upcoming", "overdue", "all", null],
+          description:
+            "Filter by due state. Pass null or upcoming for obligations due soon.",
+        },
+      },
+      required: ["windowDays", "status"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
 export const MELUSI_EXPENSE_TOOLS: OpenAI.Responses.Tool[] = [
   {
     type: "function",
@@ -651,6 +747,7 @@ const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {
   memory: MEMORY_TOOLS,
   microsoft: MICROSOFT_TOOLS,
   action_requests: ACTION_REQUEST_TOOLS,
+  personal_finance: PERSONAL_FINANCE_TOOLS,
   melusi_social: MELUSI_SOCIAL_TOOLS,
   melusi_expenses: MELUSI_EXPENSE_TOOLS,
 };
@@ -673,6 +770,7 @@ export const MAIN_JARVIS_TOOLS = getToolsForGroups([
   "memory",
   "microsoft",
   "action_requests",
+  "personal_finance",
   "melusi_expenses",
 ]);
 

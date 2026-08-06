@@ -169,6 +169,7 @@ export const MAIN_JARVIS_AGENT: AgentConfig = {
     "memory",
     "microsoft",
     "action_requests",
+    "personal_finance",
     "melusi_expenses",
   ],
 };

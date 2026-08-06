@@ -1,5 +1,10 @@
 import type OpenAI from "openai";
 
+import {
+  buildPersonalFinanceToolDiagnosticPayload,
+  isPersonalFinanceToolName,
+} from "@/lib/jarvis/finance/personal-finance/personal-finance-diagnostics";
+
 const SENSITIVE_LOG_PATTERNS: RegExp[] = [
   /OPENAI_API_KEY[=:\s]*\S+/gi,
   /SUPABASE[_A-Z]*[=:\s]*\S+/gi,
@@ -72,6 +77,14 @@ export function logToolCallDiagnostic(
 
       console.log("[Jarvis tool diagnostic]", payload);
       return;
+    }
+
+    if (isPersonalFinanceToolName(toolName)) {
+      const diagnostic = buildPersonalFinanceToolDiagnosticPayload(toolName, output);
+      if (diagnostic) {
+        console.log("[Jarvis tool diagnostic]", { round, ...diagnostic });
+        return;
+      }
     }
   } catch {
     // Ignore unparsable tool output.

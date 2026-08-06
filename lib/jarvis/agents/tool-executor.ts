@@ -32,6 +32,11 @@ import {
 } from "@/lib/jarvis/projects/project-update-tools";
 import { getMelusiSocialPerformance } from "@/lib/jarvis/melusi/melusi-social-tools";
 import { getMelusiExpenses } from "@/lib/jarvis/melusi/melusi-expense-tools";
+import {
+  getPersonalFinanceSummary,
+  getPersonalRecurringCharges,
+  getPersonalSpending,
+} from "@/lib/jarvis/finance/personal-finance/personal-finance-tools";
 import { logAssistantError } from "./agent-diagnostics";
 
 function nullableString(value: unknown): string | null {
@@ -288,6 +293,26 @@ export async function executeJarvisTool(
           await getMelusiExpenses(supabase, userId, {
             focus: args.focus,
             historyLimit: args.historyLimit,
+          }),
+        );
+      case "get_personal_finance_summary":
+        return JSON.stringify(await getPersonalFinanceSummary(supabase, userId));
+      case "get_personal_spending":
+        return JSON.stringify(
+          await getPersonalSpending(supabase, userId, {
+            startDate: args.startDate,
+            endDate: args.endDate,
+            category: args.category,
+            merchant: args.merchant,
+            includeTransactions: args.includeTransactions,
+            transactionLimit: args.transactionLimit,
+          }),
+        );
+      case "get_personal_recurring_charges":
+        return JSON.stringify(
+          await getPersonalRecurringCharges(supabase, userId, {
+            windowDays: args.windowDays,
+            status: args.status,
           }),
         );
       default:

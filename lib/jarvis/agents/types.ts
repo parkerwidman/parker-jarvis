@@ -43,6 +43,7 @@ export type ToolCapabilityGroup =
   | "memory"
   | "microsoft"
   | "action_requests"
+  | "personal_finance"
   | "melusi_social"
   | "melusi_expenses";
 
