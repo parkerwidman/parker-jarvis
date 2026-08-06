@@ -13,6 +13,13 @@ export type AutoExecuteAuditRecord = {
   provider_outcome_certainty: string | null;
 };
 
+export type AutoExecuteAuditErrorCode =
+  | "duplicate_execution_blocked"
+  | "audit_schema_failure"
+  | "action_unavailable"
+  | "unauthorized"
+  | "audit_creation_failed";
+
 export type ClaimAutoExecuteResult =
   | { success: true; auditId: string; isReplay: false }
   | {
@@ -23,7 +30,40 @@ export type ClaimAutoExecuteResult =
       priorStatus: string;
       providerOutcomeCertainty: string | null;
     }
-  | { success: false; errorCode: string };
+  | { success: false; errorCode: AutoExecuteAuditErrorCode };
+
+function logAutoExecuteAuditDiagnostic(input: {
+  stage: "claim_lookup" | "claim_insert";
+  actionType: string;
+  success: boolean;
+  errorCode?: AutoExecuteAuditErrorCode;
+}): void {
+  console.log("[Jarvis auto-execute audit]", {
+    stage: input.stage,
+    actionType: input.actionType,
+    success: input.success,
+    ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+  });
+}
+
+function classifyDatabaseError(error: {
+  code?: string;
+  message?: string;
+}): AutoExecuteAuditErrorCode {
+  if (error.code === "42501") {
+    return "unauthorized";
+  }
+
+  if (error.code === "23514") {
+    return "audit_schema_failure";
+  }
+
+  if (error.code === "23505") {
+    return "duplicate_execution_blocked";
+  }
+
+  return "audit_creation_failed";
+}
 
 export async function claimAutoExecuteAction(
   supabase: SupabaseClient,
@@ -45,13 +85,26 @@ export async function claimAutoExecuteAction(
     .maybeSingle();
 
   if (existingError) {
-    return { success: false, errorCode: "action_unavailable" };
+    const errorCode =
+      existingError.code === "42501" ? "unauthorized" : "action_unavailable";
+    logAutoExecuteAuditDiagnostic({
+      stage: "claim_lookup",
+      actionType: input.actionType,
+      success: false,
+      errorCode,
+    });
+    return { success: false, errorCode };
   }
 
   if (existing) {
     const record = existing as AutoExecuteAuditRecord;
 
     if (record.status === "completed" && record.result) {
+      logAutoExecuteAuditDiagnostic({
+        stage: "claim_lookup",
+        actionType: input.actionType,
+        success: true,
+      });
       return {
         success: true,
         auditId: record.id,
@@ -63,6 +116,12 @@ export async function claimAutoExecuteAction(
     }
 
     if (record.status === "executing") {
+      logAutoExecuteAuditDiagnostic({
+        stage: "claim_lookup",
+        actionType: input.actionType,
+        success: false,
+        errorCode: "duplicate_execution_blocked",
+      });
       return { success: false, errorCode: "duplicate_execution_blocked" };
     }
 
@@ -70,6 +129,12 @@ export async function claimAutoExecuteAction(
       record.status === "failed" &&
       record.provider_outcome_certainty === "uncertain"
     ) {
+      logAutoExecuteAuditDiagnostic({
+        stage: "claim_lookup",
+        actionType: input.actionType,
+        success: false,
+        errorCode: "duplicate_execution_blocked",
+      });
       return { success: false, errorCode: "duplicate_execution_blocked" };
     }
   }
@@ -91,16 +156,31 @@ export async function claimAutoExecuteAction(
     .single();
 
   if (insertError) {
-    if (insertError.code === "23505") {
-      return { success: false, errorCode: "duplicate_execution_blocked" };
-    }
-
-    return { success: false, errorCode: "action_unavailable" };
+    const errorCode = classifyDatabaseError(insertError);
+    logAutoExecuteAuditDiagnostic({
+      stage: "claim_insert",
+      actionType: input.actionType,
+      success: false,
+      errorCode,
+    });
+    return { success: false, errorCode };
   }
 
   if (!inserted || typeof inserted.id !== "string") {
-    return { success: false, errorCode: "action_unavailable" };
+    logAutoExecuteAuditDiagnostic({
+      stage: "claim_insert",
+      actionType: input.actionType,
+      success: false,
+      errorCode: "audit_creation_failed",
+    });
+    return { success: false, errorCode: "audit_creation_failed" };
   }
+
+  logAutoExecuteAuditDiagnostic({
+    stage: "claim_insert",
+    actionType: input.actionType,
+    success: true,
+  });
 
   return {
     success: true,
@@ -160,4 +240,15 @@ export function buildIdempotencyKey(
   actionType: string,
 ): string {
   return `${actionType}:${toolCallId}`;
+}
+
+export function mapAutoExecuteClaimFailure(
+  errorCode: AutoExecuteAuditErrorCode,
+  actionFailureCode: string,
+): { success: false; errorCode: string } {
+  if (errorCode === "duplicate_execution_blocked") {
+    return { success: false, errorCode: "duplicate_execution_blocked" };
+  }
+
+  return { success: false, errorCode: actionFailureCode };
 }

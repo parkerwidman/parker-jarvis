@@ -40,3 +40,17 @@ export const AUTO_EXECUTED_ACTION_TYPES = [
   ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
   ACTION_TYPE_SEND_OUTLOOK_EMAIL,
 ] as const;
+
+/** Every action_type accepted by the deployed action_requests check constraint. */
+export const DEPLOYED_ACTION_REQUEST_TYPES = [
+  ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+  ACTION_TYPE_CREATE_OUTLOOK_REMINDER,
+  ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
+  "update_outlook_calendar_event",
+  "delete_outlook_calendar_event",
+  ACTION_TYPE_SEND_OUTLOOK_EMAIL,
+  "publish_social_post",
+  "delete_file",
+  ACTION_TYPE_CREATE_TASK,
+  "other",
+] as const;

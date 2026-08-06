@@ -513,6 +513,10 @@ describe("low-friction personal productivity actions", () => {
     expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("say you created the task");
     expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("saved as a draft");
     expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("say you sent the email");
+    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain("draft_creation_failed");
+    expect(BASE_MAIN_JARVIS_INSTRUCTIONS).toContain(
+      "do not claim Microsoft is disconnected",
+    );
     expect(BASE_MAIN_JARVIS_INSTRUCTIONS).not.toContain("propose_task");
   });
 

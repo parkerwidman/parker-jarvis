@@ -15,6 +15,7 @@ import {
   claimAutoExecuteAction,
   completeAutoExecuteAction,
   failAutoExecuteAction,
+  mapAutoExecuteClaimFailure,
 } from "@/lib/jarvis/action-requests/auto-execute-audit";
 import {
   buildDirectCalendarSummary,
@@ -120,7 +121,7 @@ export async function executeDirectCreateTask(
   });
 
   if (!claim.success) {
-    return { success: false, errorCode: claim.errorCode };
+    return mapAutoExecuteClaimFailure(claim.errorCode, "task_creation_failed");
   }
 
   if (claim.isReplay) {
@@ -253,7 +254,7 @@ export async function executeDirectCreateReminder(
   });
 
   if (!claim.success) {
-    return { success: false, errorCode: claim.errorCode };
+    return mapAutoExecuteClaimFailure(claim.errorCode, "reminder_creation_failed");
   }
 
   if (claim.isReplay) {
@@ -394,7 +395,7 @@ export async function executeDirectCreateCalendarEvent(
   });
 
   if (!claim.success) {
-    return { success: false, errorCode: claim.errorCode };
+    return mapAutoExecuteClaimFailure(claim.errorCode, "calendar_creation_failed");
   }
 
   if (claim.isReplay) {
@@ -529,7 +530,7 @@ export async function executeDirectCreateDraft(
   });
 
   if (!claim.success) {
-    return { success: false, errorCode: claim.errorCode };
+    return mapAutoExecuteClaimFailure(claim.errorCode, "draft_creation_failed");
   }
 
   if (claim.isReplay) {
@@ -719,7 +720,7 @@ export async function executeDirectSendEmail(
   });
 
   if (!claim.success) {
-    return { success: false, errorCode: claim.errorCode };
+    return mapAutoExecuteClaimFailure(claim.errorCode, "email_send_failed");
   }
 
   if (claim.isReplay) {
