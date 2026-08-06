@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>JARVIS — Inbox pulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d16; --sidebar:#0d111c; --card:#121726; --card-2:#0f1420;
+    --border:rgba(255,255,255,0.08); --border-strong:rgba(255,255,255,0.15);
+    --text:#eef0f5; --text-2:#8b90a3; --text-3:#5f6478;
+  }
+  body[data-mode="melusi"]{--accent:#3B7DDD; --accent-bg:rgba(59,125,221,0.13); --accent-border:rgba(59,125,221,0.35);}
+  body[data-mode="personal"]{--accent:#F0A93B; --accent-bg:rgba(240,169,59,0.14); --accent-border:rgba(240,169,59,0.36);}
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; -webkit-font-smoothing:antialiased;}
+  .app{display:flex; min-height:100vh;}
+  .sidebar{width:236px; flex-shrink:0; background:var(--sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; padding:20px 14px;}
+  .logo{display:flex; align-items:center; gap:10px; padding:8px 10px 24px;}
+  .logo-mark{width:26px; height:26px; border-radius:50%; border:2px solid var(--accent); position:relative; transition:.25s;}
+  .logo-mark::after{content:'';position:absolute; inset:6px; border-radius:50%; background:var(--accent); transition:.25s;}
+  .logo-text{font-size:13px; font-weight:700; letter-spacing:0.08em;}
+  .nav{display:flex; flex-direction:column; gap:2px; flex:1;}
+  .nav-item{display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px; color:var(--text-2); font-size:13.5px; font-weight:500; text-decoration:none;}
+  .nav-item.active{background:var(--accent-bg); color:var(--accent); transition:.25s;}
+  .nav-dot{width:6px; height:6px; border-radius:50%; background:currentColor; opacity:0.6; flex-shrink:0;}
+  .profile{border-top:1px solid var(--border); padding-top:14px; margin-top:14px; display:flex; align-items:center; gap:10px; padding-left:10px;}
+  .avatar{width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600;}
+  .profile-name{font-size:13px; font-weight:600;}
+  .profile-email{font-size:11.5px; color:var(--text-3);}
+  .main{flex:1; padding:44px 56px; max-width:1400px;}
+  .greeting{font-size:26px; font-weight:700;}
+  .date{color:var(--text-2); font-size:13.5px; margin-top:5px;}
+  .listen-card{margin-top:22px; background:var(--card); border:1px solid var(--border); border-radius:16px; padding:26px 28px;}
+  .listen-label{font-size:11px; font-weight:700; letter-spacing:0.08em; color:var(--text-3); text-transform:uppercase; margin-bottom:18px;}
+  .player{display:flex; align-items:center; gap:18px;}
+  .play-btn{width:52px; height:52px; border-radius:50%; background:var(--accent); border:none; color:#0a0d16; font-size:18px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:.25s;}
+  .wave{flex:1; display:flex; align-items:center; gap:3px; height:40px;}
+  .bar{flex:1; background:rgba(255,255,255,0.12); border-radius:2px;}
+  .bar.played{background:var(--accent); transition:background .15s;}
+  .duration{font-size:12.5px; color:var(--text-3); font-family:'JetBrains Mono',monospace; flex-shrink:0;}
+  .transcript-toggle{margin-top:16px; font-size:12.5px; color:var(--text-3); cursor:pointer; text-decoration:underline; text-underline-offset:2px; display:inline-block;}
+  .transcript{display:none; margin-top:14px; font-size:14.5px; line-height:1.9; color:var(--text-3); max-width:820px;}
+  .transcript.open{display:block;}
+  .transcript span{transition:color .2s;}
+  .transcript span.active{color:var(--text); font-weight:500;}
+  .chip{display:inline-flex; align-items:center; background:rgba(255,255,255,0.05); border:1px solid var(--border-strong); border-radius:6px; padding:1px 8px; font-size:13px; font-family:'JetBrains Mono',monospace; color:var(--text); margin:0 1px;}
+  .qbar{display:flex; flex-wrap:wrap; gap:8px; margin-top:20px; padding-top:18px; border-top:1px solid var(--border);}
+  .qlabel{width:100%; font-size:11px; color:var(--text-3); margin-bottom:4px;}
+  .qbtn{border:1px solid var(--border-strong); background:rgba(255,255,255,0.03); color:var(--text-2); font-size:12.5px; font-weight:500; padding:7px 14px; border-radius:20px; cursor:pointer; font-family:inherit;}
+  .qbtn:hover{background:rgba(255,255,255,0.07); color:var(--text);}
+  .qbtn.used{opacity:0.35; pointer-events:none;}
+  .thread{display:flex; flex-direction:column; gap:12px; margin-top:14px;}
+  .mini-player{background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:12px; padding:14px 16px;}
+  .mini-top{display:flex; align-items:center; gap:12px;}
+  .mini-play{width:32px; height:32px; border-radius:50%; background:var(--accent-bg); color:var(--accent); border:1px solid var(--accent-border); font-size:12px; cursor:pointer; flex-shrink:0; display:flex; align-items:center; justify-content:center; transition:.25s;}
+  .mini-wave{flex:1; display:flex; align-items:center; gap:2px; height:22px;}
+  .mini-wave .bar{border-radius:1px;}
+  .mini-duration{font-size:11px; color:var(--text-3); font-family:'JetBrains Mono',monospace; flex-shrink:0;}
+  .mini-transcript{margin-top:10px; font-size:13.5px; line-height:1.7; color:var(--text-3); padding-left:44px;}
+  .mini-transcript span.active{color:var(--text); font-weight:500;}
+  .verdict-row{display:flex; justify-content:space-between; align-items:center; margin-top:18px; padding-top:18px; border-top:1px solid var(--border);}
+  .verdict-text{font-size:14px; color:var(--text);}
+  .verdict-text b{color:var(--accent); transition:.25s;}
+  .btn{border:1px solid var(--border-strong); background:rgba(255,255,255,0.03); color:var(--text); font-size:13px; font-weight:500; padding:8px 16px; border-radius:9px; cursor:pointer; font-family:inherit;}
+  .btn-primary{background:var(--accent); border-color:var(--accent); color:#0a0d16; font-weight:600; transition:.25s;}
+  .priority-strip{margin-top:16px; display:flex; align-items:center; gap:12px; background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:14px 20px;}
+  .priority-strip .eyebrow-label{font-size:10.5px; font-weight:700; letter-spacing:0.06em; color:var(--accent); text-transform:uppercase; transition:.25s;}
+  .priority-strip .priority-title{font-size:14.5px; font-weight:600; color:var(--text);}
+  .kanban-title{font-size:11px; font-weight:600; letter-spacing:0.08em; color:var(--text-3); text-transform:uppercase; margin:20px 0 12px; display:flex; justify-content:space-between;}
+  .kanban-mode-tag{color:var(--accent); transition:.25s;}
+  .kanban{display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px;}
+  .kcol{background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:16px;}
+  .kcol-head{display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:600; color:var(--text-2); margin-bottom:12px;}
+  .kcol-count{font-size:11px; color:var(--text-3); background:rgba(255,255,255,0.05); padding:1px 8px; border-radius:10px;}
+  .kcard{background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:9px; padding:11px 13px; margin-bottom:8px;}
+  .kcard:last-child{margin-bottom:0;}
+  .kcard-name{font-size:13px; color:var(--text); margin-bottom:8px;}
+  .kcard-foot{display:flex; justify-content:space-between; align-items:center;}
+  .kcard-tag{font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:5px; background:var(--accent-bg); color:var(--accent); transition:.25s;}
+  .kcard-move{border:none; background:transparent; color:var(--text-3); font-size:14px; cursor:pointer;}
+  .kcard-move:hover{color:var(--text);}
+  .goals-title{font-size:11px; font-weight:600; letter-spacing:0.08em; color:var(--text-3); text-transform:uppercase; margin:20px 0 12px;}
+  .goals-panel{background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:18px 20px;}
+  .goal-bar-row{margin-bottom:14px;}
+  .goal-bar-row:last-child{margin-bottom:0;}
+  .goal-bar-top{display:flex; justify-content:space-between; font-size:13px; color:var(--text-2); margin-bottom:6px;}
+  .goal-bar-top b{color:var(--text); font-weight:500;}
+  .goal-bar-track{height:6px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden;}
+  .goal-bar-fill{height:100%; border-radius:4px; background:var(--accent); transition:.25s;}
+  [data-only]{display:none;}
+  body[data-mode="personal"] [data-only="personal"]{display:revert;}
+  body[data-mode="melusi"] [data-only="melusi"]{display:revert;}
+  .kcard[data-only]{display:none;}
+  body[data-mode="personal"] .kcard[data-only="personal"]{display:block;}
+  body[data-mode="melusi"] .kcard[data-only="melusi"]{display:block;}
+
+  /* --- NEW: inbox & calendar pulse --- */
+  .pulse-title{font-size:11px; font-weight:600; letter-spacing:0.08em; color:var(--text-3); text-transform:uppercase; margin:20px 0 12px;}
+  .pulse-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .pulse-panel{background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:18px 20px;}
+  .pulse-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;}
+  .pulse-head-title{font-size:12.5px; font-weight:600; color:var(--text-2); display:flex; align-items:center; gap:8px;}
+  .unread-badge{font-size:11px; font-weight:700; background:var(--accent-bg); color:var(--accent); padding:2px 9px; border-radius:20px; transition:.25s;}
+  .mail-row{display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); align-items:flex-start;}
+  .mail-row:last-child{border-bottom:none;}
+  .mail-dot{width:6px; height:6px; border-radius:50%; background:var(--accent); margin-top:6px; flex-shrink:0; transition:.25s;}
+  .mail-from{font-size:13px; color:var(--text); font-weight:500;}
+  .mail-sub{font-size:12px; color:var(--text-3); margin-top:2px;}
+  .cal-row{display:flex; gap:12px; padding:9px 0; border-bottom:1px solid var(--border); align-items:baseline;}
+  .cal-row:last-child{border-bottom:none;}
+  .cal-time{font-size:12px; color:var(--text-3); font-family:'JetBrains Mono',monospace; width:56px; flex-shrink:0;}
+  .cal-name{font-size:13px; color:var(--text);}
+  .cal-with{font-size:11.5px; color:var(--text-3); margin-top:2px; display:block;}
+
+  .ask-bar{margin-top:16px; background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:16px 22px; display:flex; align-items:center; gap:14px;}
+  .ask-input{flex:1; background:rgba(255,255,255,0.03); border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-size:13.5px; font-family:inherit;}
+  .ask-input::placeholder{color:var(--text-3);}
+</style>
+</head>
+<body data-mode="melusi">
+<div class="app">
+  <div class="sidebar">
+    <div class="logo"><div class="logo-mark"></div><div class="logo-text">JARVIS</div></div>
+    <div class="nav">
+      <a class="nav-item active" href="#"><span class="nav-dot"></span>Command center</a>
+      <a class="nav-item" href="#"><span class="nav-dot"></span>Finance</a>
+      <a class="nav-item" href="#"><span class="nav-dot"></span>Tasks</a>
+    </div>
+    <div class="profile"><div class="avatar">P</div><div><div class="profile-name">Parker</div><div class="profile-email">parker@melusi.ai</div></div></div>
+  </div>
+
+  <div class="main">
+    <div class="greeting">Good morning, Parker</div>
+    <div class="date">Thursday, August 6, 2026</div>
+
+    <div class="listen-card">
+      <div class="listen-label">Your briefing — 24 sec</div>
+      <div class="player">
+        <button class="play-btn" id="main-play" onclick="play('main', 24, [0,5,11,16,20,24])">▶</button>
+        <div class="wave" id="main-wave"></div>
+        <span class="duration" id="main-duration">0:00 / 0:24</span>
+      </div>
+      <div class="transcript-toggle" onclick="document.getElementById('main-transcript').classList.toggle('open')">Show transcript</div>
+      <div class="transcript" id="main-transcript">
+        <span id="main-s0">Two things stand out today. </span><span id="main-s1">On Melusi, <span class="chip">2 leads</span> have been waiting over a day. </span><span id="main-s2">Content posting is still <span class="chip">0 of 4</span> for the week. </span><span id="main-s3">On personal, nothing's overdue — your next deadline is 6 days out. </span><span id="main-s4">Suggest Melusi mode, starting with the leads.</span>
+      </div>
+      <div class="qbar">
+        <div class="qlabel">Ask a follow-up — you'll get a spoken answer, not just text</div>
+        <button class="qbtn" onclick="ask(this,'overdue')">What's overdue?</button>
+        <button class="qbtn" onclick="ask(this,'wait')">What can wait?</button>
+        <button class="qbtn" onclick="ask(this,'melusi')">How's Melusi trending?</button>
+        <button class="qbtn" onclick="ask(this,'week')">What's my week look like?</button>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="verdict-row">
+        <div class="verdict-text">Suggested: <b id="verdictMode">Melusi mode</b> — reply to leads before they go cold</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn" onclick="setMode('personal')">Switch to personal</button>
+          <button class="btn btn-primary" onclick="setMode('melusi')">Go to Melusi</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="priority-strip">
+      <span class="eyebrow-label" id="eyebrow">#1 Melusi priority</span>
+      <span class="priority-title" id="priorityTitle">Reply to the 2 waiting leads</span>
+    </div>
+
+    <div class="kanban-title"><span>Board</span><span class="kanban-mode-tag" id="kanbanModeTag">Showing Melusi</span></div>
+    <div class="kanban">
+      <div class="kcol">
+        <div class="kcol-head">To do <span class="kcol-count" id="count-todo">2</span></div>
+        <div id="col-todo">
+          <div class="kcard" data-only="melusi"><div class="kcard-name">Reply to Chicago brokerage leads</div><div class="kcard-foot"><span class="kcard-tag">MELUSI</span><button class="kcard-move" onclick="moveCard(this,'doing')">→</button></div></div>
+          <div class="kcard" data-only="melusi"><div class="kcard-name">Make first seedance video</div><div class="kcard-foot"><span class="kcard-tag">MELUSI</span><button class="kcard-move" onclick="moveCard(this,'doing')">→</button></div></div>
+          <div class="kcard" data-only="personal"><div class="kcard-name">Apply for study abroad</div><div class="kcard-foot"><span class="kcard-tag">PERSONAL</span><button class="kcard-move" onclick="moveCard(this,'doing')">→</button></div></div>
+          <div class="kcard" data-only="personal"><div class="kcard-name">Fix Jarvis Outlook</div><div class="kcard-foot"><span class="kcard-tag">PERSONAL</span><button class="kcard-move" onclick="moveCard(this,'doing')">→</button></div></div>
+        </div>
+      </div>
+      <div class="kcol">
+        <div class="kcol-head">In progress <span class="kcol-count" id="count-doing">1</span></div>
+        <div id="col-doing">
+          <div class="kcard" data-only="melusi"><div class="kcard-name">Follow up with brokerage contacts</div><div class="kcard-foot"><span class="kcard-tag">MELUSI</span><button class="kcard-move" onclick="moveCard(this,'done')">✓</button></div></div>
+          <div class="kcard" data-only="personal"><div class="kcard-name">Finish Jarvis setup</div><div class="kcard-foot"><span class="kcard-tag">PERSONAL</span><button class="kcard-move" onclick="moveCard(this,'done')">✓</button></div></div>
+        </div>
+      </div>
+      <div class="kcol">
+        <div class="kcol-head">Done <span class="kcol-count" id="count-done">1</span></div>
+        <div id="col-done">
+          <div class="kcard" data-only="melusi"><div class="kcard-name">Verified Metricool connection</div><div class="kcard-foot"><span class="kcard-tag">MELUSI</span><span style="color:var(--text-3);font-size:11px;">✓</span></div></div>
+          <div class="kcard" data-only="personal"><div class="kcard-name">Morning brief reviewed</div><div class="kcard-foot"><span class="kcard-tag">PERSONAL</span><span style="color:var(--text-3);font-size:11px;">✓</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="goals-title">Goal progress</div>
+    <div class="goals-panel">
+      <div class="goal-bar-row" data-only="melusi">
+        <div class="goal-bar-top"><b>1st real estate company signed</b><span>60%</span></div>
+        <div class="goal-bar-track"><div class="goal-bar-fill" style="width:60%;"></div></div>
+      </div>
+      <div class="goal-bar-row" data-only="melusi">
+        <div class="goal-bar-top"><b>1K+ MRR</b><span>15%</span></div>
+        <div class="goal-bar-track"><div class="goal-bar-fill" style="width:15%;"></div></div>
+      </div>
+      <div class="goal-bar-row" data-only="personal">
+        <div class="goal-bar-top"><b>Build Jarvis command center</b><span>30%</span></div>
+        <div class="goal-bar-track"><div class="goal-bar-fill" style="width:30%;"></div></div>
+      </div>
+    </div>
+
+    <div class="pulse-title">Coming at you — inbox &amp; calendar</div>
+    <div class="pulse-grid">
+      <div class="pulse-panel">
+        <div class="pulse-head">
+          <span class="pulse-head-title">Gmail</span>
+          <span class="unread-badge" id="unreadBadge">3 unread</span>
+        </div>
+        <div data-only="melusi">
+          <div class="mail-row"><div class="mail-dot"></div><div><div class="mail-from">Marcus Chen — Chicago Realty Group</div><div class="mail-sub">Re: pilot access for AI Foundations</div></div></div>
+          <div class="mail-row"><div class="mail-dot"></div><div><div class="mail-from">Denise Wallace</div><div class="mail-sub">Interested — can we set up a call?</div></div></div>
+          <div class="mail-row"><div class="mail-dot"></div><div><div class="mail-from">Mercury</div><div class="mail-sub">Monthly statement is ready</div></div></div>
+        </div>
+        <div data-only="personal">
+          <div class="mail-row"><div class="mail-dot"></div><div><div class="mail-from">University of Iowa Registrar</div><div class="mail-sub">Add/drop deadline reminder</div></div></div>
+          <div class="mail-row"><div class="mail-dot"></div><div><div class="mail-from">Study Abroad Office</div><div class="mail-sub">Application checklist attached</div></div></div>
+        </div>
+      </div>
+      <div class="pulse-panel">
+        <div class="pulse-head"><span class="pulse-head-title">Today's calendar</span></div>
+        <div data-only="melusi">
+          <div class="cal-row"><span class="cal-time">11:00</span><div><div class="cal-name">Outreach block</div><span class="cal-with">Brokerage follow-ups</span></div></div>
+          <div class="cal-row"><span class="cal-time">2:00</span><div><div class="cal-name">Call — Marcus Chen</div><span class="cal-with">Chicago Realty Group</span></div></div>
+        </div>
+        <div data-only="personal">
+          <div class="cal-row"><span class="cal-time">1:00</span><div><div class="cal-name">Study abroad application</div><span class="cal-with">Self-scheduled block</span></div></div>
+          <div class="cal-row"><span class="cal-time">4:00</span><div><div class="cal-name">Advisor office hours</div><span class="cal-with">Drop-in window</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ask-bar"><input class="ask-input" placeholder="Ask Jarvis…"></div>
+  </div>
+</div>
+<script>
+  function fmt(sec){ const m=Math.floor(sec/60), s=Math.floor(sec%60); return m+':'+(s<10?'0':'')+s; }
+  function buildWave(id, count){
+    const el = document.getElementById(id);
+    for (let i=0;i<count;i++){
+      const b = document.createElement('div');
+      b.className = 'bar';
+      b.style.height = (6+Math.random()*28) + 'px';
+      el.appendChild(b);
+    }
+  }
+  buildWave('main-wave', 60);
+  function play(prefix, totalSec, segTimes){
+    const btn = document.getElementById(prefix+'-play');
+    if (btn.dataset.playing === '1') return;
+    btn.dataset.playing = '1';
+    btn.textContent = '❚❚';
+    const bars = document.querySelectorAll('#'+prefix+'-wave .bar');
+    const durLabel = document.getElementById(prefix+'-duration');
+    let t = 0;
+    const timer = setInterval(() => {
+      t += 0.2;
+      if (durLabel) durLabel.textContent = fmt(t) + ' / ' + fmt(totalSec);
+      const filled = Math.floor((t/totalSec) * bars.length);
+      bars.forEach((b,i) => b.classList.toggle('played', i < filled));
+      for (let s=0; s<segTimes.length-1; s++){
+        const seg = document.getElementById(prefix+'-s'+s);
+        if (seg) seg.classList.toggle('active', t >= segTimes[s] && t < segTimes[s+1]);
+      }
+      if (t >= totalSec){
+        clearInterval(timer);
+        btn.dataset.playing = '0';
+        btn.textContent = '▶';
+        t = 0;
+        if (durLabel) durLabel.textContent = '0:00 / ' + fmt(totalSec);
+        bars.forEach(b => b.classList.remove('played'));
+        for (let s=0; s<segTimes.length-1; s++){ const seg = document.getElementById(prefix+'-s'+s); if (seg) seg.classList.remove('active'); }
+      }
+    }, 200);
+  }
+  const qaData = {
+    overdue: {dur:8, segs:[0,4,8], text:['Only one thing is technically overdue: the <span class="chip">2 Melusi leads</span> — both past 24 hours without a reply.','Nothing personal is overdue.']},
+    wait: {dur:9, segs:[0,4.5,9], text:['Safe to leave for now: Fix Jarvis Outlook has no urgency behind it,','and the study abroad deadline is still 6 days out.']},
+    melusi: {dur:10, segs:[0,4,10], text:['Melusi trend: leads waiting went from 1 to 2 since yesterday,','and content posting is stuck at <span class="chip">0 of 4</span> for a second day running.']},
+    week: {dur:8, segs:[0,3,8], text:['Thursday and Friday both lean Melusi-heavy —','the weekend opens back up for personal admin like the class decision.']}
+  };
+  let qaCounter = 0;
+  function ask(btn, key){
+    btn.classList.add('used');
+    const d = qaData[key];
+    const prefix = 'qa' + (qaCounter++);
+    const spansHtml = d.text.map((t,i) => '<span id="'+prefix+'-s'+i+'">'+t+' </span>').join('');
+    const wrap = document.createElement('div');
+    wrap.className = 'mini-player';
+    wrap.innerHTML =
+      '<div class="mini-top">' +
+        '<button class="mini-play" id="'+prefix+'-play" onclick="play(\''+prefix+'\', '+d.dur+', ['+d.segs.join(',')+'])">▶</button>' +
+        '<div class="mini-wave" id="'+prefix+'-wave"></div>' +
+        '<span class="mini-duration" id="'+prefix+'-duration">0:00 / '+fmt(d.dur)+'</span>' +
+      '</div>' +
+      '<div class="mini-transcript">'+spansHtml+'</div>';
+    document.getElementById('thread').appendChild(wrap);
+    buildWave(prefix+'-wave', 26);
+  }
+  function updateCounts(){
+    const mode = document.body.getAttribute('data-mode');
+    ['todo','doing','done'].forEach(c => {
+      const col = document.getElementById('col-'+c);
+      const visible = Array.from(col.children).filter(ch => ch.getAttribute('data-only') === mode);
+      document.getElementById('count-'+c).textContent = visible.length;
+    });
+  }
+  function moveCard(btn, target){
+    const card = btn.closest('.kcard');
+    if (target === 'done'){
+      card.querySelector('.kcard-move').outerHTML = '<span style="color:var(--text-3);font-size:11px;">✓</span>';
+    } else {
+      card.querySelector('.kcard-move').setAttribute('onclick', "moveCard(this,'done')");
+      card.querySelector('.kcard-move').textContent = '✓';
+    }
+    document.getElementById('col-'+target).appendChild(card);
+    updateCounts();
+  }
+  function setMode(mode) {
+    document.body.setAttribute('data-mode', mode);
+    document.getElementById('verdictMode').textContent = mode==='personal' ? 'Personal mode' : 'Melusi mode';
+    document.getElementById('eyebrow').textContent = mode==='personal' ? '#1 personal priority' : '#1 Melusi priority';
+    document.getElementById('priorityTitle').textContent = mode==='personal' ? 'Figure out dropping next semester classes' : 'Reply to the 2 waiting leads';
+    document.getElementById('kanbanModeTag').textContent = mode==='personal' ? 'Showing Personal' : 'Showing Melusi';
+    document.getElementById('unreadBadge').textContent = mode==='personal' ? '2 unread' : '3 unread';
+    updateCounts();
+  }
+  updateCounts();
+</script>
+</body>
+</html>
