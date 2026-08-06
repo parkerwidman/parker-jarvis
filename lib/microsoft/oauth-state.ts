@@ -8,8 +8,8 @@ import {
   MICROSOFT_GRANTED_SCOPES_UNKNOWN,
   MICROSOFT_SCOPES_STRING,
   normalizeGrantedScopes,
-  resolveMailSendPermissionState,
-  type MailSendPermissionState,
+  resolveMailReadWritePermissionState,
+  type MicrosoftPermissionState,
 } from "@/lib/microsoft/scopes";
 
 export const MICROSOFT_OAUTH_STATE_COOKIE = "microsoft_oauth_state";
@@ -18,11 +18,13 @@ export const MICROSOFT_CONNECTIONS_PATH = "/connections/microsoft";
 
 export const MICROSOFT_OAUTH_RESULT = {
   reconnected: "microsoft_reconnected",
-  reconnectedMailSendMissing: "microsoft_reconnected_mail_send_missing",
-  reconnectedMailSendUnknown: "microsoft_reconnected_mail_send_unknown",
+  reconnectedPermissionsUnknown: "microsoft_reconnected_permissions_unknown",
+  permissionNotGranted: "microsoft_permission_not_granted",
   connectionFailed: "microsoft_connection_failed",
   consentCancelled: "microsoft_consent_cancelled",
-  invalidOAuthState: "invalid_oauth_state",
+  stateInvalid: "microsoft_state_invalid",
+  tokenExchangeFailed: "microsoft_token_exchange_failed",
+  tokenPersistenceFailed: "microsoft_token_persistence_failed",
 } as const;
 
 export type MicrosoftOAuthResultCode =
@@ -175,14 +177,14 @@ export function resolvePersistedGrantedScopes(params: {
 }
 
 export function resolveReconnectSuccessResult(
-  mailSendState: MailSendPermissionState,
+  mailReadWriteState: MicrosoftPermissionState,
 ): (typeof MICROSOFT_OAUTH_RESULT)[keyof typeof MICROSOFT_OAUTH_RESULT] {
-  switch (mailSendState) {
+  switch (mailReadWriteState) {
     case "granted":
       return MICROSOFT_OAUTH_RESULT.reconnected;
     case "missing":
-      return MICROSOFT_OAUTH_RESULT.reconnectedMailSendMissing;
+      return MICROSOFT_OAUTH_RESULT.permissionNotGranted;
     case "unknown":
-      return MICROSOFT_OAUTH_RESULT.reconnectedMailSendUnknown;
+      return MICROSOFT_OAUTH_RESULT.reconnectedPermissionsUnknown;
   }
 }

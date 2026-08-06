@@ -1,3 +1,12 @@
+import {
+  httpStatusClass,
+  logMicrosoftOAuthCallbackDiagnostic,
+  MICROSOFT_CALLBACK_STAGES,
+} from "@/lib/microsoft/callback-diagnostics";
+import {
+  resolveCallbackRefreshTokenEncrypted,
+  type ExistingMicrosoftConnection,
+} from "@/lib/microsoft/callback-helpers";
 import { encryptToken } from "@/lib/microsoft/encryption";
 import {
   clearMicrosoftOAuthStateCookie,
@@ -9,10 +18,12 @@ import {
   MICROSOFT_OAUTH_STATE_COOKIE,
   resolvePersistedGrantedScopes,
   resolveReconnectSuccessResult,
+  type MicrosoftOAuthMode,
+  type MicrosoftOAuthResultCode,
 } from "@/lib/microsoft/oauth-state";
 import {
   MICROSOFT_SCOPES_STRING,
-  resolveMailSendPermissionState,
+  resolveMailReadWritePermissionState,
 } from "@/lib/microsoft/scopes";
 import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
@@ -39,13 +50,39 @@ function getOAuthConfig() {
 
 function redirectWithResult(
   request: NextRequest,
-  result: (typeof MICROSOFT_OAUTH_RESULT)[keyof typeof MICROSOFT_OAUTH_RESULT] | "microsoft_connected",
+  result: MicrosoftOAuthResultCode | "microsoft_connected",
 ): NextResponse {
   const response = NextResponse.redirect(
     microsoftConnectionsResultUrl(getBaseUrl(request), result),
   );
   clearMicrosoftOAuthStateCookie(response);
   return response;
+}
+
+function finishCallback(
+  request: NextRequest,
+  params: {
+    result: MicrosoftOAuthResultCode | "microsoft_connected";
+    mode: MicrosoftOAuthMode;
+    stage: (typeof MICROSOFT_CALLBACK_STAGES)[keyof typeof MICROSOFT_CALLBACK_STAGES];
+    success: boolean;
+    httpStatusClass?: string;
+    hasAccessToken?: boolean;
+    hasRefreshToken?: boolean;
+    hasScope?: boolean;
+  },
+): NextResponse {
+  logMicrosoftOAuthCallbackDiagnostic({
+    stage: params.stage,
+    mode: params.mode,
+    success: params.success,
+    resultCode: params.result,
+    httpStatusClass: params.httpStatusClass,
+    hasAccessToken: params.hasAccessToken,
+    hasRefreshToken: params.hasRefreshToken,
+    hasScope: params.hasScope,
+  });
+  return redirectWithResult(request, params.result);
 }
 
 type MicrosoftTokenResponse = {
@@ -86,9 +123,15 @@ export async function GET(request: NextRequest) {
   const pendingState = cookieValue
     ? decodeMicrosoftOAuthStateCookie(cookieValue)
     : null;
+  const mode = pendingState?.mode ?? "connect";
 
   if (oauthError === "access_denied") {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.consentCancelled);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.consentCancelled,
+      mode,
+      stage: MICROSOFT_CALLBACK_STAGES.oauthStateValidation,
+      success: false,
+    });
   }
 
   if (
@@ -100,7 +143,12 @@ export async function GET(request: NextRequest) {
     pendingState.userId !== userId ||
     isMicrosoftOAuthStateExpired(pendingState.issuedAt)
   ) {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.invalidOAuthState);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.stateInvalid,
+      mode,
+      stage: MICROSOFT_CALLBACK_STAGES.oauthStateValidation,
+      success: false,
+    });
   }
 
   let config;
@@ -108,14 +156,31 @@ export async function GET(request: NextRequest) {
   try {
     config = getOAuthConfig();
   } catch {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.connectionFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.oauthStateValidation,
+      success: false,
+    });
   }
 
-  const { data: existingConnection } = await supabase
+  const { data: existingConnectionRow } = await supabase
     .from("microsoft_connections")
-    .select("granted_scopes")
+    .select("granted_scopes, refresh_token_encrypted, microsoft_user_id")
     .eq("user_id", userId)
     .maybeSingle();
+
+  const existingConnection: ExistingMicrosoftConnection | null =
+    existingConnectionRow &&
+    typeof existingConnectionRow.refresh_token_encrypted === "string" &&
+    typeof existingConnectionRow.microsoft_user_id === "string" &&
+    typeof existingConnectionRow.granted_scopes === "string"
+      ? {
+          granted_scopes: existingConnectionRow.granted_scopes,
+          refresh_token_encrypted: existingConnectionRow.refresh_token_encrypted,
+          microsoft_user_id: existingConnectionRow.microsoft_user_id,
+        }
+      : null;
 
   let tokenResponse: MicrosoftTokenResponse;
 
@@ -139,22 +204,38 @@ export async function GET(request: NextRequest) {
     });
 
     if (!tokenResult.ok) {
-      return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+      return finishCallback(request, {
+        result: MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+        mode: pendingState.mode,
+        stage: MICROSOFT_CALLBACK_STAGES.authorizationCodeExchange,
+        success: false,
+        httpStatusClass: httpStatusClass(tokenResult.status),
+      });
     }
 
     tokenResponse = (await tokenResult.json()) as MicrosoftTokenResponse;
   } catch {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.authorizationCodeExchange,
+      success: false,
+    });
   }
 
   const { access_token, refresh_token, expires_in, scope } = tokenResponse;
+  const hasScope = typeof scope === "string" && scope.length > 0;
 
-  if (
-    typeof access_token !== "string" ||
-    typeof refresh_token !== "string" ||
-    typeof expires_in !== "number"
-  ) {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+  if (typeof access_token !== "string" || typeof expires_in !== "number") {
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.tokenResponseValidation,
+      success: false,
+      hasAccessToken: typeof access_token === "string",
+      hasRefreshToken: typeof refresh_token === "string",
+      hasScope,
+    });
   }
 
   let profile: MicrosoftProfile;
@@ -170,16 +251,60 @@ export async function GET(request: NextRequest) {
     );
 
     if (!profileResult.ok) {
-      return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+      return finishCallback(request, {
+        result: MICROSOFT_OAUTH_RESULT.connectionFailed,
+        mode: pendingState.mode,
+        stage: MICROSOFT_CALLBACK_STAGES.tokenResponseValidation,
+        success: false,
+        httpStatusClass: httpStatusClass(profileResult.status),
+        hasAccessToken: true,
+        hasRefreshToken: typeof refresh_token === "string",
+        hasScope,
+      });
     }
 
     profile = (await profileResult.json()) as MicrosoftProfile;
   } catch {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.connectionFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.tokenResponseValidation,
+      success: false,
+      hasAccessToken: true,
+      hasRefreshToken: typeof refresh_token === "string",
+      hasScope,
+    });
   }
 
   if (typeof profile.id !== "string") {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.connectionFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.tokenResponseValidation,
+      success: false,
+      hasAccessToken: true,
+      hasRefreshToken: typeof refresh_token === "string",
+      hasScope,
+    });
+  }
+
+  const refreshTokenResolution = resolveCallbackRefreshTokenEncrypted({
+    refreshToken: refresh_token,
+    mode: pendingState.mode,
+    existingConnection,
+    profileMicrosoftUserId: profile.id,
+  });
+
+  if (!refreshTokenResolution.success) {
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.tokenResponseValidation,
+      success: false,
+      hasAccessToken: true,
+      hasRefreshToken: typeof refresh_token === "string",
+      hasScope,
+    });
   }
 
   const email =
@@ -193,13 +318,19 @@ export async function GET(request: NextRequest) {
     typeof profile.displayName === "string" ? profile.displayName : null;
 
   let accessTokenEncrypted: string;
-  let refreshTokenEncrypted: string;
 
   try {
     accessTokenEncrypted = encryptToken(access_token);
-    refreshTokenEncrypted = encryptToken(refresh_token);
   } catch {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.connectionFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.tokenPersistence,
+      success: false,
+      hasAccessToken: true,
+      hasRefreshToken: refreshTokenResolution.preservedExisting || typeof refresh_token === "string",
+      hasScope,
+    });
   }
 
   const accessTokenExpiresAt = new Date(
@@ -210,7 +341,7 @@ export async function GET(request: NextRequest) {
     existingGrantedScopes: existingConnection?.granted_scopes ?? null,
     mode: pendingState.mode,
   });
-  const mailSendState = resolveMailSendPermissionState(grantedScopes);
+  const mailReadWriteState = resolveMailReadWritePermissionState(grantedScopes);
 
   const { error: upsertError } = await supabase.from("microsoft_connections").upsert(
     {
@@ -220,7 +351,7 @@ export async function GET(request: NextRequest) {
       email,
       display_name: displayName,
       access_token_encrypted: accessTokenEncrypted,
-      refresh_token_encrypted: refreshTokenEncrypted,
+      refresh_token_encrypted: refreshTokenResolution.refreshTokenEncrypted,
       access_token_expires_at: accessTokenExpiresAt,
       granted_scopes: grantedScopes,
       connected_at: new Date().toISOString(),
@@ -229,13 +360,29 @@ export async function GET(request: NextRequest) {
   );
 
   if (upsertError) {
-    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
+    return finishCallback(request, {
+      result: MICROSOFT_OAUTH_RESULT.tokenPersistenceFailed,
+      mode: pendingState.mode,
+      stage: MICROSOFT_CALLBACK_STAGES.tokenPersistence,
+      success: false,
+      hasAccessToken: true,
+      hasRefreshToken: refreshTokenResolution.preservedExisting || typeof refresh_token === "string",
+      hasScope,
+    });
   }
 
   const successResult =
     pendingState.mode === "reconnect"
-      ? resolveReconnectSuccessResult(mailSendState)
+      ? resolveReconnectSuccessResult(mailReadWriteState)
       : "microsoft_connected";
 
-  return redirectWithResult(request, successResult);
+  return finishCallback(request, {
+    result: successResult,
+    mode: pendingState.mode,
+    stage: MICROSOFT_CALLBACK_STAGES.callbackCompletion,
+    success: true,
+    hasAccessToken: true,
+    hasRefreshToken: refreshTokenResolution.preservedExisting || typeof refresh_token === "string",
+    hasScope,
+  });
 }

@@ -21,11 +21,18 @@ import {
   resolveReconnectSuccessResult,
 } from "@/lib/microsoft/oauth-state";
 import {
+  logMicrosoftOAuthCallbackDiagnostic,
+  MICROSOFT_CALLBACK_STAGES,
+} from "@/lib/microsoft/callback-diagnostics";
+import { resolveCallbackRefreshTokenEncrypted } from "@/lib/microsoft/callback-helpers";
+import {
   grantedScopesIncludeMailSend,
   MICROSOFT_GRANTED_SCOPES_UNKNOWN,
+  MICROSOFT_MAIL_READ_WRITE_SCOPE,
   MICROSOFT_MAIL_SEND_SCOPE,
   MICROSOFT_OAUTH_SCOPES,
   MICROSOFT_SCOPES_STRING,
+  resolveMailReadWritePermissionState,
   resolveMailSendPermissionState,
 } from "@/lib/microsoft/scopes";
 import {
@@ -153,8 +160,22 @@ function buildPendingStateCookie(mode: "connect" | "reconnect" = "connect") {
   return nonce;
 }
 
-function mockExistingConnection(grantedScopes: string | null) {
+function mockExistingConnection(
+  grantedScopes: string | null,
+  options?: {
+    refreshTokenEncrypted?: string;
+    microsoftUserId?: string;
+  },
+) {
   const upsert = vi.fn(async () => ({ error: null }));
+  const connectionData = grantedScopes
+    ? {
+        granted_scopes: grantedScopes,
+        refresh_token_encrypted:
+          options?.refreshTokenEncrypted ?? "existing-refresh-encrypted",
+        microsoft_user_id: options?.microsoftUserId ?? "ms-user-id",
+      }
+    : null;
 
   fromMock.mockImplementation((table: string) => {
     if (table !== "microsoft_connections") {
@@ -165,7 +186,7 @@ function mockExistingConnection(grantedScopes: string | null) {
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
           maybeSingle: vi.fn(async () => ({
-            data: grantedScopes ? { granted_scopes: grantedScopes } : null,
+            data: connectionData,
             error: null,
           })),
         })),
@@ -178,9 +199,12 @@ function mockExistingConnection(grantedScopes: string | null) {
 }
 
 describe("microsoft oauth scopes", () => {
-  it("uses one centralized scope list that includes Mail.Send", () => {
+  it("uses one centralized scope list that includes Mail.Send and Mail.ReadWrite", () => {
     expect(MICROSOFT_OAUTH_SCOPES).toContain(MICROSOFT_MAIL_SEND_SCOPE);
+    expect(MICROSOFT_OAUTH_SCOPES).toContain(MICROSOFT_MAIL_READ_WRITE_SCOPE);
     expect(MICROSOFT_SCOPES_STRING).toContain("Mail.Send");
+    expect(MICROSOFT_SCOPES_STRING).toContain("Mail.ReadWrite");
+    expect(MICROSOFT_SCOPES_STRING.split(" ").filter((scope) => scope === "Mail.ReadWrite")).toHaveLength(1);
   });
 });
 
@@ -254,15 +278,15 @@ describe("microsoft oauth state helpers", () => {
     ).toBe(MICROSOFT_GRANTED_SCOPES_UNKNOWN);
   });
 
-  it("resolves reconnect redirect results for granted, missing, and unknown Mail.Send", () => {
+  it("resolves reconnect redirect results for granted, missing, and unknown Mail.ReadWrite", () => {
     expect(resolveReconnectSuccessResult("granted")).toBe(
       MICROSOFT_OAUTH_RESULT.reconnected,
     );
     expect(resolveReconnectSuccessResult("missing")).toBe(
-      MICROSOFT_OAUTH_RESULT.reconnectedMailSendMissing,
+      MICROSOFT_OAUTH_RESULT.permissionNotGranted,
     );
     expect(resolveReconnectSuccessResult("unknown")).toBe(
-      MICROSOFT_OAUTH_RESULT.reconnectedMailSendUnknown,
+      MICROSOFT_OAUTH_RESULT.reconnectedPermissionsUnknown,
     );
   });
 
@@ -408,7 +432,7 @@ describe("microsoft callback route", () => {
     );
 
     expect(readRedirectLocation(response).searchParams.get("result")).toBe(
-      MICROSOFT_OAUTH_RESULT.invalidOAuthState,
+      MICROSOFT_OAUTH_RESULT.stateInvalid,
     );
     expect(upsert).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -478,14 +502,14 @@ describe("microsoft callback route", () => {
     );
 
     expect(readRedirectLocation(response).searchParams.get("result")).toBe(
-      MICROSOFT_OAUTH_RESULT.reconnectedMailSendUnknown,
+      MICROSOFT_OAUTH_RESULT.reconnectedPermissionsUnknown,
     );
     expect(upsert.mock.calls[0]?.[0]).toMatchObject({
       granted_scopes: MICROSOFT_GRANTED_SCOPES_UNKNOWN,
     });
   });
 
-  it("redirects to missing-permission result when reconnect scopes exclude Mail.Send", async () => {
+  it("redirects to missing-permission result when reconnect scopes exclude Mail.ReadWrite", async () => {
     const nonce = buildPendingStateCookie("reconnect");
     mockExistingConnection("Mail.ReadWrite Mail.Send Calendars.ReadWrite");
 
@@ -496,7 +520,7 @@ describe("microsoft callback route", () => {
           access_token: "new-access-token",
           refresh_token: "new-refresh-token",
           expires_in: 3600,
-          scope: "Mail.ReadWrite Calendars.ReadWrite",
+          scope: "Mail.Send Calendars.ReadWrite",
         }),
       })
       .mockResolvedValueOnce({
@@ -513,8 +537,190 @@ describe("microsoft callback route", () => {
     );
 
     expect(readRedirectLocation(response).searchParams.get("result")).toBe(
-      MICROSOFT_OAUTH_RESULT.reconnectedMailSendMissing,
+      MICROSOFT_OAUTH_RESULT.permissionNotGranted,
     );
+    expect(resolveMailReadWritePermissionState("Mail.Send Calendars.ReadWrite")).toBe(
+      "missing",
+    );
+  });
+
+  it("preserves the existing refresh token when reconnect omits refresh_token", async () => {
+    const nonce = buildPendingStateCookie("reconnect");
+    const { upsert } = mockExistingConnection("Mail.ReadWrite Calendars.ReadWrite", {
+      refreshTokenEncrypted: "keep-this-refresh-token",
+      microsoftUserId: "ms-user-id",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: "new-access-token",
+          expires_in: 3600,
+          scope: "Mail.ReadWrite Mail.Send Calendars.ReadWrite",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "ms-user-id",
+          displayName: "Parker",
+          mail: "parker@example.com",
+        }),
+      });
+
+    const response = await callbackGET(
+      buildCallbackRequest(`?code=oauth-code&state=${nonce}`),
+    );
+
+    expect(readRedirectLocation(response).searchParams.get("result")).toBe(
+      MICROSOFT_OAUTH_RESULT.reconnected,
+    );
+    expect(upsert.mock.calls[0]?.[0]).toMatchObject({
+      refresh_token_encrypted: "keep-this-refresh-token",
+    });
+  });
+
+  it("fails reconnect when refresh_token is omitted for a different Microsoft account", async () => {
+    const nonce = buildPendingStateCookie("reconnect");
+    const { upsert } = mockExistingConnection("Mail.ReadWrite Calendars.ReadWrite", {
+      refreshTokenEncrypted: "keep-this-refresh-token",
+      microsoftUserId: "existing-ms-user-id",
+    });
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: "new-access-token",
+          expires_in: 3600,
+          scope: "Mail.ReadWrite Mail.Send Calendars.ReadWrite",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "different-ms-user-id",
+          displayName: "Parker",
+          mail: "parker@example.com",
+        }),
+      });
+
+    const response = await callbackGET(
+      buildCallbackRequest(`?code=oauth-code&state=${nonce}`),
+    );
+
+    expect(readRedirectLocation(response).searchParams.get("result")).toBe(
+      MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+    );
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("requires refresh_token on initial connect when Microsoft omits it", async () => {
+    const nonce = buildPendingStateCookie("connect");
+    const { upsert } = mockExistingConnection(null);
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: "new-access-token",
+          expires_in: 3600,
+          scope: "Mail.ReadWrite Mail.Send Calendars.ReadWrite",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "ms-user-id",
+          displayName: "Parker",
+          mail: "parker@example.com",
+        }),
+      });
+
+    const response = await callbackGET(
+      buildCallbackRequest(`?code=oauth-code&state=${nonce}`),
+    );
+
+    expect(readRedirectLocation(response).searchParams.get("result")).toBe(
+      MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+    );
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("preserves the existing connection when token exchange fails", async () => {
+    const nonce = buildPendingStateCookie("reconnect");
+    const { upsert } = mockExistingConnection("Mail.ReadWrite Calendars.ReadWrite");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_grant" }),
+    });
+
+    const response = await callbackGET(
+      buildCallbackRequest(`?code=oauth-code&state=${nonce}`),
+    );
+
+    expect(readRedirectLocation(response).searchParams.get("result")).toBe(
+      MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+    );
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it("preserves the existing connection when token persistence fails", async () => {
+    const nonce = buildPendingStateCookie("reconnect");
+    const upsert = vi.fn(async () => ({ error: new Error("db write failed") }));
+
+    fromMock.mockImplementation((table: string) => {
+      if (table !== "microsoft_connections") {
+        throw new Error(`Unexpected table ${table}`);
+      }
+
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            maybeSingle: vi.fn(async () => ({
+              data: {
+                granted_scopes: "Mail.ReadWrite Calendars.ReadWrite",
+                refresh_token_encrypted: "existing-refresh-encrypted",
+                microsoft_user_id: "ms-user-id",
+              },
+              error: null,
+            })),
+          })),
+        })),
+        upsert,
+      };
+    });
+
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: "new-access-token",
+          refresh_token: "new-refresh-token",
+          expires_in: 3600,
+          scope: "Mail.ReadWrite Mail.Send Calendars.ReadWrite",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: "ms-user-id",
+          displayName: "Parker",
+          mail: "parker@example.com",
+        }),
+      });
+
+    const response = await callbackGET(
+      buildCallbackRequest(`?code=oauth-code&state=${nonce}`),
+    );
+
+    expect(readRedirectLocation(response).searchParams.get("result")).toBe(
+      MICROSOFT_OAUTH_RESULT.tokenPersistenceFailed,
+    );
+    expect(upsert).toHaveBeenCalledTimes(1);
   });
 
   it("does not expose tokens, codes, or raw errors in redirect results", async () => {
@@ -523,6 +729,7 @@ describe("microsoft callback route", () => {
 
     fetchMock.mockResolvedValueOnce({
       ok: false,
+      status: 400,
       json: async () => ({
         error: "invalid_grant",
         error_description: "Top secret oauth failure",
@@ -539,14 +746,93 @@ describe("microsoft callback route", () => {
     const serialized = `${location.href} ${logSpy.mock.calls.join(" ")} ${errorSpy.mock.calls.join(" ")}`;
 
     expect(location.searchParams.get("result")).toBe(
-      MICROSOFT_OAUTH_RESULT.connectionFailed,
+      MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
     );
     expect(serialized).not.toContain("oauth-code");
     expect(serialized).not.toContain("new-access-token");
     expect(serialized).not.toContain("Top secret oauth failure");
+    expect(serialized).toContain(MICROSOFT_CALLBACK_STAGES.authorizationCodeExchange);
 
     logSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+});
+
+describe("microsoft callback refresh token helper", () => {
+  let envSnapshot: EnvSnapshot;
+
+  beforeEach(() => {
+    envSnapshot = snapshotEnv();
+    setOAuthEnv();
+  });
+
+  afterEach(() => {
+    restoreEnv(envSnapshot);
+  });
+
+  it("preserves encrypted refresh token only for same-account reconnect", () => {
+    expect(
+      resolveCallbackRefreshTokenEncrypted({
+        refreshToken: undefined,
+        mode: "reconnect",
+        existingConnection: {
+          granted_scopes: "Mail.ReadWrite",
+          refresh_token_encrypted: "existing-encrypted",
+          microsoft_user_id: "ms-user-id",
+        },
+        profileMicrosoftUserId: "ms-user-id",
+      }),
+    ).toEqual({
+      success: true,
+      refreshTokenEncrypted: "existing-encrypted",
+      preservedExisting: true,
+    });
+  });
+
+  it("rejects cross-account refresh token reuse", () => {
+    expect(
+      resolveCallbackRefreshTokenEncrypted({
+        refreshToken: undefined,
+        mode: "reconnect",
+        existingConnection: {
+          granted_scopes: "Mail.ReadWrite",
+          refresh_token_encrypted: "existing-encrypted",
+          microsoft_user_id: "existing-ms-user-id",
+        },
+        profileMicrosoftUserId: "different-ms-user-id",
+      }),
+    ).toEqual({ success: false, reason: "account_mismatch" });
+  });
+});
+
+describe("microsoft callback diagnostics", () => {
+  it("logs stage diagnostics without sensitive fields", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    logMicrosoftOAuthCallbackDiagnostic({
+      stage: MICROSOFT_CALLBACK_STAGES.tokenResponseValidation,
+      mode: "reconnect",
+      success: false,
+      resultCode: MICROSOFT_OAUTH_RESULT.tokenExchangeFailed,
+      hasAccessToken: true,
+      hasRefreshToken: false,
+      hasScope: true,
+    });
+
+    const payload = JSON.parse(String(logSpy.mock.calls[0]?.[0]));
+    expect(payload).toMatchObject({
+      event: "microsoft_oauth_callback",
+      stage: "token_response_validation",
+      mode: "reconnect",
+      success: false,
+      resultCode: "microsoft_token_exchange_failed",
+      hasAccessToken: true,
+      hasRefreshToken: false,
+      hasScope: true,
+    });
+    expect(JSON.stringify(payload)).not.toContain("Mail.ReadWrite");
+
+    logSpy.mockRestore();
   });
 });
 
@@ -603,9 +889,10 @@ describe("microsoft connections page", () => {
     expect(pageSource).toContain("Connect Microsoft 365");
     expect(pageSource).toContain('href="/api/microsoft/connect"');
     expect(pageSource).toContain("Microsoft permissions updated.");
-    expect(pageSource).toContain("Email permission will be verified when Jarvis");
-    expect(pageSource).toContain("email sending permission was not granted");
+    expect(pageSource).toContain("Draft permission will be verified when Jarvis");
+    expect(pageSource).toContain("draft creation permission was not granted");
     expect(pageSource).toContain("Your existing connection is still available");
+    expect(pageSource).toContain("resolveMailReadWritePermissionState");
   });
 });
 

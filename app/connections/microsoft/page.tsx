@@ -6,7 +6,7 @@ import {
   JarvisCard,
   JarvisPageContent,
 } from "@/components/jarvis/jarvis-ui";
-import { resolveMailSendPermissionState } from "@/lib/microsoft/scopes";
+import { resolveMailReadWritePermissionState, resolveMailSendPermissionState } from "@/lib/microsoft/scopes";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -50,8 +50,12 @@ export default async function MicrosoftConnectionPage({
   const mailSendState = connection
     ? resolveMailSendPermissionState(connection.granted_scopes)
     : null;
+  const mailReadWriteState = connection
+    ? resolveMailReadWritePermissionState(connection.granted_scopes)
+    : null;
   const hasMailSend = mailSendState === "granted";
   const mailSendUnknown = mailSendState === "unknown";
+  const mailReadWriteUnknown = mailReadWriteState === "unknown";
 
   return (
     <JarvisAppShell>
@@ -73,17 +77,17 @@ export default async function MicrosoftConnectionPage({
           </JarvisAlert>
         ) : null}
 
-        {result === "microsoft_reconnected_mail_send_missing" ? (
-          <JarvisAlert variant="error">
-            Microsoft reconnected, but email sending permission was not granted.
-            Your existing connection is still available.
+        {result === "microsoft_reconnected_permissions_unknown" ? (
+          <JarvisAlert variant="success">
+            Microsoft reconnected. Draft permission will be verified when Jarvis
+            creates your next Outlook draft.
           </JarvisAlert>
         ) : null}
 
-        {result === "microsoft_reconnected_mail_send_unknown" ? (
-          <JarvisAlert variant="success">
-            Microsoft reconnected. Email permission will be verified when Jarvis
-            sends your next email.
+        {result === "microsoft_permission_not_granted" ? (
+          <JarvisAlert variant="error">
+            Microsoft reconnected, but draft creation permission was not granted.
+            Your existing connection is still available.
           </JarvisAlert>
         ) : null}
 
@@ -95,7 +99,9 @@ export default async function MicrosoftConnectionPage({
         ) : null}
 
         {result === "microsoft_connection_failed" ||
-        result === "invalid_oauth_state" ||
+        result === "microsoft_state_invalid" ||
+        result === "microsoft_token_exchange_failed" ||
+        result === "microsoft_token_persistence_failed" ||
         error ? (
           <JarvisAlert variant="error">
             {connection
@@ -131,7 +137,10 @@ export default async function MicrosoftConnectionPage({
                 <ul className="jv-capability-list">
                   <li>Read Outlook calendar events</li>
                   <li>Create Outlook calendar events</li>
-                  <li>Create Outlook email drafts</li>
+                  <li>
+                    Create Outlook email drafts
+                    {mailReadWriteUnknown ? " (permission pending verification)" : ""}
+                  </li>
                   {hasMailSend ? <li>Send Outlook email when requested</li> : null}
                   {mailSendUnknown ? (
                     <li>Send Outlook email when requested (permission pending verification)</li>
