@@ -25,6 +25,7 @@ import type {
 } from "@/lib/jarvis/finance/rocket-money-import-types";
 import type { FinanceFrequency } from "@/lib/jarvis/finance/finance-types";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
 
 const CSV_FIELD_NAME = "csvFile";
@@ -1110,7 +1111,12 @@ function ImportSuccessPanel({
   );
 }
 
-export function MelusiExpensesImport() {
+export function MelusiExpensesImport({
+  defaultExpanded = false,
+}: {
+  defaultExpanded?: boolean;
+}) {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -1320,6 +1326,7 @@ export function MelusiExpensesImport() {
       });
       setShowConfirmPanel(false);
       setConfirmChecked(false);
+      router.refresh();
     });
   }
 
@@ -1330,21 +1337,15 @@ export function MelusiExpensesImport() {
     !actionError;
 
   return (
-    <div className="melusi-expenses">
-      <header className="melusi-header melusi-subpage-header">
-        <div className="melusi-header-copy">
-          <Link href="/melusi" className="jv-back-link">
-            ← Melusi Command Center
-          </Link>
-          <h1 className="melusi-title">Melusi Expenses</h1>
-          <p className="melusi-subtitle">
-            Track owner-funded Melusi business costs from your private Rocket
-            Money export. Preview and classify expenses, then confirm import
-            to add verified records to Finance.
-          </p>
-        </div>
-      </header>
+    <details
+      className="melusi-expenses-import-section"
+      open={defaultExpanded || undefined}
+    >
+      <summary className="melusi-expenses-import-summary">
+        Import another expense file
+      </summary>
 
+      <div className="melusi-expenses">
       <JarvisCard title="Upload Rocket Money CSV" accent="cyan">
         <div className="melusi-expenses-upload">
           <JarvisField label="Private business expense CSV" htmlFor="melusi-csv-file">
@@ -1512,6 +1513,7 @@ export function MelusiExpensesImport() {
           generate a sanitized summary.
         </JarvisAlert>
       ) : null}
-    </div>
+      </div>
+    </details>
   );
 }
