@@ -132,3 +132,68 @@ export type RocketMoneyPreviewResult = {
   errors: RocketMoneyPreviewValidationError[];
   totals: RocketMoneyImportTotals;
 };
+
+export type RocketMoneyImportErrorCode =
+  | "unauthenticated"
+  | "invalid_input"
+  | "preview_errors_present"
+  | "needs_review_present"
+  | "duplicate_rows_in_file"
+  | "no_importable_rows"
+  | "invalid_content_hash"
+  | "invalid_fingerprint"
+  | "batch_already_exists"
+  | "fingerprint_conflict"
+  | "invalid_classification"
+  | "recurrence_conflict"
+  | "category_not_found"
+  | "foundation_error"
+  | "import_failed";
+
+export type RocketMoneyConfirmedImportRow = {
+  sourceRowIndex: number;
+  sourceFingerprint: string;
+  transactionDate: string;
+  originalDate: string | null;
+  merchant: string;
+  description: string | null;
+  rocketMoneyCategory: string | null;
+  jarvisAmount: number;
+  transactionType: FinanceTransactionType;
+  personalOrBusiness: Extract<FinancePersonalOrBusiness, "business">;
+  businessContext: RocketMoneyBusinessContext;
+  fundingSource: RocketMoneyFundingSource;
+  costTreatment: RocketMoneyCostTreatment;
+  prepaidMonths: number | null;
+  serviceThroughDate: string | null;
+  classificationStatus: RocketMoneyClassificationStatus;
+  notes: string | null;
+  recurrenceProposal: RocketMoneyRecurrenceProposal | null;
+};
+
+export type RocketMoneyConfirmedImportInput = {
+  contentHash: string;
+  rows: RocketMoneyConfirmedImportRow[];
+  previewErrors: RocketMoneyPreviewValidationError[];
+};
+
+export type RocketMoneyImportSuccessResult = {
+  success: true;
+  code: "completed";
+  batchId: string;
+  importedTransactionCount: number;
+  recurringItemCount: number;
+  ownerFundedSpendingTotal: number;
+  monthlyRecurringAmount: number;
+  annualRecurringAmount: number;
+  estimatedAnnualRecurringRunRate: number;
+};
+
+export type RocketMoneyImportFailureResult = {
+  success: false;
+  code: RocketMoneyImportErrorCode;
+};
+
+export type RocketMoneyImportResult =
+  | RocketMoneyImportSuccessResult
+  | RocketMoneyImportFailureResult;
