@@ -27,7 +27,16 @@ import {
   mergeMelusiExpenseSourceCountsIntoRoot,
   type MelusiExpenseBriefContext,
 } from "@/lib/jarvis/briefings/build-melusi-expense-brief-context";
+import {
+  buildFinanceBriefContext,
+  extractFinanceBriefSourceCounts,
+  formatFinanceBriefContextForPrompt,
+  mergeFinanceBriefSourceCountsIntoRoot,
+  type FinanceBriefContext,
+  type FinanceBriefSourceCounts,
+} from "@/lib/jarvis/briefings/build-finance-brief-context";
 import { loadMelusiExpenseBriefSnapshot } from "@/lib/jarvis/briefings/load-melusi-expense-brief-snapshot";
+import { loadFinanceBriefSnapshot } from "@/lib/jarvis/briefings/load-finance-brief-snapshot";
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const SAFE_ERROR_MESSAGE = "Jarvis could not generate the morning brief.";
@@ -77,6 +86,7 @@ type SourceCounts = {
     recurringOverheadStateKey: string | null;
     surfacedSignalKeys: string[];
   };
+  finance?: FinanceBriefSourceCounts;
 };
 
 function isValidTimeZone(timeZone: string): boolean {
@@ -327,6 +337,16 @@ Use only the supplied expense values. Do not invent expenses, due dates, totals,
 Do not describe owner-funded spending as equity, ownership value, investment basis, or tax basis.
 Do not repeat static spending totals unless a recurring-overhead summary was explicitly supplied.
 
+## Personal Finance
+Include this section only when personal finance signals were returned below. Omit it entirely when no meaningful finance signals were returned.
+When included, prioritize urgent Plaid connection issues first, then sync health and pending match reviews, then cash and balance attention items, then informational transaction and recurring signals.
+Clearly distinguish urgent connection or sync issues from informational spending activity.
+Use only the supplied finance values. Do not invent balances, transactions, due dates, institutions, or recommendations.
+Do not imply Jarvis can transfer funds, pay bills, dispute charges, or move money.
+Do not provide generic financial advice.
+When pending Plaid match reviews are included, mention the review route supplied in the snapshot when helpful.
+Treat refunds as reducing personal spending, not as large expenses.
+
 ## Melusi Projects
 Include this section only when Melusi project data was returned below. Omit it entirely when no Melusi project data was returned or when there is no meaningful project activity.
 When included, summarize active Melusi projects needing attention: overdue project tasks, project tasks due soon, high-priority unfinished project tasks, and active projects with no open next task.
@@ -367,6 +387,7 @@ function buildGenerationPrompt(input: {
   memories: Memory[];
   tasks: BriefingTask[];
   melusiExpenses: MelusiExpenseBriefContext | null;
+  personalFinance: FinanceBriefContext | null;
   melusiProjects: MelusiPlanningSnapshot | null;
   emails: BriefingEmail[];
   events: BriefingEvent[];
@@ -404,6 +425,14 @@ function buildGenerationPrompt(input: {
     );
   } else {
     sections.push("\nMelusi business expense signals: none returned.");
+  }
+
+  if (input.personalFinance?.hasMeaningfulSignals) {
+    sections.push(
+      `\nPersonal finance signals (trusted snapshot):\n${formatFinanceBriefContextForPrompt(input.personalFinance)}`,
+    );
+  } else {
+    sections.push("\nPersonal finance signals: none returned.");
   }
 
   if (input.melusiProjects?.hasMeaningfulActivity) {
@@ -537,6 +566,11 @@ export async function generateMorningBrief(
       ? extractMelusiExpenseSourceCounts(existingTodayRow.source_counts)
       : extractMelusiExpenseSourceCounts(priorBriefRow?.source_counts);
 
+  const storedFinanceSourceCounts =
+    existingTodayRow?.status === "completed"
+      ? extractFinanceBriefSourceCounts(existingTodayRow.source_counts)
+      : extractFinanceBriefSourceCounts(priorBriefRow?.source_counts);
+
   const sinceTimestamp =
     typeof existingTodayRow?.generated_at === "string"
       ? existingTodayRow.generated_at
@@ -562,11 +596,15 @@ export async function generateMorningBrief(
     return { success: false, error: SAFE_ERROR_MESSAGE };
   }
 
-  const [tasksResult, melusiSnapshot, melusiExpenseSnapshotResult] =
+  const [tasksResult, melusiSnapshot, melusiExpenseSnapshotResult, financeSnapshotResult] =
     await Promise.all([
       listTasks(supabase, userId),
       loadMelusiPlanningSnapshot(supabase, userId, { timeZone, now }),
       loadMelusiExpenseBriefSnapshot(supabase, userId, {
+        now,
+        ...(sinceTimestamp ? { since: sinceTimestamp } : {}),
+      }),
+      loadFinanceBriefSnapshot(supabase, userId, {
         now,
         ...(sinceTimestamp ? { since: sinceTimestamp } : {}),
       }),
@@ -582,6 +620,20 @@ export async function generateMorningBrief(
     });
   }
 
+  let financeBriefContext: FinanceBriefContext | null = null;
+  let financeSourceCounts: FinanceBriefSourceCounts = {
+    ...storedFinanceSourceCounts,
+    snapshotSuccess: false,
+  };
+
+  if (financeSnapshotResult.success) {
+    financeBriefContext = buildFinanceBriefContext({
+      snapshot: financeSnapshotResult.snapshot,
+      storedSourceCounts: storedFinanceSourceCounts,
+    });
+    financeSourceCounts = financeBriefContext.nextSourceCounts;
+  }
+
   console.info("[morning-brief] melusi-expenses", {
     snapshotSuccess: melusiExpenseSnapshotResult.success,
     hasMeaningfulSignals: melusiExpenseContext?.hasMeaningfulSignals ?? false,
@@ -594,6 +646,21 @@ export async function generateMorningBrief(
     recurringOverheadSummaryIncluded:
       melusiExpenseContext?.recurringOverheadSummary !== null &&
       melusiExpenseContext?.recurringOverheadSummary !== undefined,
+  });
+
+  console.info("[morning-brief] finance", {
+    snapshotSuccess: financeSnapshotResult.success,
+    signalsGenerated: financeSourceCounts.signalsGenerated,
+    pendingReviewCount: financeSourceCounts.pendingReviewCount,
+    reconnectCount: financeSourceCounts.reconnectCount,
+    staleSyncCount: financeSourceCounts.staleSyncCount,
+    largeTransactionCount: financeSourceCounts.largeTransactionCount,
+    refundCount: financeSourceCounts.refundCount,
+    lowCashActive: financeSourceCounts.lowCashActive,
+    staleBalanceCount: financeSourceCounts.staleBalanceCount,
+    ...(financeSnapshotResult.success
+      ? {}
+      : { errorCode: financeSnapshotResult.errorCode }),
   });
 
   const unfinishedTasks = tasksResult.success
@@ -659,18 +726,21 @@ export async function generateMorningBrief(
     calendarNote = "Outlook calendar could not be retrieved.";
   }
 
-  const sourceCounts = mergeMelusiExpenseSourceCountsIntoRoot(
-    {
-      tasks: unfinishedTasks.length,
-      goals: activeGoals.length,
-      memories: memories.length,
-      emails: emails.length,
-      events: events.length,
-      melusiProjects: melusiSnapshot.activeProjects.length,
-      melusiProjectTasks: Object.keys(melusiSnapshot.projectNameByTaskId).length,
-      melusiProjectUpdates: melusiSnapshot.projectUpdates.length,
-    },
-    melusiExpenseContext?.nextSourceCounts ?? storedMelusiSourceCounts,
+  const sourceCounts = mergeFinanceBriefSourceCountsIntoRoot(
+    mergeMelusiExpenseSourceCountsIntoRoot(
+      {
+        tasks: unfinishedTasks.length,
+        goals: activeGoals.length,
+        memories: memories.length,
+        emails: emails.length,
+        events: events.length,
+        melusiProjects: melusiSnapshot.activeProjects.length,
+        melusiProjectTasks: Object.keys(melusiSnapshot.projectNameByTaskId).length,
+        melusiProjectUpdates: melusiSnapshot.projectUpdates.length,
+      },
+      melusiExpenseContext?.nextSourceCounts ?? storedMelusiSourceCounts,
+    ),
+    financeSourceCounts,
   ) as SourceCounts;
 
   const instructions = buildInstructions(context, timeZone);
@@ -682,6 +752,9 @@ export async function generateMorningBrief(
     tasks: unfinishedTasks,
     melusiExpenses: melusiExpenseContext?.hasMeaningfulSignals
       ? melusiExpenseContext
+      : null,
+    personalFinance: financeBriefContext?.hasMeaningfulSignals
+      ? financeBriefContext
       : null,
     melusiProjects: melusiSnapshot.hasMeaningfulActivity
       ? melusiSnapshot
