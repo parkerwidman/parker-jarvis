@@ -6,13 +6,17 @@ import { useRouter } from "next/navigation";
 
 type PlaidLinkButtonProps = {
   disabled?: boolean;
-  label?: string;
+  label: string;
+  connectErrorMessage: string;
+  additionalConnectionHint: string;
   connectedInstitutionNames?: string[];
 };
 
 export function PlaidLinkButton({
   disabled = false,
-  label = "Connect Sandbox bank",
+  label,
+  connectErrorMessage,
+  additionalConnectionHint,
   connectedInstitutionNames = [],
 }: PlaidLinkButtonProps) {
   const router = useRouter();
@@ -47,9 +51,7 @@ export function PlaidLinkButton({
         };
 
         if (!response.ok || !payload.ok) {
-          setActionError(
-            "Could not connect the Sandbox bank. Please try again.",
-          );
+          setActionError(connectErrorMessage);
           return;
         }
 
@@ -57,12 +59,12 @@ export function PlaidLinkButton({
         setShouldOpen(false);
         router.refresh();
       } catch {
-        setActionError("Could not connect the Sandbox bank. Please try again.");
+        setActionError(connectErrorMessage);
       } finally {
         setPending(false);
       }
     },
-    [router],
+    [connectErrorMessage, router],
   );
 
   const { open, ready } = usePlaidLink({
@@ -123,8 +125,8 @@ export function PlaidLinkButton({
     <div className="jv-connection-actions">
       {uniqueInstitutionNames.length > 0 ? (
         <p className="jv-connection-meta">
-          Already connected: {uniqueInstitutionNames.join(", ")}. Link another
-          institution only if you intend to add a separate Sandbox bank login.
+          Already connected: {uniqueInstitutionNames.join(", ")}.{" "}
+          {additionalConnectionHint}
         </p>
       ) : null}
 

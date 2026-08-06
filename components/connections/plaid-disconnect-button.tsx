@@ -6,11 +6,13 @@ import { useState } from "react";
 type PlaidDisconnectButtonProps = {
   connectionId: string;
   disabled?: boolean;
+  disconnectErrorMessage: string;
 };
 
 export function PlaidDisconnectButton({
   connectionId,
   disabled = false,
+  disconnectErrorMessage,
 }: PlaidDisconnectButtonProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -33,13 +35,13 @@ export function PlaidDisconnectButton({
       const payload = (await response.json()) as { ok?: boolean };
 
       if (!response.ok || !payload.ok) {
-        setActionError("Could not disconnect this Sandbox bank.");
+        setActionError(disconnectErrorMessage);
         return;
       }
 
       router.refresh();
     } catch {
-      setActionError("Could not disconnect this Sandbox bank.");
+      setActionError(disconnectErrorMessage);
     } finally {
       setPending(false);
     }

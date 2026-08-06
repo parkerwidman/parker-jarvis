@@ -10,9 +10,97 @@ import {
 } from "@/components/jarvis/jarvis-ui";
 import { loadSafePlaidConnections } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
 import { getCurrentPlaidRuntimeEnvironment } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
-import type { PlaidSafeConnectionSummary } from "@/lib/jarvis/integrations/plaid/plaid-types";
+import type {
+  PlaidEnvironment,
+  PlaidSafeConnectionSummary,
+} from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+
+function isSandboxEnvironment(environment: PlaidEnvironment): boolean {
+  return environment === "sandbox";
+}
+
+function getPageSubtitle(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Connect Sandbox bank accounts and manually sync fake read-only balances and transactions."
+    : "Connect financial institutions and manually sync read-only balances and transactions.";
+}
+
+function getConnectButtonLabel(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Connect Sandbox bank"
+    : "Connect financial institution";
+}
+
+function getConnectAnotherLabel(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Connect another Sandbox bank"
+    : "Connect another financial institution";
+}
+
+function getImportantNotices(environment: PlaidEnvironment): string[] {
+  if (isSandboxEnvironment(environment)) {
+    return [
+      "Sandbox uses fake financial data only.",
+      "This does not connect a real bank account.",
+      "Jarvis cannot transfer money or move funds.",
+      "Balances shown are cached provider balances.",
+      "Automatic updates are not enabled yet.",
+    ];
+  }
+
+  return [
+    "This connects a real financial institution through Plaid.",
+    "Jarvis receives read-only account and transaction data.",
+    "Jarvis cannot transfer money or move funds.",
+    "Balances are cached provider balances.",
+    "Automatic updates are not enabled yet; syncing is currently manual.",
+  ];
+}
+
+function getConnectionAriaLabel(
+  environment: PlaidEnvironment,
+  institutionName?: string | null,
+): string {
+  if (institutionName) {
+    return `${institutionName} connection`;
+  }
+
+  return isSandboxEnvironment(environment)
+    ? "Sandbox bank connection"
+    : "Financial institution connection";
+}
+
+function getTokenNotRepairableMessage(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "This Sandbox bank connection can no longer be renewed through Plaid update mode. Imported Finance data is preserved."
+    : "This financial institution connection can no longer be renewed through Plaid update mode. Imported Finance data is preserved.";
+}
+
+function getConnectErrorMessage(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Could not connect the Sandbox bank. Please try again."
+    : "Could not connect the financial institution. Please try again.";
+}
+
+function getAdditionalConnectionHint(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Link another institution only if you intend to add a separate Sandbox bank login."
+    : "Link another institution only if you intend to add a separate financial institution login.";
+}
+
+function getDisconnectErrorMessage(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Could not disconnect this Sandbox bank."
+    : "Could not disconnect this financial institution.";
+}
+
+function getSyncAllLabel(environment: PlaidEnvironment): string {
+  return isSandboxEnvironment(environment)
+    ? "Sync all Sandbox banks"
+    : "Sync all financial institutions";
+}
 
 function formatConnectionDate(isoString: string): string {
   const date = new Date(isoString);
@@ -85,6 +173,15 @@ export default async function PlaidConnectionPage() {
 
   const connections = await loadSafePlaidConnections(supabase, userId);
   const runtimeEnvironment = getCurrentPlaidRuntimeEnvironment();
+  const pageSubtitle = getPageSubtitle(runtimeEnvironment);
+  const connectButtonLabel = getConnectButtonLabel(runtimeEnvironment);
+  const connectAnotherLabel = getConnectAnotherLabel(runtimeEnvironment);
+  const importantNotices = getImportantNotices(runtimeEnvironment);
+  const connectErrorMessage = getConnectErrorMessage(runtimeEnvironment);
+  const additionalConnectionHint = getAdditionalConnectionHint(runtimeEnvironment);
+  const disconnectErrorMessage = getDisconnectErrorMessage(runtimeEnvironment);
+  const syncAllLabel = getSyncAllLabel(runtimeEnvironment);
+  const tokenNotRepairableMessage = getTokenNotRepairableMessage(runtimeEnvironment);
   const connectedInstitutionNames = connections
     .map((connection) => connection.institutionName)
     .filter((name): name is string => Boolean(name));
@@ -95,7 +192,7 @@ export default async function PlaidConnectionPage() {
       <JarvisPageContent>
         <JarvisPageHeader
           title="Plaid — Personal Finance"
-          subtitle="Connect Sandbox bank accounts and manually sync read-only balances and transactions."
+          subtitle={pageSubtitle}
         />
 
         <JarvisCard title="Connection status" accent="green">
@@ -118,15 +215,17 @@ export default async function PlaidConnectionPage() {
               <div className="jv-capabilities">
                 <h3 className="jv-section-label">Important</h3>
                 <ul className="jv-capability-list">
-                  <li>Sandbox uses fake financial data only.</li>
-                  <li>This does not connect a real bank account.</li>
-                  <li>Jarvis cannot transfer money or move funds.</li>
-                  <li>Balances shown are cached provider balances.</li>
-                  <li>Automatic updates are not enabled yet.</li>
+                  {importantNotices.map((notice) => (
+                    <li key={notice}>{notice}</li>
+                  ))}
                 </ul>
               </div>
 
-              <PlaidLinkButton />
+              <PlaidLinkButton
+                label={connectButtonLabel}
+                connectErrorMessage={connectErrorMessage}
+                additionalConnectionHint={additionalConnectionHint}
+              />
             </div>
           ) : (
             <div className="jv-connection-status">
@@ -143,11 +242,10 @@ export default async function PlaidConnectionPage() {
                 <section
                   key={connection.id}
                   className="jv-connection-status"
-                  aria-label={
-                    connection.institutionName
-                      ? `${connection.institutionName} connection`
-                      : "Sandbox bank connection"
-                  }
+                  aria-label={getConnectionAriaLabel(
+                    runtimeEnvironment,
+                    connection.institutionName,
+                  )}
                 >
                   <div className="jv-connection-indicator">
                     <span
@@ -211,8 +309,7 @@ export default async function PlaidConnectionPage() {
 
                   {connection.lastErrorCode === "token_not_repairable" ? (
                     <p className="jv-connection-meta jv-connection-meta--error">
-                      This Sandbox bank connection can no longer be renewed through Plaid
-                      update mode. Imported Finance data is preserved.
+                      {tokenNotRepairableMessage}
                     </p>
                   ) : null}
 
@@ -231,27 +328,34 @@ export default async function PlaidConnectionPage() {
                     }
                   />
 
-                  <PlaidDisconnectButton connectionId={connection.id} />
+                  <PlaidDisconnectButton
+                    connectionId={connection.id}
+                    disconnectErrorMessage={disconnectErrorMessage}
+                  />
                 </section>
               ))}
 
               {syncableConnections.length > 1 ? (
-                <PlaidSyncButton syncAll disabled={syncableConnections.some((c) => c.syncInProgress)} />
+                <PlaidSyncButton
+                  syncAll
+                  label={syncAllLabel}
+                  disabled={syncableConnections.some((c) => c.syncInProgress)}
+                />
               ) : null}
 
               <div className="jv-capabilities">
                 <h3 className="jv-section-label">Important</h3>
                 <ul className="jv-capability-list">
-                  <li>Sandbox uses fake financial data only.</li>
-                  <li>This does not connect a real bank account.</li>
-                  <li>Jarvis cannot transfer money or move funds.</li>
-                  <li>Balances shown are cached provider balances.</li>
-                  <li>Automatic updates are not enabled yet.</li>
+                  {importantNotices.map((notice) => (
+                    <li key={notice}>{notice}</li>
+                  ))}
                 </ul>
               </div>
 
               <PlaidLinkButton
-                label="Connect another Sandbox bank"
+                label={connectAnotherLabel}
+                connectErrorMessage={connectErrorMessage}
+                additionalConnectionHint={additionalConnectionHint}
                 connectedInstitutionNames={connectedInstitutionNames}
               />
             </div>

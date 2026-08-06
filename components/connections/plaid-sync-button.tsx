@@ -81,8 +81,7 @@ export function PlaidSyncButton({
     }
   }
 
-  const buttonLabel =
-    label ?? (syncAll ? "Sync all Sandbox banks" : "Sync now");
+  const buttonLabel = label ?? (syncAll ? "Sync all" : "Sync now");
 
   return (
     <div className="jv-connection-actions">
