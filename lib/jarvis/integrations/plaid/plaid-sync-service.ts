@@ -1201,10 +1201,10 @@ export async function syncPlaidConnection(
   }
 }
 
-export async function syncAllPlaidConnectionsForUser(
+export async function loadEligiblePlaidConnectionIdsForUser(
   supabase: SupabaseClient,
   userId: string,
-): Promise<PlaidConnectionSyncResult[]> {
+): Promise<string[]> {
   const { data, error } = await supabase
     .from("plaid_connections")
     .select("id")
@@ -1218,11 +1218,23 @@ export async function syncAllPlaidConnectionsForUser(
     throw error;
   }
 
+  return (data ?? []).map((row) => row.id);
+}
+
+export async function syncAllPlaidConnectionsForUser(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<PlaidConnectionSyncResult[]> {
+  const connectionIds = await loadEligiblePlaidConnectionIdsForUser(
+    supabase,
+    userId,
+  );
+
   const results: PlaidConnectionSyncResult[] = [];
 
-  for (const row of data ?? []) {
+  for (const connectionId of connectionIds) {
     try {
-      results.push(await syncPlaidConnection(supabase, userId, row.id));
+      results.push(await syncPlaidConnection(supabase, userId, connectionId));
     } catch (syncError) {
       const errorCode =
         syncError instanceof PlaidSafeError
@@ -1230,11 +1242,11 @@ export async function syncAllPlaidConnectionsForUser(
           : ("sync_failed" satisfies PlaidSafeErrorCode);
 
       if (errorCode === "sync_in_progress") {
-        results.push(toSyncResult(row.id, "error", emptySyncCounts(), errorCode));
+        results.push(toSyncResult(connectionId, "error", emptySyncCounts(), errorCode));
         continue;
       }
 
-      results.push(toSyncResult(row.id, "error", emptySyncCounts(), errorCode));
+      results.push(toSyncResult(connectionId, "error", emptySyncCounts(), errorCode));
     }
   }
 

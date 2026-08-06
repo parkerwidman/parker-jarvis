@@ -3,27 +3,27 @@ import {
   authorizeCronRequest,
   resolveJarvisOwnerUserId,
 } from "@/lib/cron/cron-auth";
-import { generateMorningBrief } from "@/lib/jarvis/briefings/generate-morning-brief";
+import { runScheduledPlaidSync } from "@/lib/jarvis/integrations/plaid/plaid-scheduled-sync";
 import { createAutomationClient } from "@/lib/supabase/automation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 export async function GET(request: Request) {
   if (!process.env.CRON_SECRET) {
-    console.log("[morning-brief cron] configuration error");
+    console.log("[plaid-sync cron] missing_server_configuration");
     return NextResponse.json(
-      { error: "Server configuration error." },
+      { error: "missing_server_configuration" },
       { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 
   if (!authorizeCronRequest(request)) {
     return NextResponse.json(
-      { error: "Unauthorized" },
+      { error: "unauthorized" },
       { status: 401, headers: NO_STORE_HEADERS },
     );
   }
@@ -31,41 +31,38 @@ export async function GET(request: Request) {
   const ownerUserId = resolveJarvisOwnerUserId();
 
   if (!ownerUserId) {
-    console.log("[morning-brief cron] owner configuration error");
+    console.log("[plaid-sync cron] missing_server_configuration");
     return NextResponse.json(
-      { error: "Server configuration error." },
+      { error: "missing_server_configuration" },
       { status: 500, headers: NO_STORE_HEADERS },
     );
   }
 
-  console.log("[morning-brief cron] starting");
+  console.log("[plaid-sync cron] starting");
 
   try {
     const supabase = createAutomationClient();
-    const result = await generateMorningBrief(supabase, ownerUserId);
+    const aggregate = await runScheduledPlaidSync(supabase, ownerUserId);
 
-    if (!result.success) {
-      console.log("[morning-brief cron] failed");
-      return NextResponse.json(
-        { success: false, status: "failed" },
-        { status: 500, headers: NO_STORE_HEADERS },
-      );
-    }
+    const status =
+      aggregate.connectionsAttempted === 0
+        ? "no_eligible_connections"
+        : "completed";
 
-    console.log("[morning-brief cron] succeeded");
+    console.log("[plaid-sync cron] succeeded", status, aggregate.connectionsAttempted);
 
     return NextResponse.json(
       {
         success: true,
-        status: "completed",
-        briefingDate: result.briefingDate,
+        status,
+        ...aggregate,
       },
       { headers: NO_STORE_HEADERS },
     );
   } catch {
-    console.log("[morning-brief cron] failed");
+    console.log("[plaid-sync cron] scheduled_sync_failed");
     return NextResponse.json(
-      { success: false, status: "failed" },
+      { error: "scheduled_sync_failed" },
       { status: 500, headers: NO_STORE_HEADERS },
     );
   }

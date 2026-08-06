@@ -48,7 +48,8 @@ function getImportantNotices(environment: PlaidEnvironment): string[] {
       "This does not connect a real bank account.",
       "Jarvis cannot transfer money or move funds.",
       "Balances shown are cached provider balances.",
-      "Automatic updates are not enabled yet.",
+      "Automatic read-only syncing runs once daily; exact timing may vary within the scheduled hour.",
+      "You can still sync manually at any time with Sync now.",
     ];
   }
 
@@ -57,7 +58,9 @@ function getImportantNotices(environment: PlaidEnvironment): string[] {
     "Jarvis receives read-only account and transaction data.",
     "Jarvis cannot transfer money or move funds.",
     "Balances are cached provider balances.",
-    "Automatic updates are not enabled yet; syncing is currently manual.",
+    "Automatic read-only syncing runs once daily; exact timing may vary within the scheduled hour.",
+    "You can still sync manually at any time with Sync now.",
+    "Real-time webhooks are not enabled.",
   ];
 }
 
@@ -248,7 +251,9 @@ export default async function PlaidConnectionPage() {
 
               <p className="jv-connection-meta">Purpose: read-only</p>
               <p className="jv-connection-meta">
-                Balances are cached provider balances. Automatic updates are not enabled yet.
+                Balances are cached provider balances. Automatic read-only syncing runs once
+                daily; exact timing may vary within the scheduled hour. Use Sync now for an
+                immediate update.
               </p>
 
               {connections.map((connection) => (
