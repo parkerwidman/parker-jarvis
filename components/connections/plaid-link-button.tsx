@@ -51,7 +51,15 @@ export function PlaidLinkButton({
         };
 
         if (!response.ok || !payload.ok) {
-          setActionError(connectErrorMessage);
+          const diagnosticCode =
+            typeof payload.error === "string" && payload.error.length > 0
+              ? payload.error
+              : null;
+          setActionError(
+            diagnosticCode
+              ? `${connectErrorMessage} (${diagnosticCode})`
+              : connectErrorMessage,
+          );
           return;
         }
 

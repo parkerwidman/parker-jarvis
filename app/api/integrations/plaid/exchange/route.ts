@@ -10,24 +10,36 @@ import {
   savePlaidConnectedConnection,
 } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
 import { connectionMatchesRuntimeEnvironment } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
-import { PlaidSafeError } from "@/lib/jarvis/integrations/plaid/plaid-types";
+import {
+  exchangeFailureHttpStatus,
+  hasExchangeEncryptionKeyConfigured,
+  logPlaidExchangeDiagnostic,
+  resolvePlaidExchangeFailure,
+} from "@/lib/jarvis/integrations/plaid/plaid-exchange-errors";
+import { parseExchangePublicToken } from "@/lib/jarvis/integrations/plaid/plaid-exchange-payload";
 import { NextRequest, NextResponse } from "next/server";
-
-const MAX_PUBLIC_TOKEN_LENGTH = 512;
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
   if (error || !data?.claims) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    logPlaidExchangeDiagnostic({
+      code: "unauthenticated",
+      clientError: "unauthenticated",
+    });
+    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
   }
 
   const userId =
     typeof data.claims.sub === "string" ? data.claims.sub : null;
 
   if (!userId) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+    logPlaidExchangeDiagnostic({
+      code: "unauthenticated",
+      clientError: "unauthenticated",
+    });
+    return NextResponse.json({ ok: false, error: "unauthenticated" }, { status: 401 });
   }
 
   let body: unknown;
@@ -35,32 +47,34 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
+    logPlaidExchangeDiagnostic({
+      code: "invalid_request",
+      clientError: "invalid_request",
+    });
     return NextResponse.json(
       { ok: false, error: "invalid_request" },
       { status: 400 },
     );
   }
 
-  const publicToken =
-    body &&
-    typeof body === "object" &&
-    "publicToken" in body &&
-    typeof (body as { publicToken: unknown }).publicToken === "string"
-      ? (body as { publicToken: string }).publicToken.trim()
-      : null;
+  const parsedPublicToken = parseExchangePublicToken(body);
 
-  if (
-    !publicToken ||
-    publicToken.length === 0 ||
-    publicToken.length > MAX_PUBLIC_TOKEN_LENGTH
-  ) {
+  if (!parsedPublicToken) {
+    logPlaidExchangeDiagnostic({
+      code: "invalid_public_token_payload",
+      clientError: "invalid_public_token_payload",
+    });
     return NextResponse.json(
-      { ok: false, error: "invalid_request" },
+      { ok: false, error: "invalid_public_token_payload" },
       { status: 400 },
     );
   }
 
+  const { publicToken } = parsedPublicToken;
   let exchangedItemId: string | null = null;
+  const exchangeFailureContext = {
+    encryptionKeyConfigured: hasExchangeEncryptionKeyConfigured(),
+  };
 
   try {
     const { accessToken, itemId } = await exchangePublicToken(publicToken);
@@ -68,13 +82,21 @@ export async function POST(request: NextRequest) {
 
     const existingItem = await loadPlaidConnectionRowByItemId(supabase, itemId);
     if (existingItem && existingItem.user_id !== userId) {
+      logPlaidExchangeDiagnostic({
+        code: "duplicate_connection",
+        clientError: "duplicate_connection",
+      });
       return NextResponse.json(
-        { ok: false, error: "exchange_failed" },
+        { ok: false, error: "duplicate_connection" },
         { status: 409 },
       );
     }
 
     if (existingItem && !connectionMatchesRuntimeEnvironment(existingItem)) {
+      logPlaidExchangeDiagnostic({
+        code: "exchange_failed",
+        clientError: "exchange_failed",
+      });
       return NextResponse.json(
         { ok: false, error: "exchange_failed" },
         { status: 400 },
@@ -101,8 +123,8 @@ export async function POST(request: NextRequest) {
       connection,
     });
   } catch (caught) {
-    const code =
-      caught instanceof PlaidSafeError ? caught.code : "exchange_failed";
+    const failure = resolvePlaidExchangeFailure(caught, exchangeFailureContext);
+    logPlaidExchangeDiagnostic(failure);
 
     if (exchangedItemId) {
       try {
@@ -120,7 +142,7 @@ export async function POST(request: NextRequest) {
             supabase,
             userId,
             exchangedItemId,
-            code,
+            failure.code,
           );
         }
       } catch {
@@ -129,8 +151,8 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { ok: false, error: code },
-      { status: 400 },
+      { ok: false, error: failure.clientError },
+      { status: exchangeFailureHttpStatus(failure.code) },
     );
   }
 }

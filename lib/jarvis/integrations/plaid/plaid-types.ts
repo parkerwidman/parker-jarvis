@@ -93,6 +93,20 @@ export type PlaidLinkTokenDiagnosticCode =
   | "plaid_request_failed"
   | "connection_failed";
 
+export type PlaidExchangeDiagnosticCode =
+  | "unauthenticated"
+  | "invalid_request"
+  | "invalid_public_token_payload"
+  | "invalid_runtime_environment"
+  | "missing_server_configuration"
+  | "token_encryption_configuration_failed"
+  | "plaid_client_initialization_failed"
+  | "duplicate_connection"
+  | "plaid_api_error"
+  | "plaid_network_failed"
+  | "connection_persistence_failed"
+  | "exchange_failed";
+
 export type PlaidSyncStatus = "success" | "reconnect_required" | "error";
 
 export type PlaidConnectionSyncResult = {
