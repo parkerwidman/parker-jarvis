@@ -2693,6 +2693,27 @@ body {
   max-width: 56rem;
 }
 
+.app-main--briefings {
+  min-height: 0;
+}
+
+.jv-page-content--briefings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  max-width: 56rem;
+}
+
+.jv-page-content--briefings .jv-card--briefings {
+  flex: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.jv-page-content--briefings .jv-markdown-p {
+  overflow-wrap: anywhere;
+}
+
 .jv-page-content--assistant {
   flex: 1;
   min-height: 0;

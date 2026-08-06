@@ -2,7 +2,6 @@ import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
 import {
   JarvisAlert,
-  JarvisButton,
   JarvisCard,
   JarvisEmptyState,
   JarvisMarkdownContent,
@@ -13,6 +12,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { generateMorningBriefAction } from "./actions";
+import { GenerateBriefButton } from "./generate-brief-button";
 
 type MorningBriefingRow = {
   id: string;
@@ -73,7 +73,13 @@ function briefingStatusLabel(status: string | undefined): string {
   }
 }
 
-export default async function BriefingsPage() {
+export default async function BriefingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ generated?: string; error?: string }>;
+}) {
+  const { generated, error: queryError } = await searchParams;
+
   const supabase = await createClient();
   const { data: authData, error: authError } = await supabase.auth.getClaims();
 
@@ -117,20 +123,26 @@ export default async function BriefingsPage() {
   const hasTodayBriefing = todayBriefing !== undefined;
 
   return (
-    <JarvisAppShell>
-      <JarvisPageContent className="jv-page-content--scroll">
+    <JarvisAppShell mainClassName="app-main--briefings">
+      <JarvisPageContent className="jv-page-content--briefings">
         <JarvisPageHeader
           title="Morning Brief"
           subtitle="Your schedule, priorities, email, tasks, goals, and Melusi projects in one place."
         />
 
+        {generated === "1" ? (
+          <JarvisAlert variant="success">Morning brief generated.</JarvisAlert>
+        ) : null}
+
+        {queryError === "1" ? (
+          <JarvisAlert variant="error">
+            Jarvis could not generate the morning brief.
+          </JarvisAlert>
+        ) : null}
+
         <div className="jv-action-row">
           <form action={generateMorningBriefAction} className="jv-action-form">
-            <JarvisButton type="submit" className="jv-btn--block">
-              {hasTodayBriefing
-                ? "Regenerate today's brief"
-                : "Generate morning brief"}
-            </JarvisButton>
+            <GenerateBriefButton hasTodayBriefing={hasTodayBriefing} />
           </form>
           {todayBriefing ? (
             <span className={statusBadgeClass(todayBriefing.status)}>
@@ -156,7 +168,7 @@ export default async function BriefingsPage() {
         ) : null}
 
         {mostRecentCompleted?.content ? (
-          <JarvisCard title="Current brief" accent="blue" scroll>
+          <JarvisCard title="Current brief" accent="blue" className="jv-card--briefings">
             <div className="jv-meta-row">
               <span>{formatBriefingDate(mostRecentCompleted.briefing_date)}</span>
               {mostRecentCompleted.generated_at ? (

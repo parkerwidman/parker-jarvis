@@ -20,9 +20,14 @@ export async function generateMorningBriefAction() {
     redirect("/login");
   }
 
-  await generateMorningBrief(supabase, userId);
+  const result = await generateMorningBrief(supabase, userId);
 
   revalidatePath("/briefings");
   revalidatePath("/");
-  redirect("/briefings");
+
+  if (result.success) {
+    redirect("/briefings?generated=1");
+  }
+
+  redirect("/briefings?error=1");
 }
