@@ -14,6 +14,7 @@ import type { FinanceCommandCenterData } from "@/lib/jarvis/finance/load-finance
 type FinanceCommandCenterProps = {
   data: FinanceCommandCenterData | null;
   loadError: string | null;
+  pendingPlaidReviewCount?: number;
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -181,9 +182,11 @@ function personalOrBusinessLabel(value: FinancePersonalOrBusiness): string {
 function FinanceHeader({
   currentMonthLabel,
   excludeBusinessFromPersonal,
+  pendingPlaidReviewCount = 0,
 }: {
   currentMonthLabel: string;
   excludeBusinessFromPersonal: boolean;
+  pendingPlaidReviewCount?: number;
 }) {
   return (
     <header className="finance-dash-header">
@@ -199,9 +202,17 @@ function FinanceHeader({
             : null}
         </p>
       </div>
-      <Link href="/connections/plaid" className="finance-dash-manage-link">
-        Manage connections
-      </Link>
+      <div className="finance-dash-header-links">
+        <Link href="/finance/plaid-review" className="finance-dash-manage-link">
+          Review Plaid matches
+          {pendingPlaidReviewCount > 0 ? (
+            <span className="jv-section-count">{pendingPlaidReviewCount}</span>
+          ) : null}
+        </Link>
+        <Link href="/connections/plaid" className="finance-dash-manage-link">
+          Manage connections
+        </Link>
+      </div>
     </header>
   );
 }
@@ -581,13 +592,18 @@ function FinanceTransactionsSection({
   );
 }
 
-export function FinanceCommandCenter({ data, loadError }: FinanceCommandCenterProps) {
+export function FinanceCommandCenter({
+  data,
+  loadError,
+  pendingPlaidReviewCount = 0,
+}: FinanceCommandCenterProps) {
   if (loadError) {
     return (
       <div className="finance-dash-layout">
         <FinanceHeader
           currentMonthLabel="Finance overview"
           excludeBusinessFromPersonal={false}
+          pendingPlaidReviewCount={pendingPlaidReviewCount}
         />
         <JarvisAlert variant="error">
           Could not load your finance dashboard. {loadError}
@@ -605,6 +621,7 @@ export function FinanceCommandCenter({ data, loadError }: FinanceCommandCenterPr
       <FinanceHeader
         currentMonthLabel={data.currentMonthLabel}
         excludeBusinessFromPersonal={data.excludeBusinessFromPersonal}
+        pendingPlaidReviewCount={pendingPlaidReviewCount}
       />
 
       <FinanceSnapshotHero data={data} />

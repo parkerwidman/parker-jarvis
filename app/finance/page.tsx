@@ -3,6 +3,7 @@ import { CommandCenterContextLayout } from "@/components/jarvis/command-center-c
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisPageContent } from "@/components/jarvis/jarvis-ui";
 import { loadFinanceCommandCenter } from "@/lib/jarvis/finance/load-finance-command-center";
+import { loadPlaidTransactionMatchReviewPendingCount } from "@/lib/jarvis/integrations/plaid/load-plaid-transaction-match-review";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -21,7 +22,10 @@ export default async function FinancePage() {
     redirect("/login");
   }
 
-  const result = await loadFinanceCommandCenter(supabase, userId);
+  const [result, pendingPlaidReviewCount] = await Promise.all([
+    loadFinanceCommandCenter(supabase, userId),
+    loadPlaidTransactionMatchReviewPendingCount(supabase, userId),
+  ]);
 
   return (
     <JarvisAppShell mainClassName="app-main--command-center">
@@ -30,6 +34,7 @@ export default async function FinancePage() {
           <FinanceCommandCenter
             data={result.success ? result.data : null}
             loadError={result.success ? null : result.error}
+            pendingPlaidReviewCount={pendingPlaidReviewCount}
           />
         </CommandCenterContextLayout>
       </JarvisPageContent>

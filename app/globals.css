@@ -6045,6 +6045,18 @@ body {
   outline-offset: 2px;
 }
 
+.finance-dash-header-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.finance-dash-manage-link .jv-section-count {
+  margin-left: 0.125rem;
+}
+
 .finance-snapshot {
   display: flex;
   flex-direction: column;
@@ -6917,4 +6929,139 @@ body {
 
 .melusi-expenses-import-section > .melusi-expenses {
   padding: 0 1rem 1rem;
+}
+
+.finance-plaid-review-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.finance-plaid-review-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.finance-plaid-review-section-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.finance-plaid-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.finance-plaid-review-summary,
+.finance-plaid-review-pause,
+.finance-plaid-review-candidates,
+.finance-plaid-review-import {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.finance-plaid-review-subtitle {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.finance-plaid-review-meta,
+.finance-plaid-review-copy {
+  font-size: 0.8125rem;
+  color: var(--navy-muted);
+}
+
+.finance-plaid-review-warning {
+  font-size: 0.8125rem;
+  color: var(--amber-warning);
+}
+
+.finance-plaid-review-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--navy-border);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.finance-plaid-review-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.finance-plaid-review-reasons li {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cyan-accent);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 9999px;
+}
+
+.finance-plaid-review-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.finance-plaid-review-history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--navy-border);
+  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.25);
+}
+
+.finance-plaid-review-history-outcome {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+  text-align: right;
+}
+
+.finance-plaid-review-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(6, 10, 18, 0.72);
+}
+
+.finance-plaid-review-confirm-overlay .jv-card {
+  width: min(100%, 32rem);
+}
+
+.finance-plaid-review-confirm-checkbox {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+  font-size: 0.8125rem;
+  color: var(--foreground);
+}
+
+.finance-plaid-review-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }

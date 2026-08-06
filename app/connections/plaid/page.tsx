@@ -9,12 +9,14 @@ import {
   JarvisPageContent,
 } from "@/components/jarvis/jarvis-ui";
 import { loadSafePlaidConnections } from "@/lib/jarvis/integrations/plaid/plaid-connection-tools";
+import { loadPlaidTransactionMatchReviewPendingCount } from "@/lib/jarvis/integrations/plaid/load-plaid-transaction-match-review";
 import { getCurrentPlaidRuntimeEnvironment } from "@/lib/jarvis/integrations/plaid/plaid-environment-guard";
 import type {
   PlaidEnvironment,
   PlaidSafeConnectionSummary,
 } from "@/lib/jarvis/integrations/plaid/plaid-types";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 function isSandboxEnvironment(environment: PlaidEnvironment): boolean {
@@ -171,7 +173,10 @@ export default async function PlaidConnectionPage() {
     redirect("/login");
   }
 
-  const connections = await loadSafePlaidConnections(supabase, userId);
+  const [connections, pendingPlaidReviewCount] = await Promise.all([
+    loadSafePlaidConnections(supabase, userId),
+    loadPlaidTransactionMatchReviewPendingCount(supabase, userId),
+  ]);
   const runtimeEnvironment = getCurrentPlaidRuntimeEnvironment();
   const pageSubtitle = getPageSubtitle(runtimeEnvironment);
   const connectButtonLabel = getConnectButtonLabel(runtimeEnvironment);
@@ -193,6 +198,14 @@ export default async function PlaidConnectionPage() {
         <JarvisPageHeader
           title="Plaid — Personal Finance"
           subtitle={pageSubtitle}
+          meta={
+            <Link href="/finance/plaid-review" className="finance-dash-manage-link">
+              Review transaction matches
+              {pendingPlaidReviewCount > 0 ? (
+                <span className="jv-section-count">{pendingPlaidReviewCount}</span>
+              ) : null}
+            </Link>
+          }
         />
 
         <JarvisCard title="Connection status" accent="green">
