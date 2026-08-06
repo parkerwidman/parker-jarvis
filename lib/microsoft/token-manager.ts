@@ -3,7 +3,12 @@ import "server-only";
 import { decryptToken, encryptToken } from "@/lib/microsoft/encryption";
 import {
   grantedScopesIncludeMailSend,
+  isGrantedScopesUnknown,
+  MICROSOFT_MAIL_SEND_SCOPE,
   MICROSOFT_SCOPES_STRING,
+  resolveMailSendPermissionState,
+  scopesWithoutMailSend,
+  type MailSendPermissionState,
 } from "@/lib/microsoft/scopes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -210,17 +215,62 @@ export async function getMicrosoftGrantedScopes(
     .eq("user_id", userId)
     .maybeSingle();
 
-  if (error || !data?.granted_scopes) {
+  if (error || !data || data.granted_scopes === undefined || data.granted_scopes === null) {
     return null;
   }
 
   return data.granted_scopes;
 }
 
+export async function getMailSendPermissionState(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<MailSendPermissionState> {
+  const scopes = await getMicrosoftGrantedScopes(supabase, userId);
+  return resolveMailSendPermissionState(scopes);
+}
+
 export async function userHasMailSendPermission(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<boolean> {
+  const state = await getMailSendPermissionState(supabase, userId);
+  return state === "granted";
+}
+
+export async function recordMailSendVerified(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
   const scopes = await getMicrosoftGrantedScopes(supabase, userId);
-  return scopes ? grantedScopesIncludeMailSend(scopes) : false;
+
+  if (scopes && grantedScopesIncludeMailSend(scopes)) {
+    return;
+  }
+
+  const nextScopes =
+    scopes && !isGrantedScopesUnknown(scopes)
+      ? `${scopes} ${MICROSOFT_MAIL_SEND_SCOPE}`.trim()
+      : MICROSOFT_MAIL_SEND_SCOPE;
+
+  await supabase
+    .from("microsoft_connections")
+    .update({ granted_scopes: nextScopes })
+    .eq("user_id", userId);
+}
+
+export async function recordMailSendMissing(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const scopes = await getMicrosoftGrantedScopes(supabase, userId);
+
+  if (scopes && !isGrantedScopesUnknown(scopes) && !grantedScopesIncludeMailSend(scopes)) {
+    return;
+  }
+
+  await supabase
+    .from("microsoft_connections")
+    .update({ granted_scopes: scopesWithoutMailSend() })
+    .eq("user_id", userId);
 }

@@ -1,10 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
-import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
-import { MICROSOFT_SCOPES_STRING } from "@/lib/microsoft/scopes";
-
-const MICROSOFT_SCOPES = MICROSOFT_SCOPES_STRING;
+import {
+  buildMicrosoftAuthorizeUrl,
+  generateMicrosoftOAuthNonce,
+  isAllowedMicrosoftOAuthReturnPath,
+  microsoftConnectionsResultUrl,
+  MICROSOFT_OAUTH_RESULT,
+  parseMicrosoftConnectMode,
+  setMicrosoftOAuthStateCookie,
+} from "@/lib/microsoft/oauth-state";
 
 function getOAuthConfig() {
   const tenantId = process.env.MICROSOFT_TENANT_ID;
@@ -20,11 +25,25 @@ function getOAuthConfig() {
 
 export async function GET(request: NextRequest) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? request.nextUrl.origin;
+  const returnPath = request.nextUrl.searchParams.get("return");
+
+  if (returnPath && !isAllowedMicrosoftOAuthReturnPath(returnPath)) {
+    return NextResponse.redirect(
+      microsoftConnectionsResultUrl(baseUrl, MICROSOFT_OAUTH_RESULT.connectionFailed),
+    );
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
 
   if (error || !data?.claims) {
+    return NextResponse.redirect(new URL("/login", baseUrl));
+  }
+
+  const userId =
+    typeof data.claims.sub === "string" ? data.claims.sub : null;
+
+  if (!userId) {
     return NextResponse.redirect(new URL("/login", baseUrl));
   }
 
@@ -34,29 +53,26 @@ export async function GET(request: NextRequest) {
     config = getOAuthConfig();
   } catch {
     return NextResponse.redirect(
-      new URL("/connections/microsoft?error=connection_failed", baseUrl),
+      microsoftConnectionsResultUrl(baseUrl, MICROSOFT_OAUTH_RESULT.connectionFailed),
     );
   }
 
-  const state = randomBytes(32).toString("base64url");
-  const authUrl = new URL(
-    `https://login.microsoftonline.com/${config.tenantId}/oauth2/v2.0/authorize`,
-  );
-
-  authUrl.searchParams.set("client_id", config.clientId);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("redirect_uri", config.redirectUri);
-  authUrl.searchParams.set("response_mode", "query");
-  authUrl.searchParams.set("scope", MICROSOFT_SCOPES);
-  authUrl.searchParams.set("state", state);
+  const mode = parseMicrosoftConnectMode(request.nextUrl.searchParams);
+  const state = generateMicrosoftOAuthNonce();
+  const authUrl = buildMicrosoftAuthorizeUrl({
+    tenantId: config.tenantId,
+    clientId: config.clientId,
+    redirectUri: config.redirectUri,
+    state,
+    mode,
+  });
 
   const response = NextResponse.redirect(authUrl);
-  response.cookies.set("microsoft_oauth_state", state, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 600,
+  setMicrosoftOAuthStateCookie(response, {
+    state,
+    userId,
+    mode,
+    issuedAt: Date.now(),
   });
 
   return response;

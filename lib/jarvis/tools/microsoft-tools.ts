@@ -1,6 +1,14 @@
-import { microsoftGraphGet, microsoftGraphPost } from "@/lib/microsoft/graph-client";
+import {
+  microsoftGraphGet,
+  microsoftGraphPost,
+  microsoftGraphPostDetailed,
+} from "@/lib/microsoft/graph-client";
 import { MICROSOFT_MAIL_SEND_SCOPE } from "@/lib/microsoft/scopes";
-import { userHasMailSendPermission } from "@/lib/microsoft/token-manager";
+import {
+  getMailSendPermissionState,
+  recordMailSendMissing,
+  recordMailSendVerified,
+} from "@/lib/microsoft/token-manager";
 import type { ValidatedDirectCalendarEventPayload } from "@/lib/jarvis/action-requests/direct-calendar-action-payload";
 import type { ValidatedEmailSendPayload } from "@/lib/jarvis/action-requests/email-send-action-payload";
 import type { ValidatedReminderPayload } from "@/lib/jarvis/action-requests/reminder-action-payload";
@@ -878,9 +886,9 @@ export async function sendOutlookEmail(
     payload: ValidatedEmailSendPayload;
   },
 ): Promise<SendOutlookEmailResult> {
-  const hasMailSend = await userHasMailSendPermission(supabase, userId);
+  const mailSendState = await getMailSendPermissionState(supabase, userId);
 
-  if (!hasMailSend) {
+  if (mailSendState === "missing") {
     return {
       success: false,
       microsoftPermissionRequired: true,
@@ -888,6 +896,8 @@ export async function sendOutlookEmail(
       error: "Microsoft Mail.Send permission is required.",
     };
   }
+
+  const useDetailedSend = mailSendState === "unknown";
 
   if (input.payload.draftKey) {
     const draft = await resolveOutlookDraftReference(
@@ -900,11 +910,25 @@ export async function sendOutlookEmail(
       return { success: false, error: "Could not send Outlook email." };
     }
 
-    const sendResult = await microsoftGraphPost(
-      supabase,
-      userId,
-      `/v1.0/me/messages/${encodeURIComponent(draft.reference.graph_message_id)}/send`,
-    );
+    const sendPath = `/v1.0/me/messages/${encodeURIComponent(draft.reference.graph_message_id)}/send`;
+
+    if (useDetailedSend) {
+      const sendResult = await microsoftGraphPostDetailed(
+        supabase,
+        userId,
+        sendPath,
+      );
+
+      return finalizeUnknownStateSendResult(supabase, userId, sendResult, async () => {
+        await markOutlookDraftReferenceSent(
+          supabase,
+          userId,
+          input.payload.draftKey!,
+        );
+      });
+    }
+
+    const sendResult = await microsoftGraphPost(supabase, userId, sendPath);
 
     const graphError = mapGraphResult(sendResult);
 
@@ -939,6 +963,17 @@ export async function sendOutlookEmail(
     saveToSentItems: true,
   };
 
+  if (useDetailedSend) {
+    const graphResult = await microsoftGraphPostDetailed(
+      supabase,
+      userId,
+      "/v1.0/me/sendMail",
+      messageBody,
+    );
+
+    return finalizeUnknownStateSendResult(supabase, userId, graphResult);
+  }
+
   const graphResult = await microsoftGraphPost(
     supabase,
     userId,
@@ -957,4 +992,52 @@ export async function sendOutlookEmail(
   }
 
   return { success: true };
+}
+
+async function finalizeUnknownStateSendResult(
+  supabase: SupabaseClient,
+  userId: string,
+  result:
+    | { success: true; data: unknown }
+    | { success: false; needsConnection: true }
+    | { success: false; needsReconnect: true }
+    | { success: false; error: string; failureKind: string },
+  onSuccess?: () => Promise<void>,
+): Promise<SendOutlookEmailResult> {
+  if (result.success) {
+    await recordMailSendVerified(supabase, userId);
+
+    if (onSuccess) {
+      await onSuccess();
+    }
+
+    return { success: true };
+  }
+
+  if ("needsConnection" in result) {
+    return { success: false, needsConnection: true };
+  }
+
+  if ("needsReconnect" in result) {
+    return { success: false, needsReconnect: true };
+  }
+
+  if ("failureKind" in result) {
+    if (result.failureKind === "permission_denied") {
+      await recordMailSendMissing(supabase, userId);
+
+      return {
+        success: false,
+        microsoftPermissionRequired: true,
+        requiredPermission: MICROSOFT_MAIL_SEND_SCOPE,
+        error: "Microsoft Mail.Send permission is required.",
+      };
+    }
+
+    if (result.failureKind === "ambiguous") {
+      return { success: false, outcome: "uncertain" };
+    }
+  }
+
+  return { success: false, error: "Could not send Outlook email." };
 }

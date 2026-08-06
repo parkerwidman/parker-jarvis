@@ -28,7 +28,7 @@ import {
 import { validateDirectCalendarEventPayload } from "@/lib/jarvis/action-requests/direct-calendar-action-payload";
 import { validateEmailSendPayload } from "@/lib/jarvis/action-requests/email-send-action-payload";
 import { validateReminderPayload } from "@/lib/jarvis/action-requests/reminder-action-payload";
-import { grantedScopesIncludeMailSend } from "@/lib/microsoft/scopes";
+import { grantedScopesIncludeMailSend, resolveMailSendPermissionState } from "@/lib/microsoft/scopes";
 import {
   executeDirectCreateCalendarEvent,
   executeDirectCreateReminder,
@@ -510,6 +510,26 @@ describe("low-friction personal productivity actions", () => {
     expect(grantedScopesIncludeMailSend("Mail.ReadWrite Mail.Send Calendars.ReadWrite")).toBe(
       true,
     );
+    expect(resolveMailSendPermissionState("")).toBe("unknown");
+  });
+
+  it("allows unknown Mail.Send permission to reach sendOutlookEmail once", async () => {
+    vi.mocked(sendOutlookEmail).mockResolvedValue({ success: true });
+
+    const supabase = buildAutoExecuteSupabase();
+    const result = await executeDirectSendEmail(
+      supabase as never,
+      USER_A,
+      MAIN_CONTEXT,
+      {
+        to: ["a@example.com"],
+        subject: "Hello",
+        body: "Body",
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(sendOutlookEmail).toHaveBeenCalledTimes(1);
   });
 
   it("blocks direct write tools outside interactive main execution", async () => {

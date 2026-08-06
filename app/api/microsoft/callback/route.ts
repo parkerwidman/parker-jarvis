@@ -1,14 +1,24 @@
 import { encryptToken } from "@/lib/microsoft/encryption";
+import {
+  clearMicrosoftOAuthStateCookie,
+  decodeMicrosoftOAuthStateCookie,
+  isMicrosoftOAuthStateExpired,
+  microsoftConnectionsResultUrl,
+  microsoftOAuthStatesMatch,
+  MICROSOFT_OAUTH_RESULT,
+  MICROSOFT_OAUTH_STATE_COOKIE,
+  resolvePersistedGrantedScopes,
+  resolveReconnectSuccessResult,
+} from "@/lib/microsoft/oauth-state";
+import {
+  MICROSOFT_SCOPES_STRING,
+  resolveMailSendPermissionState,
+} from "@/lib/microsoft/scopes";
 import { createClient } from "@/lib/supabase/server";
-import { timingSafeEqual } from "crypto";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
-import { MICROSOFT_SCOPES_STRING } from "@/lib/microsoft/scopes";
-
 const MICROSOFT_SCOPES = MICROSOFT_SCOPES_STRING;
-
-const STATE_COOKIE = "microsoft_oauth_state";
 
 function getBaseUrl(request: NextRequest): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? request.nextUrl.origin;
@@ -27,32 +37,14 @@ function getOAuthConfig() {
   return { tenantId, clientId, clientSecret, redirectUri };
 }
 
-function statesMatch(expected: string, received: string): boolean {
-  const expectedBuffer = Buffer.from(expected);
-  const receivedBuffer = Buffer.from(received);
-
-  if (expectedBuffer.length !== receivedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(expectedBuffer, receivedBuffer);
-}
-
-function clearStateCookie(response: NextResponse): void {
-  response.cookies.set(STATE_COOKIE, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 0,
-  });
-}
-
-function connectionFailedRedirect(request: NextRequest): NextResponse {
+function redirectWithResult(
+  request: NextRequest,
+  result: (typeof MICROSOFT_OAUTH_RESULT)[keyof typeof MICROSOFT_OAUTH_RESULT] | "microsoft_connected",
+): NextResponse {
   const response = NextResponse.redirect(
-    new URL("/connections/microsoft?error=connection_failed", getBaseUrl(request)),
+    microsoftConnectionsResultUrl(getBaseUrl(request), result),
   );
-  clearStateCookie(response);
+  clearMicrosoftOAuthStateCookie(response);
   return response;
 }
 
@@ -90,16 +82,25 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code");
   const returnedState = searchParams.get("state");
   const cookieStore = await cookies();
-  const cookieState = cookieStore.get(STATE_COOKIE)?.value;
+  const cookieValue = cookieStore.get(MICROSOFT_OAUTH_STATE_COOKIE)?.value;
+  const pendingState = cookieValue
+    ? decodeMicrosoftOAuthStateCookie(cookieValue)
+    : null;
+
+  if (oauthError === "access_denied") {
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.consentCancelled);
+  }
 
   if (
     oauthError ||
     !code ||
     !returnedState ||
-    !cookieState ||
-    !statesMatch(cookieState, returnedState)
+    !pendingState ||
+    !microsoftOAuthStatesMatch(pendingState.state, returnedState) ||
+    pendingState.userId !== userId ||
+    isMicrosoftOAuthStateExpired(pendingState.issuedAt)
   ) {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.invalidOAuthState);
   }
 
   let config;
@@ -107,8 +108,14 @@ export async function GET(request: NextRequest) {
   try {
     config = getOAuthConfig();
   } catch {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
+
+  const { data: existingConnection } = await supabase
+    .from("microsoft_connections")
+    .select("granted_scopes")
+    .eq("user_id", userId)
+    .maybeSingle();
 
   let tokenResponse: MicrosoftTokenResponse;
 
@@ -132,12 +139,12 @@ export async function GET(request: NextRequest) {
     });
 
     if (!tokenResult.ok) {
-      return connectionFailedRedirect(request);
+      return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
     }
 
     tokenResponse = (await tokenResult.json()) as MicrosoftTokenResponse;
   } catch {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
 
   const { access_token, refresh_token, expires_in, scope } = tokenResponse;
@@ -147,7 +154,7 @@ export async function GET(request: NextRequest) {
     typeof refresh_token !== "string" ||
     typeof expires_in !== "number"
   ) {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
 
   let profile: MicrosoftProfile;
@@ -163,16 +170,16 @@ export async function GET(request: NextRequest) {
     );
 
     if (!profileResult.ok) {
-      return connectionFailedRedirect(request);
+      return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
     }
 
     profile = (await profileResult.json()) as MicrosoftProfile;
   } catch {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
 
   if (typeof profile.id !== "string") {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
 
   const email =
@@ -192,14 +199,18 @@ export async function GET(request: NextRequest) {
     accessTokenEncrypted = encryptToken(access_token);
     refreshTokenEncrypted = encryptToken(refresh_token);
   } catch {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
 
   const accessTokenExpiresAt = new Date(
     Date.now() + expires_in * 1000,
   ).toISOString();
-  const grantedScopes =
-    typeof scope === "string" && scope.length > 0 ? scope : MICROSOFT_SCOPES;
+  const grantedScopes = resolvePersistedGrantedScopes({
+    tokenScope: scope,
+    existingGrantedScopes: existingConnection?.granted_scopes ?? null,
+    mode: pendingState.mode,
+  });
+  const mailSendState = resolveMailSendPermissionState(grantedScopes);
 
   const { error: upsertError } = await supabase.from("microsoft_connections").upsert(
     {
@@ -218,12 +229,13 @@ export async function GET(request: NextRequest) {
   );
 
   if (upsertError) {
-    return connectionFailedRedirect(request);
+    return redirectWithResult(request, MICROSOFT_OAUTH_RESULT.connectionFailed);
   }
 
-  const response = NextResponse.redirect(
-    new URL("/connections/microsoft?connected=true", getBaseUrl(request)),
-  );
-  clearStateCookie(response);
-  return response;
+  const successResult =
+    pendingState.mode === "reconnect"
+      ? resolveReconnectSuccessResult(mailSendState)
+      : "microsoft_connected";
+
+  return redirectWithResult(request, successResult);
 }

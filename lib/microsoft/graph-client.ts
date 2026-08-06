@@ -1,6 +1,10 @@
 import "server-only";
 
 import {
+  classifyGraphSendFailure,
+  type GraphSendFailureKind,
+} from "@/lib/microsoft/graph-errors";
+import {
   getValidMicrosoftAccessToken,
   type MicrosoftAccessTokenResult,
 } from "@/lib/microsoft/token-manager";
@@ -13,6 +17,12 @@ export type MicrosoftGraphResult =
   | { success: false; needsConnection: true }
   | { success: false; needsReconnect: true }
   | { success: false; error: string };
+
+export type MicrosoftGraphDetailedResult =
+  | { success: true; data: unknown }
+  | { success: false; needsConnection: true }
+  | { success: false; needsReconnect: true }
+  | { success: false; error: string; failureKind: GraphSendFailureKind };
 
 function isValidGraphPath(path: string): boolean {
   if (!path.startsWith("/v1.0/")) {
@@ -99,6 +109,106 @@ async function graphFetchWithMethod(
   }
 
   return { ok: response.ok, status: response.status, data };
+}
+
+async function executeGraphRequestDetailed(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string,
+  fetchFn: (accessToken: string) => Promise<{
+    ok: boolean;
+    status: number;
+    data: unknown;
+  }>,
+): Promise<MicrosoftGraphDetailedResult> {
+  if (!isValidGraphPath(path)) {
+    return { success: false, error: "Invalid Microsoft Graph path.", failureKind: "generic" };
+  }
+
+  const tokenResult = await getValidMicrosoftAccessToken(supabase, userId);
+
+  const tokenError = mapTokenResult(tokenResult);
+  if (tokenError) {
+    if ("needsConnection" in tokenError) {
+      return { success: false, needsConnection: true };
+    }
+
+    if ("needsReconnect" in tokenError) {
+      return { success: false, needsReconnect: true };
+    }
+
+    return {
+      success: false,
+      error: "error" in tokenError ? tokenError.error : "Could not obtain Microsoft access token.",
+      failureKind: "generic",
+    };
+  }
+
+  if (!tokenResult.success) {
+    return {
+      success: false,
+      error: "Could not obtain Microsoft access token.",
+      failureKind: "generic",
+    };
+  }
+
+  try {
+    let result = await fetchFn(tokenResult.accessToken);
+
+    if (result.status === 401) {
+      const refreshResult = await getValidMicrosoftAccessToken(
+        supabase,
+        userId,
+        true,
+      );
+
+      const refreshError = mapTokenResult(refreshResult);
+      if (refreshError) {
+        if ("needsConnection" in refreshError) {
+          return { success: false, needsConnection: true };
+        }
+
+        if ("needsReconnect" in refreshError) {
+          return { success: false, needsReconnect: true };
+        }
+
+        return {
+          success: false,
+          error:
+            "error" in refreshError
+              ? refreshError.error
+              : "Could not obtain Microsoft access token.",
+          failureKind: "generic",
+        };
+      }
+
+      if (!refreshResult.success) {
+        return {
+          success: false,
+          error: "Could not obtain Microsoft access token.",
+          failureKind: "generic",
+        };
+      }
+
+      result = await fetchFn(refreshResult.accessToken);
+    }
+
+    if (!result.ok) {
+      return {
+        success: false,
+        error: "Microsoft Graph request failed.",
+        failureKind: classifyGraphSendFailure(result.status, result.data),
+      };
+    }
+
+    return { success: true, data: result.data };
+  } catch {
+    return {
+      success: false,
+      error: "Microsoft Graph request failed.",
+      failureKind: "ambiguous",
+    };
+  }
 }
 
 async function executeGraphRequest(
@@ -215,6 +325,18 @@ export async function microsoftGraphGet(
   } catch {
     return { success: false, error: "Microsoft Graph request failed." };
   }
+}
+
+export async function microsoftGraphPostDetailed(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+): Promise<MicrosoftGraphDetailedResult> {
+  return executeGraphRequestDetailed(supabase, userId, path, (accessToken) =>
+    graphFetchWithMethod(path, accessToken, "POST", body, headers),
+  );
 }
 
 export async function microsoftGraphPost(
