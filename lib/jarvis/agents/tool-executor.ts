@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { JarvisContextTarget } from "@/lib/jarvis/context/types";
 import {
   proposeOutlookCalendarEvent,
+  proposeTask,
 } from "@/lib/jarvis/tools/action-request-tools";
 import {
   createGoal,
@@ -279,6 +280,16 @@ export async function executeJarvisTool(
             timeZone: String(args.timeZone ?? ""),
             locationName: nullableString(args.locationName),
             notes: nullableString(args.notes),
+          }),
+        );
+      case "propose_task":
+        return JSON.stringify(
+          await proposeTask(supabase, userId, {
+            title: String(args.title ?? ""),
+            description: nullableString(args.description),
+            priority: nullableString(args.priority),
+            dueDate: nullableString(args.dueDate),
+            context: nullableString(args.context),
           }),
         );
       case "get_melusi_social_performance":

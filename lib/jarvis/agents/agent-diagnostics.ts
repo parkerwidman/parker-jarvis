@@ -36,7 +36,7 @@ export function logToolCallDiagnostic(
   try {
     const parsed = JSON.parse(output) as Record<string, unknown>;
 
-    if (toolName === "propose_outlook_calendar_event") {
+    if (toolName === "propose_outlook_calendar_event" || toolName === "propose_task") {
       const payload: Record<string, unknown> = {
         round,
         toolName,
@@ -47,6 +47,9 @@ export function logToolCallDiagnostic(
       }
       if (typeof parsed.status === "string") {
         payload.actionRequestStatus = parsed.status;
+      }
+      if (typeof parsed.approvalRequired === "boolean") {
+        payload.approvalRequired = parsed.approvalRequired;
       }
 
       console.log("[Jarvis tool diagnostic]", payload);

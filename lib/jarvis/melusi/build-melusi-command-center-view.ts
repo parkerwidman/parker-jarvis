@@ -842,15 +842,22 @@ function buildAttentionItems(input: {
     });
   }
 
-  const highRiskApproval = input.approvals.find(
-    (approval) => approval.riskLevel === "high",
+  const approvalRequired = input.approvals.find(
+    (approval) => approval.riskLevel === "approval_required",
   );
 
-  if (highRiskApproval) {
+  if (approvalRequired) {
     items.push({
-      id: `approval-${highRiskApproval.id}`,
+      id: `approval-${approvalRequired.id}`,
       severity: "warning",
-      message: `Approval waiting: ${highRiskApproval.title}`,
+      message: `Approval waiting: ${approvalRequired.title}`,
+      href: "/approvals",
+    });
+  } else if (input.approvals.length > 0) {
+    items.push({
+      id: "approvals-pending",
+      severity: "informational",
+      message: `${input.approvals.length} approval${input.approvals.length === 1 ? "" : "s"} waiting for review`,
       href: "/approvals",
     });
   }

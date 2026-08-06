@@ -164,6 +164,7 @@ export async function createTask(
     title: string;
     priority?: string;
     dueDate?: string;
+    notes?: string;
     lifeAreaModuleKey?: string;
     projectId?: string;
     projectName?: string;
@@ -250,16 +251,23 @@ export async function createTask(
     life_area_id = lifeAreaResult.lifeAreaId;
   }
 
+  const notes = input.notes?.trim() ?? "";
+
   const insertRow: {
     title: string;
     priority: string;
     due_at: string | null;
+    notes?: string;
     life_area_id?: string;
   } = {
     title,
     priority,
     due_at,
   };
+
+  if (notes.length > 0) {
+    insertRow.notes = notes;
+  }
 
   if (life_area_id) {
     insertRow.life_area_id = life_area_id;

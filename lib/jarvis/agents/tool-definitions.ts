@@ -584,6 +584,45 @@ export const ACTION_REQUEST_TOOLS: OpenAI.Responses.Tool[] = [
     },
     strict: true,
   },
+  {
+    type: "function",
+    name: "propose_task",
+    description:
+      "Creates a pending approval request for a new task. It does not create the task until Parker approves it from the Approvals page. Use only when Parker clearly asks you to add or create a task.",
+    parameters: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "The task title, between 1 and 200 characters.",
+        },
+        description: {
+          type: ["string", "null"],
+          description:
+            "Optional task description. Pass null when not specified.",
+        },
+        priority: {
+          type: ["string", "null"],
+          enum: ["low", "medium", "high", null],
+          description:
+            "Task priority. Pass null when Parker did not specify; defaults to medium.",
+        },
+        dueDate: {
+          type: ["string", "null"],
+          description:
+            "Due date in YYYY-MM-DD format. Pass null when Parker did not specify a due date.",
+        },
+        context: {
+          type: ["string", "null"],
+          description:
+            "Optional plain-text context for why the task is being created. Pass null when not specified.",
+        },
+      },
+      required: ["title", "description", "priority", "dueDate", "context"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ];
 
 export const PERSONAL_FINANCE_TOOLS: OpenAI.Responses.Tool[] = [
@@ -752,6 +791,10 @@ const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {
   melusi_expenses: MELUSI_EXPENSE_TOOLS,
 };
 
+export const MAIN_TASK_TOOLS: OpenAI.Responses.Tool[] = TASK_TOOLS.filter(
+  (tool) => tool.type === "function" && tool.name !== "create_task",
+);
+
 export function getToolsForGroups(
   groups: readonly ToolCapabilityGroup[],
 ): OpenAI.Responses.Tool[] {
@@ -764,15 +807,15 @@ export function getToolsForGroups(
   return tools;
 }
 
-export const MAIN_JARVIS_TOOLS = getToolsForGroups([
-  "tasks",
-  "projects",
-  "memory",
-  "microsoft",
-  "action_requests",
-  "personal_finance",
-  "melusi_expenses",
-]);
+export const MAIN_JARVIS_TOOLS = [
+  ...MAIN_TASK_TOOLS,
+  ...PROJECT_TOOLS,
+  ...MEMORY_TOOLS,
+  ...MICROSOFT_TOOLS,
+  ...ACTION_REQUEST_TOOLS,
+  ...PERSONAL_FINANCE_TOOLS,
+  ...MELUSI_EXPENSE_TOOLS,
+];
 
 export const MELUSI_JARVIS_TOOLS = getToolsForGroups([
   "tasks",

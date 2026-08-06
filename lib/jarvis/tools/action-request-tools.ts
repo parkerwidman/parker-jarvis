@@ -1,10 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-const ISO8601_OFFSET_PATTERN = /[Zz]|[+-]\d{2}:\d{2}$|[+-]\d{4}$/;
-const MAX_EVENT_DURATION_MS = 24 * 60 * 60 * 1000;
-const MAX_SUBJECT_LENGTH = 250;
-const MAX_LOCATION_LENGTH = 500;
-const MAX_NOTES_LENGTH = 5000;
+import {
+  ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+  ACTION_TYPE_CREATE_TASK,
+  APPROVAL_REQUIRED_RISK_LEVEL,
+} from "@/lib/jarvis/action-requests/action-type-constants";
+import { findDuplicatePendingActionRequest, computeActionRequestExpiration } from "@/lib/jarvis/action-requests/action-request-dedup";
+import {
+  buildCalendarProposalSummary,
+  buildTaskProposalSummary,
+} from "@/lib/jarvis/action-requests/action-executor-registry";
+import {
+  normalizeCalendarPayloadForDedup,
+  validateCalendarEventPayload,
+} from "@/lib/jarvis/action-requests/calendar-action-payload";
+import {
+  normalizeTaskPayloadForDedup,
+  validateTaskProposalInput,
+} from "@/lib/jarvis/action-requests/task-action-payload";
+
+const ACTION_REQUEST_SELECT =
+  "id, action_type, status, risk_level, title, summary, expires_at, created_at, result, safe_error_message";
 
 const VALID_STATUSES = new Set([
   "pending",
@@ -15,9 +31,6 @@ const VALID_STATUSES = new Set([
   "failed",
   "expired",
 ]);
-
-const ACTION_REQUEST_SELECT =
-  "id, action_type, status, risk_level, title, summary, expires_at, created_at, result, safe_error_message";
 
 export type ActionRequestRecord = {
   id: string;
@@ -43,70 +56,21 @@ export type ProposeOutlookCalendarEventResult =
     }
   | { success: false; error: string };
 
+export type ProposeTaskResult =
+  | {
+      success: true;
+      status: "pending";
+      approvalRequired: true;
+      title: string;
+      summary: string;
+      expiresAt: string;
+      message: string;
+    }
+  | { success: false; error: string };
+
 export type ListActionRequestsResult =
   | { success: true; actionRequests: ActionRequestRecord[] }
   | { success: false; error: string };
-
-function isValidIso8601WithOffset(value: string): boolean {
-  if (!ISO8601_OFFSET_PATTERN.test(value)) {
-    return false;
-  }
-
-  const date = new Date(value);
-  return !Number.isNaN(date.getTime());
-}
-
-function isValidTimeZone(timeZone: string): boolean {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function formatLocalDateTime(isoString: string, timeZone: string): string {
-  const date = new Date(isoString);
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(date);
-}
-
-function normalizeOptionalString(value: string | null | undefined): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function buildCalendarEventSummary(input: {
-  subject: string;
-  startDateTime: string;
-  endDateTime: string;
-  timeZone: string;
-  locationName: string | null;
-}): string {
-  const localStart = formatLocalDateTime(input.startDateTime, input.timeZone);
-  const localEnd = formatLocalDateTime(input.endDateTime, input.timeZone);
-
-  let summary = `${input.subject} — ${localStart} to ${localEnd} (${input.timeZone})`;
-
-  if (input.locationName) {
-    summary += `. Location: ${input.locationName}`;
-  }
-
-  return summary;
-}
 
 export type DailyPlanCalendarSource = {
   dailyPlanId: string;
@@ -127,126 +91,60 @@ export async function proposeOutlookCalendarEvent(
     dailyPlanSource?: DailyPlanCalendarSource;
   },
 ): Promise<ProposeOutlookCalendarEventResult> {
-  const subject = input.subject.trim();
-
-  if (subject.length === 0) {
-    return { success: false, error: "Subject is required." };
-  }
-
-  if (subject.length > MAX_SUBJECT_LENGTH) {
-    return {
-      success: false,
-      error: `Subject cannot exceed ${MAX_SUBJECT_LENGTH} characters.`,
-    };
-  }
-
-  const { startDateTime, endDateTime, timeZone } = input;
-
-  if (!isValidIso8601WithOffset(startDateTime)) {
-    return {
-      success: false,
-      error:
-        "startDateTime must be a valid ISO 8601 string with Z or an explicit numeric offset.",
-    };
-  }
-
-  if (!isValidIso8601WithOffset(endDateTime)) {
-    return {
-      success: false,
-      error:
-        "endDateTime must be a valid ISO 8601 string with Z or an explicit numeric offset.",
-    };
-  }
-
-  const start = new Date(startDateTime);
-  const end = new Date(endDateTime);
-
-  if (end <= start) {
-    return {
-      success: false,
-      error: "endDateTime must be after startDateTime.",
-    };
-  }
-
-  if (end.getTime() - start.getTime() > MAX_EVENT_DURATION_MS) {
-    return {
-      success: false,
-      error: "The event cannot exceed 24 hours.",
-    };
-  }
-
-  if (!isValidTimeZone(timeZone)) {
-    return {
-      success: false,
-      error: "timeZone must be a valid IANA timezone string.",
-    };
-  }
-
-  if (
-    input.locationName !== null &&
-    input.locationName !== undefined &&
-    input.locationName.trim().length > MAX_LOCATION_LENGTH
-  ) {
-    return {
-      success: false,
-      error: `locationName cannot exceed ${MAX_LOCATION_LENGTH} characters.`,
-    };
-  }
-
-  if (
-    input.notes !== null &&
-    input.notes !== undefined &&
-    input.notes.trim().length > MAX_NOTES_LENGTH
-  ) {
-    return {
-      success: false,
-      error: `notes cannot exceed ${MAX_NOTES_LENGTH} characters.`,
-    };
-  }
-
-  const locationName = normalizeOptionalString(input.locationName);
-  const notes = normalizeOptionalString(input.notes);
-
-  const summary = buildCalendarEventSummary({
-    subject,
-    startDateTime,
-    endDateTime,
-    timeZone,
-    locationName,
+  const validated = validateCalendarEventPayload({
+    subject: input.subject,
+    startDateTime: input.startDateTime,
+    endDateTime: input.endDateTime,
+    timeZone: input.timeZone,
+    locationName: input.locationName,
+    notes: input.notes,
   });
 
-  const dailyPlanSource = input.dailyPlanSource;
-
-  const payload: Record<string, unknown> = {
-    subject,
-    startDateTime,
-    endDateTime,
-    timeZone,
-    locationName,
-    notes,
-  };
-
-  let title = "Create Outlook calendar event";
-  let requestSummary = summary;
-
-  if (dailyPlanSource) {
-    payload.dailyPlanId = dailyPlanSource.dailyPlanId;
-    payload.dailyPlanItemKey = dailyPlanSource.dailyPlanItemKey;
-    payload.source = "daily_plan";
-    payload.reason = dailyPlanSource.reason;
-    title = "Schedule Daily Plan block on Outlook";
-    requestSummary = `From Daily Plan — ${summary}`;
+  if (!validated.success) {
+    return { success: false, error: "Invalid calendar event proposal." };
   }
 
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const payload = { ...validated.payload };
+  let title = "Create Outlook calendar event";
+  let requestSummary = buildCalendarProposalSummary(validated.payload);
+
+  if (input.dailyPlanSource) {
+    payload.dailyPlanId = input.dailyPlanSource.dailyPlanId;
+    payload.dailyPlanItemKey = input.dailyPlanSource.dailyPlanItemKey;
+    payload.source = "daily_plan";
+    payload.reason = input.dailyPlanSource.reason;
+    title = "Schedule Daily Plan block on Outlook";
+    requestSummary = `From Daily Plan — ${requestSummary}`;
+  }
+
+  const dedupPayload = normalizeCalendarPayloadForDedup(validated.payload);
+  const duplicate = await findDuplicatePendingActionRequest(
+    supabase,
+    userId,
+    ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+    dedupPayload,
+  );
+
+  if (duplicate) {
+    return {
+      success: true,
+      actionRequestId: "existing",
+      status: duplicate.status,
+      title: duplicate.title,
+      summary: duplicate.summary,
+      expiresAt: duplicate.expires_at,
+    };
+  }
+
+  const expiresAt = computeActionRequestExpiration();
 
   const { data, error } = await supabase
     .from("action_requests")
     .insert({
       user_id: userId,
-      action_type: "create_outlook_calendar_event",
+      action_type: ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
       status: "pending",
-      risk_level: "approval_required",
+      risk_level: APPROVAL_REQUIRED_RISK_LEVEL,
       title,
       summary: requestSummary,
       payload,
@@ -266,6 +164,78 @@ export async function proposeOutlookCalendarEvent(
     title: data.title,
     summary: data.summary,
     expiresAt: data.expires_at,
+  };
+}
+
+export async function proposeTask(
+  supabase: SupabaseClient,
+  userId: string,
+  input: {
+    title: string;
+    description?: string | null;
+    priority?: string | null;
+    dueDate?: string | null;
+    context?: string | null;
+  },
+): Promise<ProposeTaskResult> {
+  const validated = validateTaskProposalInput(input);
+
+  if (!validated.success) {
+    return { success: false, error: "Invalid task proposal." };
+  }
+
+  const payload = validated.payload;
+  const dedupPayload = normalizeTaskPayloadForDedup(payload);
+  const duplicate = await findDuplicatePendingActionRequest(
+    supabase,
+    userId,
+    ACTION_TYPE_CREATE_TASK,
+    dedupPayload,
+  );
+
+  if (duplicate) {
+    return {
+      success: true,
+      status: "pending",
+      approvalRequired: true,
+      title: duplicate.title,
+      summary: duplicate.summary,
+      expiresAt: duplicate.expires_at,
+      message: "A matching task proposal is already waiting for approval.",
+    };
+  }
+
+  const title = "Create task";
+  const requestSummary = buildTaskProposalSummary(payload);
+  const expiresAt = computeActionRequestExpiration();
+
+  const { data, error } = await supabase
+    .from("action_requests")
+    .insert({
+      user_id: userId,
+      action_type: ACTION_TYPE_CREATE_TASK,
+      status: "pending",
+      risk_level: APPROVAL_REQUIRED_RISK_LEVEL,
+      title,
+      summary: requestSummary,
+      payload,
+      expires_at: expiresAt,
+    })
+    .select("status, title, summary, expires_at")
+    .single();
+
+  if (error || !data) {
+    return { success: false, error: "Could not create approval request." };
+  }
+
+  return {
+    success: true,
+    status: "pending",
+    approvalRequired: true,
+    title: data.title,
+    summary: data.summary,
+    expiresAt: data.expires_at,
+    message: "Task proposal submitted for approval.",
   };
 }
 

@@ -1,6 +1,7 @@
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
-import { parseDailyPlanCalendarPayload } from "@/lib/jarvis/plans/plan-item-calendar";
+import { buildRegisteredActionPreview } from "@/lib/jarvis/action-requests/action-executor-registry";
+import { formatLocalDateTime } from "@/lib/jarvis/action-requests/calendar-action-payload";
 import {
   approvalStatusBadgeClass,
   JarvisAlert,
@@ -27,14 +28,6 @@ type ActionRequestRow = {
   safe_error_message: string | null;
 };
 
-type CalendarEventResult = {
-  eventId?: string;
-  subject?: string;
-  start?: string;
-  end?: string;
-  webLink?: string | null;
-};
-
 function formatTimestamp(isoString: string): string {
   const date = new Date(isoString);
   return date.toLocaleString("en-US", {
@@ -43,32 +36,6 @@ function formatTimestamp(isoString: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  });
-}
-
-function formatCalendarDateTime(isoString: string, timeZone: string): string {
-  const date = new Date(isoString);
-
-  return date.toLocaleString("en-US", {
-    weekday: "short",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-    timeZoneName: "short",
-  });
-}
-
-function formatCalendarTime(isoString: string, timeZone: string): string {
-  const date = new Date(isoString);
-
-  return date.toLocaleString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone,
-    timeZoneName: "short",
   });
 }
 
@@ -81,14 +48,6 @@ function compareActionRequests(a: ActionRequestRow, b: ActionRequestRow): number
   }
 
   return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-}
-
-function parseCalendarResult(result: unknown): CalendarEventResult | null {
-  if (typeof result !== "object" || result === null) {
-    return null;
-  }
-
-  return result as CalendarEventResult;
 }
 
 function statusLabel(status: string): string {
@@ -108,6 +67,45 @@ function statusLabel(status: string): string {
     default:
       return status;
   }
+}
+
+function formatCalendarPreviewValue(
+  fieldLabel: string,
+  value: string,
+  timeZone: string | null,
+): string {
+  if (
+    timeZone &&
+    (fieldLabel === "Start" || fieldLabel === "End") &&
+    !Number.isNaN(new Date(value).getTime())
+  ) {
+    return formatLocalDateTime(value, timeZone);
+  }
+
+  return value;
+}
+
+function parseSafeResult(result: unknown): Record<string, string | null> | null {
+  if (typeof result !== "object" || result === null) {
+    return null;
+  }
+
+  const record = result as Record<string, unknown>;
+  const safe: Record<string, string | null> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    if (key.toLowerCase().includes("id")) {
+      continue;
+    }
+
+    if (typeof value === "string") {
+      safe[key] = value;
+    } else if (value === null) {
+      safe[key] = null;
+    }
+  }
+
+  return Object.keys(safe).length > 0 ? safe : null;
 }
 
 export default async function ApprovalsPage({
@@ -188,25 +186,24 @@ export default async function ApprovalsPage({
         <section className="jv-approval-list" aria-label="Approval requests">
           {sortedRequests.length > 0 ? (
             sortedRequests.map((request) => {
-              const calendarResult =
-                request.status === "completed" &&
-                request.action_type === "create_outlook_calendar_event"
-                  ? parseCalendarResult(request.result)
+              const preview = buildRegisteredActionPreview(
+                request.action_type,
+                request.payload,
+              );
+
+              const timeZoneField = preview?.fields.find(
+                (field) => field.label === "Timezone",
+              );
+              const eventTimeZone = timeZoneField?.value ?? null;
+              const safeResult =
+                request.status === "completed"
+                  ? parseSafeResult(request.result)
                   : null;
 
-              const calendarPayload =
-                request.action_type === "create_outlook_calendar_event"
-                  ? parseDailyPlanCalendarPayload(request.payload)
-                  : null;
-
-              const isDailyPlanRequest =
-                calendarPayload?.source === "daily_plan" &&
-                typeof calendarPayload.dailyPlanId === "string";
-
-              const eventTimeZone =
-                typeof calendarPayload?.timeZone === "string"
-                  ? calendarPayload.timeZone
-                  : null;
+              const isExpiredPending =
+                request.status === "pending" &&
+                typeof request.expires_at === "string" &&
+                new Date(request.expires_at).getTime() <= Date.now();
 
               return (
                 <JarvisCard
@@ -232,50 +229,40 @@ export default async function ApprovalsPage({
                   <div className="jv-meta-row">
                     <span>Created {formatTimestamp(request.created_at)}</span>
                     {request.expires_at ? (
-                      <span>Expires {formatTimestamp(request.expires_at)}</span>
+                      <span>
+                        {isExpiredPending ? "Expired" : "Expires"}{" "}
+                        {formatTimestamp(request.expires_at)}
+                      </span>
                     ) : null}
                   </div>
 
-                  {calendarPayload &&
-                  typeof calendarPayload.subject === "string" &&
-                  typeof calendarPayload.startDateTime === "string" &&
-                  typeof calendarPayload.endDateTime === "string" &&
-                  eventTimeZone ? (
+                  {preview ? (
                     <div className="jv-approval-detail">
-                      {isDailyPlanRequest ? (
-                        <p className="jv-approval-source">From Daily Plan</p>
-                      ) : null}
                       <p className="jv-approval-detail-title">
-                        {calendarPayload.subject}
+                        {preview.actionLabel}
                       </p>
-                      <p className="jv-approval-detail-meta">
-                        {formatCalendarDateTime(
-                          calendarPayload.startDateTime,
-                          eventTimeZone,
-                        )}
-                      </p>
-                      <p className="jv-approval-detail-meta">
-                        {formatCalendarTime(
-                          calendarPayload.startDateTime,
-                          eventTimeZone,
-                        )}{" "}
-                        to{" "}
-                        {formatCalendarTime(
-                          calendarPayload.endDateTime,
-                          eventTimeZone,
-                        )}{" "}
-                        ({eventTimeZone})
-                      </p>
-                      {typeof calendarPayload.reason === "string" &&
-                      calendarPayload.reason.trim().length > 0 ? (
+                      {preview.sourceLabel ? (
+                        <p className="jv-approval-source">{preview.sourceLabel}</p>
+                      ) : null}
+                      {preview.fields.map((field) => (
+                        <p key={field.label} className="jv-approval-detail-meta">
+                          <strong>{field.label}:</strong>{" "}
+                          {formatCalendarPreviewValue(
+                            field.label,
+                            field.value,
+                            eventTimeZone,
+                          )}
+                        </p>
+                      ))}
+                      {preview.reason ? (
                         <p className="jv-approval-detail-reason">
-                          {calendarPayload.reason}
+                          {preview.reason}
                         </p>
                       ) : null}
                     </div>
                   ) : null}
 
-                  {request.status === "pending" ? (
+                  {request.status === "pending" && !isExpiredPending ? (
                     <div className="jv-approval-actions">
                       <form action={approveActionRequest}>
                         <input
@@ -298,20 +285,24 @@ export default async function ApprovalsPage({
                     </div>
                   ) : null}
 
-                  {request.status === "completed" && calendarResult ? (
+                  {request.status === "completed" && safeResult ? (
                     <div className="jv-approval-result jv-approval-result--success">
                       <p className="jv-approval-result-title">Completed</p>
-                      {calendarResult.subject ? (
-                        <p>{calendarResult.subject}</p>
-                      ) : null}
-                      {calendarResult.start && calendarResult.end ? (
+                      {safeResult.title ? <p>{safeResult.title}</p> : null}
+                      {safeResult.subject ? <p>{safeResult.subject}</p> : null}
+                      {safeResult.dueDate ? (
                         <p className="jv-approval-detail-meta">
-                          {calendarResult.start} to {calendarResult.end} UTC
+                          Due {safeResult.dueDate}
                         </p>
                       ) : null}
-                      {calendarResult.webLink ? (
+                      {safeResult.start && safeResult.end ? (
+                        <p className="jv-approval-detail-meta">
+                          {safeResult.start} to {safeResult.end} UTC
+                        </p>
+                      ) : null}
+                      {safeResult.webLink ? (
                         <a
-                          href={calendarResult.webLink}
+                          href={safeResult.webLink}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="jv-link"
@@ -334,7 +325,7 @@ export default async function ApprovalsPage({
                     </p>
                   ) : null}
 
-                  {request.status === "expired" ? (
+                  {request.status === "expired" || isExpiredPending ? (
                     <p className="jv-approval-note">
                       This request expired before it was approved.
                     </p>
