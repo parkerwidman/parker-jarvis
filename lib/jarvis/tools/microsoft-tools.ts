@@ -3,9 +3,12 @@ import {
   microsoftGraphPost,
   microsoftGraphPostDetailed,
 } from "@/lib/microsoft/graph-client";
-import { MICROSOFT_MAIL_SEND_SCOPE } from "@/lib/microsoft/scopes";
+import { MICROSOFT_MAIL_READ_WRITE_SCOPE, MICROSOFT_MAIL_SEND_SCOPE } from "@/lib/microsoft/scopes";
 import {
+  getMailReadWritePermissionState,
   getMailSendPermissionState,
+  recordMailReadWriteMissing,
+  recordMailReadWriteVerified,
   recordMailSendMissing,
   recordMailSendVerified,
 } from "@/lib/microsoft/token-manager";
@@ -137,7 +140,11 @@ export type CreateOutlookDraftResult =
       notSent: true;
       message: string;
     }
-  | MicrosoftToolFailure;
+  | { success: false; outcome: "uncertain" }
+  | (MicrosoftToolFailure & {
+      microsoftPermissionRequired?: true;
+      requiredPermission?: string;
+    });
 
 export type CreateOutlookCalendarEventResult =
   | {
@@ -537,19 +544,53 @@ export async function createOutlookDraft(
     };
   }
 
+  const mailReadWriteState = await getMailReadWritePermissionState(
+    supabase,
+    userId,
+  );
+
+  if (mailReadWriteState === "missing") {
+    return {
+      success: false,
+      microsoftPermissionRequired: true,
+      requiredPermission: MICROSOFT_MAIL_READ_WRITE_SCOPE,
+      error: "Microsoft Mail.ReadWrite permission is required.",
+    };
+  }
+
+  const draftBody = {
+    subject,
+    body: {
+      contentType: "Text",
+      content: body,
+    },
+    toRecipients: toGraphRecipients(toRecipients),
+    ccRecipients: toGraphRecipients(ccRecipients),
+  };
+
+  const useDetailedDraft = mailReadWriteState === "unknown";
+
+  if (useDetailedDraft) {
+    const graphResult = await microsoftGraphPostDetailed(
+      supabase,
+      userId,
+      "/v1.0/me/messages",
+      draftBody,
+    );
+
+    return finalizeUnknownStateDraftResult(
+      supabase,
+      userId,
+      graphResult,
+      { subject, toRecipients, ccRecipients },
+    );
+  }
+
   const graphResult = await microsoftGraphPost(
     supabase,
     userId,
     "/v1.0/me/messages",
-    {
-      subject,
-      body: {
-        contentType: "Text",
-        content: body,
-      },
-      toRecipients: toGraphRecipients(toRecipients),
-      ccRecipients: toGraphRecipients(ccRecipients),
-    },
+    draftBody,
   );
 
   const graphError = mapGraphResult(graphResult);
@@ -561,7 +602,25 @@ export async function createOutlookDraft(
     return { success: false, error: "Could not create Outlook draft." };
   }
 
-  const payload = graphResult.data as GraphMessage;
+  return completeDraftFromGraphResponse(
+    supabase,
+    userId,
+    graphResult.data,
+    { subject, toRecipients, ccRecipients },
+  );
+}
+
+async function completeDraftFromGraphResponse(
+  supabase: SupabaseClient,
+  userId: string,
+  data: unknown,
+  input: {
+    subject: string;
+    toRecipients: string[];
+    ccRecipients: string[];
+  },
+): Promise<CreateOutlookDraftResult> {
+  const payload = data as GraphMessage;
 
   if (typeof payload.id !== "string") {
     return { success: false, error: "Could not create Outlook draft." };
@@ -574,19 +633,66 @@ export async function createOutlookDraft(
   );
 
   if (!draftReference.success) {
-    return { success: false, error: "Could not create Outlook draft." };
+    return { success: false, outcome: "uncertain" };
   }
 
   return {
     success: true,
     draftKey: draftReference.draftKey,
-    subject,
-    toRecipients,
-    ccRecipients,
+    subject: input.subject,
+    toRecipients: input.toRecipients,
+    ccRecipients: input.ccRecipients,
     savedToDrafts: true,
     notSent: true,
     message: "The message was saved as a draft in Outlook and was not sent.",
   };
+}
+
+async function finalizeUnknownStateDraftResult(
+  supabase: SupabaseClient,
+  userId: string,
+  result:
+    | { success: true; data: unknown }
+    | { success: false; needsConnection: true }
+    | { success: false; needsReconnect: true }
+    | { success: false; error: string; failureKind: string },
+  input: {
+    subject: string;
+    toRecipients: string[];
+    ccRecipients: string[];
+  },
+): Promise<CreateOutlookDraftResult> {
+  if (result.success) {
+    await recordMailReadWriteVerified(supabase, userId);
+    return completeDraftFromGraphResponse(supabase, userId, result.data, input);
+  }
+
+  if ("needsConnection" in result) {
+    return { success: false, needsConnection: true };
+  }
+
+  if ("needsReconnect" in result) {
+    return { success: false, needsReconnect: true };
+  }
+
+  if ("failureKind" in result) {
+    if (result.failureKind === "permission_denied") {
+      await recordMailReadWriteMissing(supabase, userId);
+
+      return {
+        success: false,
+        microsoftPermissionRequired: true,
+        requiredPermission: MICROSOFT_MAIL_READ_WRITE_SCOPE,
+        error: "Microsoft Mail.ReadWrite permission is required.",
+      };
+    }
+
+    if (result.failureKind === "ambiguous") {
+      return { success: false, outcome: "uncertain" };
+    }
+  }
+
+  return { success: false, error: "Could not create Outlook draft." };
 }
 
 function toUtcGraphDateTime(isoString: string): string {

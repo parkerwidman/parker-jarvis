@@ -5,6 +5,7 @@ import type { JarvisToolExecutionContext } from "@/lib/jarvis/agents/tool-execut
 import { requireAutoExecutePolicy } from "@/lib/jarvis/action-requests/action-risk-policy";
 import {
   ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+  ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
   ACTION_TYPE_CREATE_OUTLOOK_REMINDER,
   ACTION_TYPE_CREATE_TASK,
   ACTION_TYPE_SEND_OUTLOOK_EMAIL,
@@ -20,6 +21,10 @@ import {
   validateDirectCalendarEventPayload,
 } from "@/lib/jarvis/action-requests/direct-calendar-action-payload";
 import {
+  buildDraftSummary,
+  validateDraftPayload,
+} from "@/lib/jarvis/action-requests/draft-action-payload";
+import {
   buildEmailSendSummary,
   validateEmailSendPayload,
 } from "@/lib/jarvis/action-requests/email-send-action-payload";
@@ -33,6 +38,7 @@ import {
 } from "@/lib/jarvis/action-requests/task-action-payload";
 import {
   createOutlookCalendarEventDirect,
+  createOutlookDraft,
   createOutlookReminder,
   sendOutlookEmail,
 } from "@/lib/jarvis/tools/microsoft-tools";
@@ -48,6 +54,7 @@ type SafeToolError = {
   microsoftPermissionRequired?: true;
   requiredPermission?: string;
   emailSendOutcomeUncertain?: true;
+  draftCreationOutcomeUncertain?: true;
 };
 
 type SafeTaskResult = {
@@ -457,6 +464,189 @@ function mapStoredCalendarResult(
     attendeeCount:
       typeof stored.attendeeCount === "number" ? stored.attendeeCount : 0,
   };
+}
+
+export async function executeDirectCreateDraft(
+  supabase: SupabaseClient,
+  userId: string,
+  executionContext: JarvisToolExecutionContext,
+  input: {
+    toRecipients: string[];
+    ccRecipients: string[];
+    subject: string;
+    body: string;
+  },
+): Promise<
+  | {
+      success: true;
+      status: "completed";
+      subject: string;
+      toRecipientCount: number;
+      ccRecipientCount: number;
+      draftKey: string;
+      savedToDrafts: true;
+      notSent: true;
+      message: string;
+    }
+  | SafeToolError
+> {
+  const policy = requireAutoExecutePolicy(
+    ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
+    executionContext,
+  );
+
+  if (!policy.allowed) {
+    return { success: false, errorCode: policy.errorCode };
+  }
+
+  const validated = validateDraftPayload({
+    toRecipients: input.toRecipients,
+    ccRecipients: input.ccRecipients,
+    subject: input.subject,
+    body: input.body,
+  });
+
+  if (!validated.success) {
+    return { success: false, errorCode: "invalid_action_payload" };
+  }
+
+  const idempotencyKey = buildIdempotencyKey(
+    executionContext.toolCallId,
+    ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
+  );
+
+  const claim = await claimAutoExecuteAction(supabase, {
+    userId,
+    actionType: ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
+    idempotencyKey,
+    title: "Create Outlook draft",
+    summary: buildDraftSummary(validated.payload),
+    payload: {
+      subject: validated.payload.subject,
+      toRecipientCount: validated.payload.toRecipients.length,
+      ccRecipientCount: validated.payload.ccRecipients.length,
+    },
+  });
+
+  if (!claim.success) {
+    return { success: false, errorCode: claim.errorCode };
+  }
+
+  if (claim.isReplay) {
+    if (claim.providerOutcomeCertainty === "uncertain") {
+      return {
+        success: false,
+        errorCode: "draft_creation_outcome_uncertain",
+        draftCreationOutcomeUncertain: true,
+        message:
+          "A prior draft attempt had an uncertain outcome. Do not retry automatically.",
+      };
+    }
+
+    return mapStoredDraftResult(claim.priorResult);
+  }
+
+  const graphResult = await createOutlookDraft(
+    supabase,
+    userId,
+    validated.payload,
+  );
+
+  if ("outcome" in graphResult && graphResult.outcome === "uncertain") {
+    await failAutoExecuteAction(supabase, {
+      auditId: claim.auditId,
+      userId,
+      safeErrorMessage: "Draft creation outcome uncertain.",
+      providerOutcomeCertainty: "uncertain",
+    });
+
+    return {
+      success: false,
+      errorCode: "draft_creation_outcome_uncertain",
+      draftCreationOutcomeUncertain: true,
+      message:
+        "The draft outcome is uncertain. Do not claim the draft was saved or retry automatically.",
+    };
+  }
+
+  if (!graphResult.success) {
+    await failAutoExecuteAction(supabase, {
+      auditId: claim.auditId,
+      userId,
+      safeErrorMessage: "Draft creation failed.",
+      providerOutcomeCertainty: "failed_before_send",
+    });
+
+    return mapMicrosoftDraftFailure(graphResult);
+  }
+
+  const safeResult = {
+    success: true as const,
+    status: "completed" as const,
+    subject: validated.payload.subject,
+    toRecipientCount: validated.payload.toRecipients.length,
+    ccRecipientCount: validated.payload.ccRecipients.length,
+    draftKey: graphResult.draftKey,
+    savedToDrafts: true as const,
+    notSent: true as const,
+    message: graphResult.message,
+  };
+
+  await completeAutoExecuteAction(supabase, {
+    auditId: claim.auditId,
+    userId,
+    result: safeResult,
+    providerOutcomeCertainty: "confirmed",
+  });
+
+  return safeResult;
+}
+
+function mapStoredDraftResult(
+  stored: Record<string, unknown>,
+):
+  | {
+      success: true;
+      status: "completed";
+      subject: string;
+      toRecipientCount: number;
+      ccRecipientCount: number;
+      draftKey: string;
+      savedToDrafts: true;
+      notSent: true;
+      message: string;
+    }
+  | SafeToolError {
+  if (stored.success !== true) {
+    return { success: false, errorCode: "draft_creation_failed" };
+  }
+
+  return {
+    success: true,
+    status: "completed",
+    subject: typeof stored.subject === "string" ? stored.subject : "",
+    toRecipientCount:
+      typeof stored.toRecipientCount === "number" ? stored.toRecipientCount : 0,
+    ccRecipientCount:
+      typeof stored.ccRecipientCount === "number" ? stored.ccRecipientCount : 0,
+    draftKey: typeof stored.draftKey === "string" ? stored.draftKey : "",
+    savedToDrafts: true,
+    notSent: true,
+    message:
+      typeof stored.message === "string"
+        ? stored.message
+        : "The message was saved as a draft in Outlook and was not sent.",
+  };
+}
+
+function mapMicrosoftDraftFailure(result: {
+  success: false;
+  needsConnection?: true;
+  needsReconnect?: true;
+  microsoftPermissionRequired?: true;
+  requiredPermission?: string;
+}): SafeToolError {
+  return mapMicrosoftFailure(result, "draft_creation_failed");
 }
 
 export async function executeDirectSendEmail(

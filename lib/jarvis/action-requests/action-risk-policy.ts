@@ -3,6 +3,7 @@ import "server-only";
 import type { JarvisToolExecutionContext } from "@/lib/jarvis/agents/tool-execution-context";
 import {
   ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+  ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
   ACTION_TYPE_CREATE_OUTLOOK_REMINDER,
   ACTION_TYPE_CREATE_TASK,
   ACTION_TYPE_SEND_OUTLOOK_EMAIL,
@@ -17,7 +18,7 @@ export type WriteActionType =
   | typeof ACTION_TYPE_CREATE_TASK
   | typeof ACTION_TYPE_CREATE_OUTLOOK_REMINDER
   | typeof ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT
-  | "create_outlook_draft"
+  | typeof ACTION_TYPE_CREATE_OUTLOOK_DRAFT
   | typeof ACTION_TYPE_SEND_OUTLOOK_EMAIL
   | "propose_task"
   | "propose_outlook_calendar_event";
@@ -36,7 +37,7 @@ export function isKnownWriteAction(actionType: string): actionType is WriteActio
     actionType === ACTION_TYPE_CREATE_TASK ||
     actionType === ACTION_TYPE_CREATE_OUTLOOK_REMINDER ||
     actionType === ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT ||
-    actionType === "create_outlook_draft" ||
+    actionType === ACTION_TYPE_CREATE_OUTLOOK_DRAFT ||
     actionType === ACTION_TYPE_SEND_OUTLOOK_EMAIL ||
     actionType === "propose_task" ||
     actionType === "propose_outlook_calendar_event"

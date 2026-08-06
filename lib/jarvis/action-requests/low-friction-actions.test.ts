@@ -21,16 +21,19 @@ import {
 } from "@/lib/jarvis/action-requests/action-risk-policy";
 import {
   ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+  ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
   ACTION_TYPE_CREATE_OUTLOOK_REMINDER,
   ACTION_TYPE_CREATE_TASK,
   ACTION_TYPE_SEND_OUTLOOK_EMAIL,
 } from "@/lib/jarvis/action-requests/action-type-constants";
+import { validateDraftPayload } from "@/lib/jarvis/action-requests/draft-action-payload";
 import { validateDirectCalendarEventPayload } from "@/lib/jarvis/action-requests/direct-calendar-action-payload";
 import { validateEmailSendPayload } from "@/lib/jarvis/action-requests/email-send-action-payload";
 import { validateReminderPayload } from "@/lib/jarvis/action-requests/reminder-action-payload";
 import { grantedScopesIncludeMailSend, resolveMailSendPermissionState } from "@/lib/microsoft/scopes";
 import {
   executeDirectCreateCalendarEvent,
+  executeDirectCreateDraft,
   executeDirectCreateReminder,
   executeDirectCreateTask,
   executeDirectSendEmail,
@@ -38,6 +41,7 @@ import {
 import { createTask } from "@/lib/jarvis/tools/task-tools";
 import {
   createOutlookCalendarEventDirect,
+  createOutlookDraft,
   createOutlookReminder,
   sendOutlookEmail,
 } from "@/lib/jarvis/tools/microsoft-tools";
@@ -132,6 +136,9 @@ describe("low-friction personal productivity actions", () => {
       "forbidden",
     );
     expect(resolveActionRisk(ACTION_TYPE_SEND_OUTLOOK_EMAIL, BACKGROUND_CONTEXT)).toBe(
+      "forbidden",
+    );
+    expect(resolveActionRisk(ACTION_TYPE_CREATE_OUTLOOK_DRAFT, BACKGROUND_CONTEXT)).toBe(
       "forbidden",
     );
   });
@@ -471,6 +478,10 @@ describe("low-friction personal productivity actions", () => {
       "create_outlook_calendar_event",
     );
     expect(MELUSI_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("send_outlook_email");
+    expect(MELUSI_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("create_outlook_draft");
+    expect(resolveActionRisk(ACTION_TYPE_CREATE_OUTLOOK_DRAFT, MELUSI_CONTEXT)).toBe(
+      "forbidden",
+    );
   });
 
   it("does not register Finance or Plaid write actions", () => {
@@ -560,6 +571,221 @@ describe("low-friction personal productivity actions", () => {
   it("includes main personal write tools in main agent config", () => {
     expect(MAIN_JARVIS_AGENT.toolGroups).toContain("main_personal_writes");
     expect(MAIN_JARVIS_AGENT.toolGroups).not.toContain("action_requests");
+  });
+
+  it("exposes create_outlook_draft only on main Jarvis", () => {
+    expect(MAIN_JARVIS_TOOLS.map((tool) => tool.name)).toContain("create_outlook_draft");
+    expect(MELUSI_JARVIS_TOOLS.map((tool) => tool.name)).not.toContain("create_outlook_draft");
+    expect(resolveActionRisk(ACTION_TYPE_CREATE_OUTLOOK_DRAFT, MAIN_CONTEXT)).toBe(
+      "auto_execute",
+    );
+  });
+
+  it("validates bounded draft subject and body", () => {
+    const valid = validateDraftPayload({
+      toRecipients: ["a@example.com"],
+      ccRecipients: [],
+      subject: "Hello",
+      body: "Body",
+    });
+
+    expect(valid.success).toBe(true);
+
+    const invalid = validateDraftPayload({
+      toRecipients: ["not-an-email"],
+      ccRecipients: [],
+      subject: "Hello",
+      body: "Body",
+    });
+
+    expect(invalid.success).toBe(false);
+  });
+
+  it("creates drafts idempotently without duplicate Graph calls", async () => {
+    vi.mocked(createOutlookDraft).mockResolvedValue({
+      success: true,
+      draftKey: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      subject: "Jarvis draft test",
+      toRecipients: ["parker@melusi.ai"],
+      ccRecipients: [],
+      savedToDrafts: true,
+      notSent: true,
+      message: "The message was saved as a draft in Outlook and was not sent.",
+    });
+
+    const supabase = buildAutoExecuteSupabase({
+      existingRecord: {
+        id: "audit-hidden",
+        status: "completed",
+        result: {
+          success: true,
+          status: "completed",
+          subject: "Jarvis draft test",
+          toRecipientCount: 1,
+          ccRecipientCount: 0,
+          draftKey: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+          savedToDrafts: true,
+          notSent: true,
+          message: "The message was saved as a draft in Outlook and was not sent.",
+        },
+        provider_outcome_certainty: "confirmed",
+      },
+    });
+
+    const result = await executeDirectCreateDraft(
+      supabase as never,
+      USER_A,
+      MAIN_CONTEXT,
+      {
+        toRecipients: ["parker@melusi.ai"],
+        ccRecipients: [],
+        subject: "Jarvis draft test",
+        body: "This email should remain saved as a draft and must not be sent.",
+      },
+    );
+
+    expect(result.success).toBe(true);
+    expect(createOutlookDraft).not.toHaveBeenCalled();
+  });
+
+  it("returns microsoft_permission_required for known missing Mail.ReadWrite", async () => {
+    vi.mocked(createOutlookDraft).mockResolvedValue({
+      success: false,
+      microsoftPermissionRequired: true,
+      requiredPermission: "Mail.ReadWrite",
+      error: "Microsoft Mail.ReadWrite permission is required.",
+    });
+
+    const supabase = buildAutoExecuteSupabase();
+
+    const result = await executeDirectCreateDraft(
+      supabase as never,
+      USER_A,
+      MAIN_CONTEXT,
+      {
+        toRecipients: ["parker@melusi.ai"],
+        ccRecipients: [],
+        subject: "Jarvis draft test",
+        body: "Draft body",
+      },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorCode: "microsoft_permission_required",
+      requiredPermission: "Mail.ReadWrite",
+    });
+  });
+
+  it("does not map generic draft failure to microsoft_not_connected", async () => {
+    vi.mocked(createOutlookDraft).mockResolvedValue({
+      success: false,
+      error: "Could not create Outlook draft.",
+    });
+
+    const supabase = buildAutoExecuteSupabase();
+
+    const result = await executeDirectCreateDraft(
+      supabase as never,
+      USER_A,
+      MAIN_CONTEXT,
+      {
+        toRecipients: ["parker@melusi.ai"],
+        ccRecipients: [],
+        subject: "Jarvis draft test",
+        body: "Draft body",
+      },
+    );
+
+    expect(result).toMatchObject({ success: false, errorCode: "draft_creation_failed" });
+    expect(result).not.toMatchObject({ needsConnection: true, needsReconnect: true });
+  });
+
+  it("blocks blind retry after uncertain draft outcomes", async () => {
+    const supabase = buildAutoExecuteSupabase({
+      existingRecord: {
+        id: "audit-hidden",
+        status: "failed",
+        result: null,
+        provider_outcome_certainty: "uncertain",
+      },
+    });
+
+    const result = await executeDirectCreateDraft(
+      supabase as never,
+      USER_A,
+      MAIN_CONTEXT,
+      {
+        toRecipients: ["parker@melusi.ai"],
+        ccRecipients: [],
+        subject: "Jarvis draft test",
+        body: "Draft body",
+      },
+    );
+
+    expect(result).toMatchObject({ errorCode: "duplicate_execution_blocked" });
+    expect(createOutlookDraft).not.toHaveBeenCalled();
+  });
+
+  it("routes draft tool execution through direct action layer", async () => {
+    vi.mocked(createOutlookDraft).mockResolvedValue({
+      success: true,
+      draftKey: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      subject: "Jarvis draft test",
+      toRecipients: ["parker@melusi.ai"],
+      ccRecipients: [],
+      savedToDrafts: true,
+      notSent: true,
+      message: "The message was saved as a draft in Outlook and was not sent.",
+    });
+
+    const output = await executeJarvisTool(
+      buildAutoExecuteSupabase() as never,
+      USER_A,
+      {
+        type: "function_call",
+        name: "create_outlook_draft",
+        call_id: TOOL_CALL_ID,
+        arguments: JSON.stringify({
+          toRecipients: ["parker@melusi.ai"],
+          ccRecipients: [],
+          subject: "Jarvis draft test",
+          body: "This email should remain saved as a draft and must not be sent.",
+        }),
+      } as never,
+      null,
+      MAIN_CONTEXT,
+    );
+
+    const parsed = JSON.parse(output);
+    expect(parsed.success).toBe(true);
+    expect(parsed.notSent).toBe(true);
+    expect(createOutlookDraft).toHaveBeenCalledTimes(1);
+    expect(sendOutlookEmail).not.toHaveBeenCalled();
+  });
+
+  it("blocks create_outlook_draft outside interactive main execution", async () => {
+    const output = await executeJarvisTool(
+      buildAutoExecuteSupabase() as never,
+      USER_A,
+      {
+        type: "function_call",
+        name: "create_outlook_draft",
+        call_id: TOOL_CALL_ID,
+        arguments: JSON.stringify({
+          toRecipients: ["parker@melusi.ai"],
+          ccRecipients: [],
+          subject: "Jarvis draft test",
+          body: "Draft body",
+        }),
+      } as never,
+      null,
+      BACKGROUND_CONTEXT,
+    );
+
+    const parsed = JSON.parse(output);
+    expect(parsed.errorCode).toBe("action_forbidden");
+    expect(createOutlookDraft).not.toHaveBeenCalled();
   });
 });
 

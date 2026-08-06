@@ -6,6 +6,7 @@ import type { JarvisContextTarget } from "@/lib/jarvis/context/types";
 import type { JarvisToolExecutionContext } from "./tool-execution-context";
 import {
   executeDirectCreateCalendarEvent,
+  executeDirectCreateDraft,
   executeDirectCreateReminder,
   executeDirectCreateTask,
   executeDirectSendEmail,
@@ -20,7 +21,6 @@ import {
   updateJarvisProfile,
 } from "@/lib/jarvis/tools/memory-tools";
 import {
-  createOutlookDraft,
   listOutlookCalendar,
   listOutlookInbox,
 } from "@/lib/jarvis/tools/microsoft-tools";
@@ -286,7 +286,7 @@ export async function executeJarvisTool(
         );
       case "create_outlook_draft":
         return JSON.stringify(
-          await createOutlookDraft(supabase, userId, {
+          await executeDirectCreateDraft(supabase, userId, executionContext, {
             toRecipients: Array.isArray(args.toRecipients)
               ? args.toRecipients.map(String)
               : [],

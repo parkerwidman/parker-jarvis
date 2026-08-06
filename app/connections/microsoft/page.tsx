@@ -130,10 +130,11 @@ export default async function MicrosoftConnectionPage({
                 <h3 className="jv-section-label">Granted capabilities</h3>
                 <ul className="jv-capability-list">
                   <li>Read Outlook calendar events</li>
-                  <li>Create calendar events after approval</li>
-                  {hasMailSend ? <li>Send email after approval</li> : null}
+                  <li>Create Outlook calendar events</li>
+                  <li>Create Outlook email drafts</li>
+                  {hasMailSend ? <li>Send Outlook email when requested</li> : null}
                   {mailSendUnknown ? (
-                    <li>Send email after approval (permission pending verification)</li>
+                    <li>Send Outlook email when requested (permission pending verification)</li>
                   ) : null}
                 </ul>
               </div>

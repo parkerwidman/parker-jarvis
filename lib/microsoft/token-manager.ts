@@ -2,13 +2,18 @@ import "server-only";
 
 import { decryptToken, encryptToken } from "@/lib/microsoft/encryption";
 import {
+  grantedScopesIncludeMailReadWrite,
   grantedScopesIncludeMailSend,
   isGrantedScopesUnknown,
+  MICROSOFT_MAIL_READ_WRITE_SCOPE,
   MICROSOFT_MAIL_SEND_SCOPE,
   MICROSOFT_SCOPES_STRING,
+  resolveMailReadWritePermissionState,
   resolveMailSendPermissionState,
+  scopesWithoutMailReadWrite,
   scopesWithoutMailSend,
   type MailSendPermissionState,
+  type MicrosoftPermissionState,
 } from "@/lib/microsoft/scopes";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -272,5 +277,54 @@ export async function recordMailSendMissing(
   await supabase
     .from("microsoft_connections")
     .update({ granted_scopes: scopesWithoutMailSend() })
+    .eq("user_id", userId);
+}
+
+export async function getMailReadWritePermissionState(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<MicrosoftPermissionState> {
+  const scopes = await getMicrosoftGrantedScopes(supabase, userId);
+  return resolveMailReadWritePermissionState(scopes);
+}
+
+export async function recordMailReadWriteVerified(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const scopes = await getMicrosoftGrantedScopes(supabase, userId);
+
+  if (scopes && grantedScopesIncludeMailReadWrite(scopes)) {
+    return;
+  }
+
+  const nextScopes =
+    scopes && !isGrantedScopesUnknown(scopes)
+      ? `${scopes} ${MICROSOFT_MAIL_READ_WRITE_SCOPE}`.trim()
+      : MICROSOFT_MAIL_READ_WRITE_SCOPE;
+
+  await supabase
+    .from("microsoft_connections")
+    .update({ granted_scopes: nextScopes })
+    .eq("user_id", userId);
+}
+
+export async function recordMailReadWriteMissing(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const scopes = await getMicrosoftGrantedScopes(supabase, userId);
+
+  if (
+    scopes &&
+    !isGrantedScopesUnknown(scopes) &&
+    !grantedScopesIncludeMailReadWrite(scopes)
+  ) {
+    return;
+  }
+
+  await supabase
+    .from("microsoft_connections")
+    .update({ granted_scopes: scopesWithoutMailReadWrite() })
     .eq("user_id", userId);
 }

@@ -8,6 +8,8 @@ export const ACTION_TYPE_CREATE_TASK = "create_task" as const;
 
 export const ACTION_TYPE_SEND_OUTLOOK_EMAIL = "send_outlook_email" as const;
 
+export const ACTION_TYPE_CREATE_OUTLOOK_DRAFT = "create_outlook_draft" as const;
+
 export const APPROVAL_REQUIRED_RISK_LEVEL = "approval_required" as const;
 
 export const AUTO_EXECUTE_RISK_LEVEL = "low" as const;
@@ -35,5 +37,6 @@ export const AUTO_EXECUTED_ACTION_TYPES = [
   ACTION_TYPE_CREATE_TASK,
   ACTION_TYPE_CREATE_OUTLOOK_REMINDER,
   ACTION_TYPE_CREATE_OUTLOOK_CALENDAR_EVENT,
+  ACTION_TYPE_CREATE_OUTLOOK_DRAFT,
   ACTION_TYPE_SEND_OUTLOOK_EMAIL,
 ] as const;
