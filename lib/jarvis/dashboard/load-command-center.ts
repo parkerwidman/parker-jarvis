@@ -17,12 +17,21 @@ import {
 } from "@/lib/jarvis/dashboard/command-center-utils";
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
 import type { JarvisProfile, LifeArea } from "@/lib/jarvis/tools/memory-tools";
-import { listOutlookCalendar } from "@/lib/jarvis/tools/microsoft-tools";
+import {
+  listOutlookCalendar,
+  listOutlookInbox,
+} from "@/lib/jarvis/tools/microsoft-tools";
+import {
+  resolveBriefPriorityText,
+} from "@/lib/jarvis/briefings/morning-brief-display-metadata";
+import { isMelusiLifeArea } from "@/lib/jarvis/dashboard/command-center-mode";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_APPROVALS = 5;
 const MAX_PLAN_ITEMS = 6;
 const MAX_BRIEF_PREVIEW_LINES = 4;
+const MAX_INBOX_MESSAGES = 5;
+const MAX_KANBAN_TASKS = 30;
 
 type MorningBriefingRow = {
   id: string;
@@ -30,6 +39,7 @@ type MorningBriefingRow = {
   status: string;
   content: string | null;
   safe_error_message: string | null;
+  source_counts: unknown;
 };
 
 type DailyPlanRow = {
@@ -143,6 +153,35 @@ export type CommandCenterCounts = {
   activeGoals: number;
 };
 
+export type CommandCenterInboxMessage = {
+  senderDisplay: string;
+  subject: string;
+  isRead: boolean;
+};
+
+export type CommandCenterInbox = {
+  connected: boolean;
+  needsReconnect: boolean;
+  messages: CommandCenterInboxMessage[];
+  unreadCount: number;
+  emptyMessage: string | null;
+};
+
+export type CommandCenterKanbanTask = {
+  id: string;
+  title: string;
+  status: string;
+  lifeAreaName: string | null;
+};
+
+export type CommandCenterGoalProgress = {
+  id: string;
+  title: string;
+  progress: number;
+  lifeAreaName: string | null;
+  progressLabel: string;
+};
+
 export type CommandCenterData = {
   preferredName: string | null;
   timezone: string;
@@ -150,14 +189,20 @@ export type CommandCenterData = {
   todayDateLabel: string;
   headerStatus: string;
   briefing: CommandCenterBriefing | null;
+  briefingTranscript: string | null;
+  briefingPriorityText: string | null;
   plan: CommandCenterPlan | null;
   focusTask: FocusTask | null;
   taskGroups: TaskGroups;
   schedule: DashboardSchedule;
   goals: DashboardGoal[];
+  goalItems: CommandCenterGoalProgress[];
   attentionItems: AttentionItem[];
   approvals: CommandCenterApproval[];
   outlook: CommandCenterOutlook;
+  inbox: CommandCenterInbox;
+  kanbanTasks: CommandCenterKanbanTask[];
+  melusiLifeAreaIds: string[];
   counts: CommandCenterCounts;
 };
 
@@ -234,7 +279,7 @@ export async function loadCommandCenter(
   ] = await Promise.all([
     supabase
       .from("morning_briefings")
-      .select("id, briefing_date, status, content, safe_error_message")
+      .select("id, briefing_date, status, content, safe_error_message, source_counts")
       .eq("user_id", userId)
       .eq("briefing_date", todayDate)
       .maybeSingle(),
@@ -331,11 +376,14 @@ export async function loadCommandCenter(
   const goalRows = (goalsResult.data ?? []) as GoalRow[];
 
   const calendarBounds = getCalendarFetchBounds(todayDate, timezone);
-  const calendarResult = await listOutlookCalendar(supabase, userId, {
-    startDateTime: calendarBounds.startDateTime,
-    endDateTime: calendarBounds.endDateTime,
-    timeZone: timezone,
-  });
+  const [calendarResult, inboxResult] = await Promise.all([
+    listOutlookCalendar(supabase, userId, {
+      startDateTime: calendarBounds.startDateTime,
+      endDateTime: calendarBounds.endDateTime,
+      timeZone: timezone,
+    }),
+    listOutlookInbox(supabase, userId, { limit: MAX_INBOX_MESSAGES, unreadOnly: false }),
+  ]);
 
   let outlook: CommandCenterOutlook = {
     connected: false,
@@ -396,6 +444,114 @@ export async function loadCommandCenter(
     activeGoals: goalRows.length,
   };
 
+  const briefingTranscript =
+    briefingRow?.status === "completed" && briefingRow.content
+      ? briefingRow.content.trim()
+      : null;
+
+  const briefingPriorityText = resolveBriefPriorityText({
+    sourceCounts: briefingRow?.source_counts,
+    transcript: briefingTranscript,
+    currentFocus,
+    focusTaskTitle: view.focusTask?.title ?? null,
+  });
+
+  let inbox: CommandCenterInbox = {
+    connected: false,
+    needsReconnect: false,
+    messages: [],
+    unreadCount: 0,
+    emptyMessage: "Outlook is not connected. Connect Microsoft to see your inbox.",
+  };
+
+  if (inboxResult.success) {
+    const messages = inboxResult.messages.map((message) => ({
+      senderDisplay:
+        message.senderName?.trim() ||
+        message.senderAddress?.trim() ||
+        "Unknown sender",
+      subject: message.subject?.trim() || "(No subject)",
+      isRead: message.isRead,
+    }));
+
+    inbox = {
+      connected: true,
+      needsReconnect: false,
+      messages,
+      unreadCount: messages.filter((message) => !message.isRead).length,
+      emptyMessage:
+        messages.length === 0 ? "No recent inbox messages." : null,
+    };
+  } else if ("needsReconnect" in inboxResult && inboxResult.needsReconnect) {
+    inbox = {
+      connected: false,
+      needsReconnect: true,
+      messages: [],
+      unreadCount: 0,
+      emptyMessage: "Microsoft 365 needs to be reconnected to show inbox.",
+    };
+  } else if ("needsConnection" in inboxResult && inboxResult.needsConnection) {
+    inbox = {
+      connected: false,
+      needsReconnect: false,
+      messages: [],
+      unreadCount: 0,
+      emptyMessage: "Outlook is not connected. Connect Microsoft to see your inbox.",
+    };
+  } else if (outlook.connected) {
+    inbox = {
+      connected: true,
+      needsReconnect: false,
+      messages: [],
+      unreadCount: 0,
+      emptyMessage: "Inbox could not be loaded right now.",
+    };
+  }
+
+  const melusiLifeAreaIds = lifeAreas
+    .filter((area) => isMelusiLifeArea(area.name))
+    .map((area) => area.id);
+
+  const kanbanTasks: CommandCenterKanbanTask[] = taskRows
+    .filter((task) =>
+      ["todo", "in_progress", "done"].includes(task.status),
+    )
+    .slice(0, MAX_KANBAN_TASKS)
+    .map((task) => ({
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      lifeAreaName:
+        task.life_area_id !== null
+          ? (lifeAreaNames.get(task.life_area_id) ?? null)
+          : null,
+    }));
+
+  const goalItems: CommandCenterGoalProgress[] = goalRows.map((goal) => {
+    const lifeAreaTaskCount = goal.life_area_id
+      ? unfinishedTasks.filter((task) => task.life_area_id === goal.life_area_id)
+          .length
+      : 0;
+
+    let progressLabel = "In progress";
+    if (goal.progress > 0) {
+      progressLabel = `${goal.progress}% complete`;
+    } else if (lifeAreaTaskCount > 0) {
+      progressLabel = `${lifeAreaTaskCount} active task${lifeAreaTaskCount === 1 ? "" : "s"}`;
+    }
+
+    return {
+      id: goal.id,
+      title: goal.title,
+      progress: goal.progress,
+      lifeAreaName:
+        goal.life_area_id !== null
+          ? (lifeAreaNames.get(goal.life_area_id) ?? null)
+          : null,
+      progressLabel,
+    };
+  });
+
   return {
     preferredName,
     timezone,
@@ -403,14 +559,20 @@ export async function loadCommandCenter(
     todayDateLabel,
     headerStatus: view.headerStatus,
     briefing,
+    briefingTranscript,
+    briefingPriorityText,
     plan,
     focusTask: view.focusTask,
     taskGroups: view.taskGroups,
     schedule: view.schedule,
     goals: view.goals,
+    goalItems,
     attentionItems: view.attentionItems,
     approvals,
     outlook,
+    inbox,
+    kanbanTasks,
+    melusiLifeAreaIds,
     counts,
   };
 }

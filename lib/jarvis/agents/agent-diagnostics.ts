@@ -17,7 +17,7 @@ const SENSITIVE_LOG_PATTERNS: RegExp[] = [
   /process\.env\.[A-Z0-9_]+/gi,
 ];
 
-function sanitizeLogValue(value: string): string {
+export function sanitizeLogValue(value: string): string {
   let sanitized = value;
   for (const pattern of SENSITIVE_LOG_PATTERNS) {
     sanitized = sanitized.replace(pattern, "[REDACTED]");

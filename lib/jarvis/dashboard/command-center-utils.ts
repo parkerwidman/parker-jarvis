@@ -59,7 +59,7 @@ function getLocalHour(timeZone: string, date: Date): number {
   );
 }
 
-function addDaysToLocalDate(localDate: string, days: number): string {
+export function addDaysToLocalDate(localDate: string, days: number): string {
   const [year, month, day] = localDate.split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day + days, 12, 0, 0));
   return date.toISOString().slice(0, 10);

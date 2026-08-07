@@ -21,6 +21,10 @@ import {
   resolveOutlookDraftReference,
   storeOutlookDraftReference,
 } from "@/lib/jarvis/tools/outlook-draft-references";
+import {
+  formatGraphCalendarLocalDateTime,
+  parseGraphCalendarDateTime,
+} from "@/lib/jarvis/tools/graph-calendar-datetime";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const ISO8601_OFFSET_PATTERN = /[Zz]|[+-]\d{2}:\d{2}$|[+-]\d{4}$/;
@@ -72,6 +76,7 @@ type GraphEvent = {
   isAllDay?: boolean;
   isCancelled?: boolean;
   showAs?: string;
+  importance?: string;
   webLink?: string;
 };
 
@@ -103,6 +108,7 @@ export type OutlookEvent = {
   isAllDay: boolean;
   isCancelled: boolean;
   showAs: string;
+  importance: string;
   locationName: string | null;
   organizerName: string | null;
   organizerAddress: string | null;
@@ -269,18 +275,7 @@ function isValidTimeZone(timeZone: string): boolean {
 }
 
 function formatLocalDateTime(isoString: string, timeZone: string): string {
-  const date = new Date(isoString);
-
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(date);
+  return formatGraphCalendarLocalDateTime(isoString, timeZone);
 }
 
 function normalizeMessage(message: GraphMessage): OutlookMessage | null {
@@ -331,17 +326,22 @@ function normalizeEvent(
       ? event.subject
       : "(No subject)";
 
+  const startDate = parseGraphCalendarDateTime(event.start.dateTime, timeZone);
+  const endDate = parseGraphCalendarDateTime(event.end.dateTime, timeZone);
+
   return {
     id: event.id,
     subject,
-    start: event.start.dateTime,
-    end: event.end.dateTime,
+    start: startDate.toISOString(),
+    end: endDate.toISOString(),
     localStart: formatLocalDateTime(event.start.dateTime, timeZone),
     localEnd: formatLocalDateTime(event.end.dateTime, timeZone),
     timeZone,
     isAllDay: event.isAllDay === true,
     isCancelled: event.isCancelled === true,
     showAs: typeof event.showAs === "string" ? event.showAs : "unknown",
+    importance:
+      typeof event.importance === "string" ? event.importance : "normal",
     locationName:
       typeof event.location?.displayName === "string"
         ? event.location.displayName
@@ -451,7 +451,7 @@ export async function listOutlookCalendar(
   }
 
   const select =
-    "id,subject,start,end,location,organizer,isAllDay,isCancelled,showAs,webLink";
+    "id,subject,start,end,location,organizer,isAllDay,isCancelled,showAs,importance,webLink";
   const path = `/v1.0/me/calendarView?startDateTime=${encodeURIComponent(startDateTime)}&endDateTime=${encodeURIComponent(endDateTime)}&$top=100&$orderby=${encodeURIComponent("start/dateTime")}&$select=${encodeURIComponent(select)}`;
 
   const graphResult = await microsoftGraphGet(supabase, userId, path);

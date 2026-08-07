@@ -34,7 +34,7 @@ export async function JarvisAppShell({
   const mainClasses = ["app-main", mainClassName].filter(Boolean).join(" ");
 
   return (
-    <div className="app-shell">
+    <div className="app-shell cc2-app-shell">
       <JarvisSidebar displayName={displayName} userEmail={userEmail} />
       <div className={mainClasses}>{children}</div>
     </div>
