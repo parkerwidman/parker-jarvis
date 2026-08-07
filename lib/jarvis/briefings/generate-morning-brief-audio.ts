@@ -89,6 +89,24 @@ function isReadyWithMatchingHash(
   );
 }
 
+export function timestampsRepresentSameInstant(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  if (left == null || right == null) {
+    return false;
+  }
+
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+
+  if (Number.isNaN(leftMs) || Number.isNaN(rightMs)) {
+    return false;
+  }
+
+  return leftMs === rightMs;
+}
+
 function ownsGenerationClaim(
   row: BriefingAudioRow,
   normalizedSpokenContent: string,
@@ -99,9 +117,15 @@ function ownsGenerationClaim(
     row.content === normalizedSpokenContent &&
     row.audio_status === "generating" &&
     row.audio_content_hash === contentHash &&
-    row.audio_generation_started_at === claimStartedAt
+    timestampsRepresentSameInstant(row.audio_generation_started_at, claimStartedAt)
   );
 }
+
+export type ClaimAudioGenerationResult =
+  | { status: "claimed"; claimStartedAt: string }
+  | { status: "already_ready" }
+  | { status: "generation_in_progress" }
+  | { status: "briefing_changed" };
 
 function resolveLostOwnershipResult(
   row: BriefingAudioRow | null,
@@ -142,6 +166,15 @@ async function loadBriefingAudioRow(
   return data as BriefingAudioRow;
 }
 
+function readPersistedClaimStartedAt(
+  row: { audio_generation_started_at?: string | null },
+): string | null {
+  const claimStartedAt = row.audio_generation_started_at;
+  return typeof claimStartedAt === "string" && claimStartedAt.length > 0
+    ? claimStartedAt
+    : null;
+}
+
 async function claimAudioGeneration(
   supabase: SupabaseClient,
   userId: string,
@@ -150,7 +183,7 @@ async function claimAudioGeneration(
   contentHash: string,
   claimStartedAt: string,
   staleBeforeIso: string,
-): Promise<"claimed" | "already_ready" | "generation_in_progress" | "briefing_changed"> {
+): Promise<ClaimAudioGenerationResult> {
   const { data, error } = await supabase
     .from("morning_briefings")
     .update({
@@ -165,29 +198,30 @@ async function claimAudioGeneration(
     .or(
       `audio_status.in.(none,pending,failed),and(audio_status.eq.ready,audio_content_hash.neq.${contentHash}),and(audio_status.eq.generating,audio_content_hash.neq.${contentHash})`,
     )
-    .select("id")
+    .select("id, audio_generation_started_at")
     .maybeSingle();
 
   if (error) {
-    return "generation_in_progress";
+    return { status: "generation_in_progress" };
   }
 
-  if (data) {
-    return "claimed";
+  const initialClaimStartedAt = readPersistedClaimStartedAt(data ?? {});
+  if (initialClaimStartedAt) {
+    return { status: "claimed", claimStartedAt: initialClaimStartedAt };
   }
 
   const row = await loadBriefingAudioRow(supabase, userId, briefingDate);
 
   if (!row) {
-    return "briefing_changed";
+    return { status: "briefing_changed" };
   }
 
   if (row.content !== normalizedSpokenContent) {
-    return "briefing_changed";
+    return { status: "briefing_changed" };
   }
 
   if (isReadyWithMatchingHash(row, contentHash)) {
-    return "already_ready";
+    return { status: "already_ready" };
   }
 
   if (row.audio_status === "generating" && row.audio_content_hash === contentHash) {
@@ -195,7 +229,7 @@ async function claimAudioGeneration(
       row.audio_generation_started_at &&
       row.audio_generation_started_at > staleBeforeIso
     ) {
-      return "generation_in_progress";
+      return { status: "generation_in_progress" };
     }
 
     const { data: reclaimed, error: reclaimError } = await supabase
@@ -212,17 +246,18 @@ async function claimAudioGeneration(
       .eq("audio_status", "generating")
       .eq("audio_content_hash", contentHash)
       .lte("audio_generation_started_at", staleBeforeIso)
-      .select("id")
+      .select("id, audio_generation_started_at")
       .maybeSingle();
 
-    if (!reclaimError && reclaimed) {
-      return "claimed";
+    const reclaimedClaimStartedAt = readPersistedClaimStartedAt(reclaimed ?? {});
+    if (!reclaimError && reclaimedClaimStartedAt) {
+      return { status: "claimed", claimStartedAt: reclaimedClaimStartedAt };
     }
 
-    return "generation_in_progress";
+    return { status: "generation_in_progress" };
   }
 
-  return "generation_in_progress";
+  return { status: "generation_in_progress" };
 }
 
 async function persistAudioFailure(
@@ -361,7 +396,10 @@ async function handleReadyPersistenceFailure(
     recoveryRow &&
     recoveryRow.audio_status === "generating" &&
     recoveryRow.audio_content_hash === contentHash &&
-    recoveryRow.audio_generation_started_at !== claimStartedAt
+    !timestampsRepresentSameInstant(
+      recoveryRow.audio_generation_started_at,
+      claimStartedAt,
+    )
   ) {
     const result: GenerateMorningBriefAudioResult = {
       resultCode: "generation_in_progress",
@@ -546,7 +584,7 @@ export async function generateMorningBriefAudio(
     staleBeforeIso,
   );
 
-  if (claimResult === "already_ready") {
+  if (claimResult.status === "already_ready") {
     const result: GenerateMorningBriefAudioResult = {
       resultCode: "already_ready",
       contentHash,
@@ -561,7 +599,7 @@ export async function generateMorningBriefAudio(
     return result;
   }
 
-  if (claimResult === "generation_in_progress") {
+  if (claimResult.status === "generation_in_progress") {
     const result: GenerateMorningBriefAudioResult = {
       resultCode: "generation_in_progress",
       contentHash,
@@ -574,7 +612,7 @@ export async function generateMorningBriefAudio(
     return result;
   }
 
-  if (claimResult === "briefing_changed") {
+  if (claimResult.status === "briefing_changed") {
     const result: GenerateMorningBriefAudioResult = {
       resultCode: MORNING_BRIEF_AUDIO_ERROR_CODES.briefingChanged,
       contentHash,
@@ -586,6 +624,8 @@ export async function generateMorningBriefAudio(
     });
     return result;
   }
+
+  const authoritativeClaimStartedAt = claimResult.claimStartedAt;
 
   const previousStoragePath = row.audio_storage_path;
   const storagePath = buildMorningBriefAudioStoragePath(
@@ -604,7 +644,7 @@ export async function generateMorningBriefAudio(
       input.briefingDate,
       normalizedSpokenContent,
       contentHash,
-      claimStartedAt,
+      authoritativeClaimStartedAt,
       speechResult.errorCode,
     );
     const result: GenerateMorningBriefAudioResult = persisted
@@ -631,7 +671,7 @@ export async function generateMorningBriefAudio(
       input.briefingDate,
       normalizedSpokenContent,
       contentHash,
-      claimStartedAt,
+      authoritativeClaimStartedAt,
       MORNING_BRIEF_AUDIO_ERROR_CODES.emptyAudio,
     );
     const result: GenerateMorningBriefAudioResult = persisted
@@ -657,7 +697,7 @@ export async function generateMorningBriefAudio(
     input.briefingDate,
     normalizedSpokenContent,
     contentHash,
-    claimStartedAt,
+    authoritativeClaimStartedAt,
   );
 
   if (!preUploadOwnership.ok) {
@@ -683,7 +723,7 @@ export async function generateMorningBriefAudio(
       input.briefingDate,
       normalizedSpokenContent,
       contentHash,
-      claimStartedAt,
+      authoritativeClaimStartedAt,
       MORNING_BRIEF_AUDIO_ERROR_CODES.storageUploadFailed,
     );
     const result: GenerateMorningBriefAudioResult = persisted
@@ -709,7 +749,7 @@ export async function generateMorningBriefAudio(
     input.briefingDate,
     normalizedSpokenContent,
     contentHash,
-    claimStartedAt,
+    authoritativeClaimStartedAt,
   );
 
   if (!postUploadOwnership.ok) {
@@ -753,7 +793,7 @@ export async function generateMorningBriefAudio(
     .eq("content", normalizedSpokenContent)
     .eq("audio_status", "generating")
     .eq("audio_content_hash", contentHash)
-    .eq("audio_generation_started_at", claimStartedAt)
+    .eq("audio_generation_started_at", authoritativeClaimStartedAt)
     .select("audio_storage_path")
     .maybeSingle();
 
@@ -763,7 +803,7 @@ export async function generateMorningBriefAudio(
       input,
       normalizedSpokenContent,
       contentHash,
-      claimStartedAt,
+      authoritativeClaimStartedAt,
       storagePath,
       ttsConfig,
     );

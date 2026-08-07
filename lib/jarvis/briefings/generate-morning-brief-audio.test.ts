@@ -11,6 +11,7 @@ import {
   generateMorningBriefAudio,
   MORNING_BRIEF_AUDIO_ERROR_CODES,
   MORNING_BRIEF_AUDIO_GENERATION_STALE_MS,
+  timestampsRepresentSameInstant,
 } from "@/lib/jarvis/briefings/generate-morning-brief-audio";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -47,6 +48,15 @@ type BriefingRow = {
 };
 
 type UpdateFilters = Record<string, unknown>;
+
+function toPostgresTimestamptz(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) {
+    return iso;
+  }
+
+  return new Date(parsed).toISOString().replace("Z", "+00:00");
+}
 
 function canClaimInitial(row: BriefingRow, contentHash: string): boolean {
   if (row.content !== SPOKEN_TEXT) {
@@ -94,8 +104,15 @@ function matchesClaimOwnership(
     row.content === SPOKEN_TEXT &&
     row.audio_status === "generating" &&
     row.audio_content_hash === contentHash &&
-    filters.audio_generation_started_at === row.audio_generation_started_at
+    timestampsRepresentSameInstant(
+      filters.audio_generation_started_at as string | null | undefined,
+      row.audio_generation_started_at,
+    )
   );
+}
+
+function persistClaimStartedAt(payload: Record<string, unknown>): string {
+  return toPostgresTimestamptz(payload.audio_generation_started_at as string);
 }
 
 function createMockAutomationClient(initialRow: BriefingRow | null) {
@@ -159,32 +176,44 @@ function createMockAutomationClient(initialRow: BriefingRow | null) {
 
                 if (payload.audio_status === "generating" && row) {
                   if (canClaimInitial(row, contentHash)) {
+                    const persistedClaimStartedAt = persistClaimStartedAt(payload);
                     row = {
                       ...row,
                       audio_status: "generating",
                       audio_content_hash: contentHash,
-                      audio_generation_started_at:
-                        payload.audio_generation_started_at as string,
+                      audio_generation_started_at: persistedClaimStartedAt,
                       audio_error_code: null,
                     };
                     claimCount += 1;
-                    return { data: { id: "brief-1" }, error: null };
+                    return {
+                      data: {
+                        id: "brief-1",
+                        audio_generation_started_at: persistedClaimStartedAt,
+                      },
+                      error: null,
+                    };
                   }
 
                   if (
                     canReclaimStale(row, contentHash, staleBeforeIso) &&
                     claimCount === 0
                   ) {
+                    const persistedClaimStartedAt = persistClaimStartedAt(payload);
                     row = {
                       ...row,
                       audio_status: "generating",
                       audio_content_hash: contentHash,
-                      audio_generation_started_at:
-                        payload.audio_generation_started_at as string,
+                      audio_generation_started_at: persistedClaimStartedAt,
                       audio_error_code: null,
                     };
                     claimCount += 1;
-                    return { data: { id: "brief-1" }, error: null };
+                    return {
+                      data: {
+                        id: "brief-1",
+                        audio_generation_started_at: persistedClaimStartedAt,
+                      },
+                      error: null,
+                    };
                   }
 
                   return { data: null, error: null };
@@ -255,6 +284,35 @@ function createMockAutomationClient(initialRow: BriefingRow | null) {
   };
 }
 
+describe("timestampsRepresentSameInstant", () => {
+  it("treats equivalent Z and +00:00 timestamps as the same instant", () => {
+    expect(
+      timestampsRepresentSameInstant(
+        "2026-08-07T08:23:15.123Z",
+        "2026-08-07T08:23:15.123+00:00",
+      ),
+    ).toBe(true);
+  });
+
+  it("returns false for null or invalid timestamps", () => {
+    expect(timestampsRepresentSameInstant(null, "2026-08-07T08:23:15.123Z")).toBe(
+      false,
+    );
+    expect(timestampsRepresentSameInstant("not-a-date", "2026-08-07T08:23:15.123Z")).toBe(
+      false,
+    );
+  });
+
+  it("returns false for genuinely different timestamps", () => {
+    expect(
+      timestampsRepresentSameInstant(
+        "2026-08-07T08:23:15.123Z",
+        "2026-08-07T08:23:16.123Z",
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("generateMorningBriefAudio", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -291,6 +349,110 @@ describe("generateMorningBriefAudio", () => {
 
     expect(result.resultCode).toBe("already_ready");
     expect(mockCreateSpeech).not.toHaveBeenCalled();
+  });
+
+  it("uses the database-returned claim timestamp as authoritative on initial claim", async () => {
+    const { supabase, updates } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "none",
+      audio_content_hash: null,
+      audio_storage_path: null,
+      audio_generation_started_at: null,
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_A_CLAIM_AT,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(
+      updates.some(
+        (update) =>
+          update.audio_status === "ready" &&
+          update.audio_generation_started_at === null,
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the database-returned claim timestamp as authoritative on stale reclaim", async () => {
+    const hash = expectedContentHash();
+    const staleStartedAt = new Date(
+      WORKER_B_RECLAIM_AT.getTime() - MORNING_BRIEF_AUDIO_GENERATION_STALE_MS,
+    ).toISOString();
+    const { supabase } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "generating",
+      audio_content_hash: hash,
+      audio_storage_path: null,
+      audio_generation_started_at: staleStartedAt,
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_B_RECLAIM_AT,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+  });
+
+  it("recognizes ownership after TTS when Supabase reload returns +00:00 for a Z claim", async () => {
+    const hash = expectedContentHash();
+    const jsClaimAt = "2026-08-07T08:23:15.123Z";
+    const postgresClaimAt = "2026-08-07T08:23:15.123+00:00";
+    const mock = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "none",
+      audio_content_hash: null,
+      audio_storage_path: null,
+      audio_generation_started_at: null,
+    });
+
+    mockCreateSpeech.mockImplementationOnce(async () => {
+      mock.setRow({
+        content: SPOKEN_TEXT,
+        audio_status: "generating",
+        audio_content_hash: hash,
+        audio_storage_path: null,
+        audio_generation_started_at: postgresClaimAt,
+      });
+      return {
+        success: true,
+        audioBytes: new Uint8Array([7, 8, 9]),
+      };
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: mock.supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => new Date(jsClaimAt),
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(mockUpload).toHaveBeenCalledOnce();
   });
 
   it("records audio_generation_started_at on initial claim using a single now value", async () => {
