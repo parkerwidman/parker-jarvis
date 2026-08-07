@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 
-const { mockResponsesCreate, listOutlookInbox, listOutlookCalendar } = vi.hoisted(
+const { mockResponsesCreate, listOutlookInbox, listOutlookCalendar, mockGenerateMorningBriefAudio } = vi.hoisted(
   () => ({
     mockResponsesCreate: vi.fn(),
     listOutlookInbox: vi.fn(),
     listOutlookCalendar: vi.fn().mockResolvedValue({ success: true, events: [] }),
+    mockGenerateMorningBriefAudio: vi.fn().mockResolvedValue({
+      resultCode: "ready",
+    }),
   }),
 );
 
@@ -62,6 +65,11 @@ vi.mock("@/lib/jarvis/briefings/load-finance-brief-snapshot", () => ({
 vi.mock("@/lib/jarvis/tools/microsoft-tools", () => ({
   listOutlookInbox,
   listOutlookCalendar,
+}));
+
+vi.mock("@/lib/jarvis/briefings/generate-morning-brief-audio", () => ({
+  generateMorningBriefAudio: (...args: unknown[]) =>
+    mockGenerateMorningBriefAudio(...args),
 }));
 
 import { loadJarvisContext } from "@/lib/jarvis/tools/memory-tools";
@@ -149,6 +157,7 @@ describe("generateMorningBrief OpenAI storage behavior", () => {
     vi.clearAllMocks();
     process.env.OPENAI_API_KEY = "test-key";
     listOutlookCalendar.mockResolvedValue({ success: true, events: [] });
+    mockGenerateMorningBriefAudio.mockResolvedValue({ resultCode: "ready" });
   });
 
   it("does not load Outlook inbox during Morning Brief generation", async () => {
@@ -305,5 +314,59 @@ describe("generateMorningBrief OpenAI storage behavior", () => {
     expect(result.success).toBe(false);
     expect(completedUpdates).toHaveLength(0);
     expect(failedUpdates.length).toBeGreaterThan(0);
+  });
+
+  it("still succeeds when morning brief audio generation fails", async () => {
+    mockGenerateMorningBriefAudio.mockResolvedValueOnce({
+      resultCode: "tts_failed",
+    });
+
+    mockResponsesCreate.mockResolvedValue(
+      buildResponse({
+        status: "completed",
+        output_text: SAMPLE_BRIEF,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 80,
+          total_tokens: 180,
+          output_tokens_details: { reasoning_tokens: 10 },
+        },
+      }),
+    );
+
+    const { supabase, completedUpdates, failedUpdates } = createMockSupabase();
+    const result = await generateMorningBrief(supabase, USER_ID);
+
+    expect(result.success).toBe(true);
+    expect(completedUpdates).toHaveLength(1);
+    expect(failedUpdates).toHaveLength(0);
+    expect(mockGenerateMorningBriefAudio).toHaveBeenCalledOnce();
+  });
+
+  it("still succeeds when morning brief audio generation throws unexpectedly", async () => {
+    mockGenerateMorningBriefAudio.mockRejectedValueOnce(
+      new Error("unexpected audio subsystem failure"),
+    );
+
+    mockResponsesCreate.mockResolvedValue(
+      buildResponse({
+        status: "completed",
+        output_text: SAMPLE_BRIEF,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 80,
+          total_tokens: 180,
+          output_tokens_details: { reasoning_tokens: 10 },
+        },
+      }),
+    );
+
+    const { supabase, completedUpdates, failedUpdates } = createMockSupabase();
+    const result = await generateMorningBrief(supabase, USER_ID);
+
+    expect(result.success).toBe(true);
+    expect(completedUpdates).toHaveLength(1);
+    expect(failedUpdates).toHaveLength(0);
+    expect(mockGenerateMorningBriefAudio).toHaveBeenCalledOnce();
   });
 });

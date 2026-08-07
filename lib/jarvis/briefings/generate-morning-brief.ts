@@ -59,6 +59,7 @@ import {
   buildMorningBriefOpenAiRequestParams,
   evaluateMorningBriefOpenAiResponse,
 } from "@/lib/jarvis/briefings/morning-brief-openai";
+import { generateMorningBriefAudio } from "@/lib/jarvis/briefings/generate-morning-brief-audio";
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const SAFE_ERROR_MESSAGE = "Jarvis could not generate the morning brief.";
@@ -690,6 +691,19 @@ export async function generateMorningBrief(
       success: true,
       durationMs: Date.now() - updateStartedAt,
     });
+
+    try {
+      await generateMorningBriefAudio({
+        userId,
+        briefingDate,
+        normalizedSpokenContent: content,
+      });
+    } catch {
+      console.info("[morning-brief-audio]", {
+        stage: "unexpected_error",
+        resultCode: "unexpected_error",
+      });
+    }
 
     return { success: true, briefingDate };
   } catch (error) {
