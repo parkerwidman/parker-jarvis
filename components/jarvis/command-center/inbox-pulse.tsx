@@ -18,23 +18,29 @@ export function InboxPulse({ inbox }: InboxPulseProps) {
         ) : null}
       </div>
 
-      {inbox.emptyMessage ? (
-        <p className="cc2-pulse-empty">{inbox.emptyMessage}</p>
-      ) : (
-        inbox.messages.map((message, index) => (
-          <div key={`${message.senderDisplay}-${message.subject}-${index}`} className="cc2-mail-row">
-            {!message.isRead ? (
-              <span className="cc2-mail-dot" aria-label="Unread" />
-            ) : (
-              <span className="cc2-mail-dot cc2-mail-dot--read" aria-hidden="true" />
-            )}
-            <div>
-              <div className="cc2-mail-from">{message.senderDisplay}</div>
-              <div className="cc2-mail-sub">{message.subject}</div>
+      <div
+        className="cc2-panel-scroll cc2-pulse-scroll"
+        aria-label="Outlook inbox messages"
+        tabIndex={0}
+      >
+        {inbox.emptyMessage ? (
+          <p className="cc2-pulse-empty">{inbox.emptyMessage}</p>
+        ) : (
+          inbox.messages.map((message, index) => (
+            <div key={`${message.senderDisplay}-${message.subject}-${index}`} className="cc2-mail-row">
+              {!message.isRead ? (
+                <span className="cc2-mail-dot" aria-label="Unread" />
+              ) : (
+                <span className="cc2-mail-dot cc2-mail-dot--read" aria-hidden="true" />
+              )}
+              <div className="cc2-mail-body">
+                <div className="cc2-mail-from">{message.senderDisplay}</div>
+                <div className="cc2-mail-sub">{message.subject}</div>
+              </div>
             </div>
-          </div>
-        ))
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

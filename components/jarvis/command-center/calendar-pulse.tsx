@@ -58,23 +58,29 @@ export function CalendarPulse({
         <span className="cc2-pulse-head-title">Today&apos;s calendar</span>
       </div>
 
-      {emptyMessage ? (
-        <p className="cc2-pulse-empty">{emptyMessage}</p>
-      ) : (
-        todayEvents.map((event, index) => (
-          <div key={`${event.start}-${event.subject}-${index}`} className="cc2-cal-row">
-            <span className="cc2-cal-time">
-              {formatEventTime(event, timeZone)}
-            </span>
-            <div>
-              <div className="cc2-cal-name">{event.subject}</div>
-              {event.locationName ? (
-                <span className="cc2-cal-with">{event.locationName}</span>
-              ) : null}
+      <div
+        className="cc2-panel-scroll cc2-pulse-scroll"
+        aria-label="Today's calendar events"
+        tabIndex={0}
+      >
+        {emptyMessage ? (
+          <p className="cc2-pulse-empty">{emptyMessage}</p>
+        ) : (
+          todayEvents.map((event, index) => (
+            <div key={`${event.start}-${event.subject}-${index}`} className="cc2-cal-row">
+              <span className="cc2-cal-time">
+                {formatEventTime(event, timeZone)}
+              </span>
+              <div className="cc2-cal-body">
+                <div className="cc2-cal-name">{event.subject}</div>
+                {event.locationName ? (
+                  <span className="cc2-cal-with">{event.locationName}</span>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

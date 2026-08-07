@@ -46,17 +46,23 @@ export function CommandKanban({ tasks }: CommandKanbanProps) {
                 <span className="cc2-kcol-count">{columnTasks.length}</span>
               </div>
 
-              {columnTasks.length === 0 ? (
-                <p className="cc2-kcol-empty">No tasks</p>
-              ) : (
-                columnTasks.map((task) => (
-                  <KanbanCard
-                    key={task.id}
-                    task={task}
-                    mode={mode}
-                  />
-                ))
-              )}
+              <div
+                className="cc2-panel-scroll cc2-kcol-scroll"
+                aria-label={`${column.label} tasks`}
+                tabIndex={0}
+              >
+                {columnTasks.length === 0 ? (
+                  <p className="cc2-kcol-empty">No tasks</p>
+                ) : (
+                  columnTasks.map((task) => (
+                    <KanbanCard
+                      key={task.id}
+                      task={task}
+                      mode={mode}
+                    />
+                  ))
+                )}
+              </div>
             </div>
           );
         })}
