@@ -33,6 +33,13 @@ const MAX_BRIEF_PREVIEW_LINES = 4;
 const MAX_INBOX_MESSAGES = 5;
 const MAX_KANBAN_TASKS = 30;
 
+export type MorningBriefAudioStatus =
+  | "none"
+  | "pending"
+  | "generating"
+  | "ready"
+  | "failed";
+
 type MorningBriefingRow = {
   id: string;
   briefing_date: string;
@@ -40,7 +47,21 @@ type MorningBriefingRow = {
   content: string | null;
   safe_error_message: string | null;
   source_counts: unknown;
+  audio_status: string;
 };
+
+function parseMorningBriefAudioStatus(value: string): MorningBriefAudioStatus {
+  if (
+    value === "pending" ||
+    value === "generating" ||
+    value === "ready" ||
+    value === "failed"
+  ) {
+    return value;
+  }
+
+  return "none";
+}
 
 type DailyPlanRow = {
   id: string;
@@ -87,6 +108,7 @@ export type CommandCenterBriefing = {
   status: string;
   preview: string | null;
   safeErrorMessage: string | null;
+  audioStatus: MorningBriefAudioStatus;
 };
 
 export type CommandCenterPlanItem = {
@@ -279,7 +301,9 @@ export async function loadCommandCenter(
   ] = await Promise.all([
     supabase
       .from("morning_briefings")
-      .select("id, briefing_date, status, content, safe_error_message, source_counts")
+      .select(
+        "id, briefing_date, status, content, safe_error_message, source_counts, audio_status",
+      )
       .eq("user_id", userId)
       .eq("briefing_date", todayDate)
       .maybeSingle(),
@@ -337,6 +361,7 @@ export async function loadCommandCenter(
             ? extractBriefPreview(briefingRow.content)
             : null,
         safeErrorMessage: briefingRow.safe_error_message,
+        audioStatus: parseMorningBriefAudioStatus(briefingRow.audio_status),
       }
     : null;
 
