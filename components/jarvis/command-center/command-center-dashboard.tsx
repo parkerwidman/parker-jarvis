@@ -135,7 +135,9 @@ function CommandCenterDashboardInner({
         briefingStatus={data.briefing?.status ?? null}
         audioStatus={data.briefing?.audioStatus ?? "none"}
         audioGeneratedAt={data.briefing?.audioGeneratedAt ?? null}
-        briefingDate={data.todayDate}
+        briefingDate={
+          data.briefingTranscript ? (data.briefing?.briefingDate ?? null) : null
+        }
         onFollowUp={handleFollowUp}
         followUpLoading={chatLoading}
         followUpUsed={followUpUsed}

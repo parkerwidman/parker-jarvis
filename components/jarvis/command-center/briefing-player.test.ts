@@ -64,6 +64,17 @@ describe("BriefingPlayer", () => {
     expect(failedHtml).toContain("Audio unavailable");
   });
 
+  it("does not offer generate/retry actions without a briefing date", () => {
+    const html = renderPlayer({
+      audioStatus: "none",
+      briefingDate: null,
+    });
+
+    expect(html).not.toContain("Generate audio");
+    expect(html).not.toContain("Retry audio");
+    expect(html).not.toContain("cc2-audio-retry-btn");
+  });
+
   it("renders seek input and time labels for ready playback", () => {
     const html = renderPlayer({ audioStatus: "ready" });
 

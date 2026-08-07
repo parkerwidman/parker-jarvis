@@ -22,8 +22,6 @@ import {
   shouldFetchSignedUrl,
   shouldResetPlaybackState,
   shouldShowRetryAction,
-  shouldResetPlaybackState,
-  shouldShowRetryAction,
 } from "@/lib/jarvis/briefings/briefing-audio-player";
 
 describe("briefing audio player helpers", () => {
@@ -220,6 +218,7 @@ describe("briefing audio player helpers", () => {
       expect(mapRetryPayload({ status: "generating" })).toBe("generating");
       expect(mapRetryPayload({ status: "failed" })).toBe("failed");
       expect(mapRetryPayload({ error: "unauthorized" })).toBe("unauthorized");
+      expect(mapRetryPayload({ error: "not_found" })).toBe("not_found");
     });
   });
 

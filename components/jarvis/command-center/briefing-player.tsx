@@ -66,7 +66,7 @@ type BriefingPlayerProps = {
   briefingStatus: string | null;
   audioStatus: MorningBriefAudioStatus;
   audioGeneratedAt: string | null;
-  briefingDate: string;
+  briefingDate: string | null;
   onFollowUp: (prompt: string, key: string) => void;
   followUpLoading: boolean;
   followUpUsed: Set<string>;
@@ -135,7 +135,8 @@ export function BriefingPlayer({
   const isBriefFailed = briefingStatus === "failed";
   const progress = computePlaybackProgress(currentTime, duration);
   const playEnabled = isPlayControlEnabled(audioStatus, { isRetrying, loadingUrl });
-  const showRetry = shouldShowRetryAction(audioStatus);
+  const showRetry =
+    briefingDate !== null && shouldShowRetryAction(audioStatus);
   const statusMessage = getAudioStatusMessage(audioStatus, {
     isRetrying,
     playbackError,
@@ -213,6 +214,10 @@ export function BriefingPlayer({
       url: string;
       expiresInSeconds: number;
     } | null> => {
+      if (!briefingDate) {
+        return null;
+      }
+
       const forceRefresh = options?.forceRefresh ?? false;
       const nowMs = Date.now();
 
@@ -390,7 +395,7 @@ export function BriefingPlayer({
   }, [isPlaying, playEnabled, startPlayback]);
 
   const handleRetry = useCallback(async () => {
-    if (retryInFlightRef.current) {
+    if (!briefingDate || retryInFlightRef.current) {
       return;
     }
 
@@ -434,7 +439,7 @@ export function BriefingPlayer({
   }, [briefingDate, resetPlayback]);
 
   const handleCheckAgain = useCallback(async () => {
-    if (fetchInFlightRef.current) {
+    if (!briefingDate || fetchInFlightRef.current) {
       return;
     }
 

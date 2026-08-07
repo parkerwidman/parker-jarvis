@@ -307,7 +307,7 @@ export function derivePlaybackPhase(options: {
 }
 
 export type BriefingPlaybackIdentity = {
-  briefingDate: string;
+  briefingDate: string | null;
   audioStatus: MorningBriefAudioStatus;
   audioGeneratedAt: string | null;
 };

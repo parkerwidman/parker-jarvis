@@ -106,12 +106,32 @@ type TaskRow = {
 
 export type CommandCenterBriefing = {
   id: string;
+  briefingDate: string;
   status: string;
   preview: string | null;
   safeErrorMessage: string | null;
   audioStatus: MorningBriefAudioStatus;
   audioGeneratedAt: string | null;
 };
+
+function isCompletedBriefingRow(row: MorningBriefingRow | null): row is MorningBriefingRow {
+  return Boolean(row?.status === "completed" && row.content?.trim());
+}
+
+export function selectDisplayedMorningBriefingRow(
+  todayRow: MorningBriefingRow | null,
+  latestCompletedRow: MorningBriefingRow | null,
+): MorningBriefingRow | null {
+  if (isCompletedBriefingRow(todayRow)) {
+    return todayRow;
+  }
+
+  if (isCompletedBriefingRow(latestCompletedRow)) {
+    return latestCompletedRow;
+  }
+
+  return todayRow;
+}
 
 export type CommandCenterPlanItem = {
   title: string;
@@ -292,8 +312,12 @@ export async function loadCommandCenter(
   const preferredName = profile?.preferred_name?.trim() || null;
   const currentFocus = profile?.current_focus?.trim() || null;
 
+  const briefingSelect =
+    "id, briefing_date, status, content, safe_error_message, source_counts, audio_status, audio_generated_at";
+
   const [
     briefingResult,
+    latestCompletedBriefingResult,
     planResult,
     tasksResult,
     approvalsResult,
@@ -303,11 +327,18 @@ export async function loadCommandCenter(
   ] = await Promise.all([
     supabase
       .from("morning_briefings")
-      .select(
-        "id, briefing_date, status, content, safe_error_message, source_counts, audio_status, audio_generated_at",
-      )
+      .select(briefingSelect)
       .eq("user_id", userId)
       .eq("briefing_date", todayDate)
+      .maybeSingle(),
+    supabase
+      .from("morning_briefings")
+      .select(briefingSelect)
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .not("content", "is", null)
+      .order("briefing_date", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     supabase
       .from("daily_plans")
@@ -348,7 +379,13 @@ export async function loadCommandCenter(
       .eq("status", "pending"),
   ]);
 
-  const briefingRow = (briefingResult.data ?? null) as MorningBriefingRow | null;
+  const todayBriefingRow = (briefingResult.data ?? null) as MorningBriefingRow | null;
+  const latestCompletedBriefingRow = (latestCompletedBriefingResult.data ??
+    null) as MorningBriefingRow | null;
+  const briefingRow = selectDisplayedMorningBriefingRow(
+    todayBriefingRow,
+    latestCompletedBriefingRow,
+  );
   const planRow = (planResult.data ?? null) as DailyPlanRow | null;
   const taskRows = (tasksResult.data ?? []) as TaskRow[];
   const lifeAreas = (lifeAreasResult.data ?? []) as LifeArea[];
@@ -357,6 +394,7 @@ export async function loadCommandCenter(
   const briefing: CommandCenterBriefing | null = briefingRow
     ? {
         id: briefingRow.id,
+        briefingDate: briefingRow.briefing_date,
         status: briefingRow.status,
         preview:
           briefingRow.status === "completed" && briefingRow.content
