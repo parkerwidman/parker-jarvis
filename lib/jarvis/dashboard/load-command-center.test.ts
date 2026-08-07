@@ -85,6 +85,7 @@ describe("loadCommandCenter briefing audio metadata", () => {
       safe_error_message: null,
       source_counts: null,
       audio_status: "ready",
+      audio_generated_at: "2026-08-07T08:15:00.000Z",
       audio_storage_path: `${USER_ID}/2026-08-07/deadbeef.mp3`,
       audio_content_hash: "deadbeef".repeat(8),
     });
@@ -97,9 +98,34 @@ describe("loadCommandCenter briefing audio metadata", () => {
       preview: "Good morning.\nToday is focused.",
       safeErrorMessage: null,
       audioStatus: "ready",
+      audioGeneratedAt: "2026-08-07T08:15:00.000Z",
     });
     expect(JSON.stringify(data.briefing)).not.toContain("audio_storage_path");
     expect(JSON.stringify(data.briefing)).not.toContain("audio_content_hash");
+    expect(JSON.stringify(data.briefing)).not.toContain("object/sign");
+  });
+
+  it("includes audioGeneratedAt as the only new safe audio version metadata", async () => {
+    const supabase = createSupabaseMock({
+      id: "briefing-id",
+      briefing_date: "2026-08-07",
+      status: "completed",
+      content: "Brief text",
+      safe_error_message: null,
+      source_counts: null,
+      audio_status: "ready",
+      audio_generated_at: "2026-08-07T09:30:00.000Z",
+      audio_storage_path: `${USER_ID}/2026-08-07/deadbeef.mp3`,
+      audio_content_hash: "deadbeef".repeat(8),
+    });
+
+    const data = await loadCommandCenter(supabase as never, USER_ID);
+    const serialized = JSON.stringify(data.briefing);
+
+    expect(data.briefing?.audioGeneratedAt).toBe("2026-08-07T09:30:00.000Z");
+    expect(serialized).not.toContain("audio_storage_path");
+    expect(serialized).not.toContain("audio_content_hash");
+    expect(serialized).not.toContain("object/sign");
   });
 
   it("defaults unknown audio_status values to none", async () => {

@@ -48,6 +48,7 @@ type MorningBriefingRow = {
   safe_error_message: string | null;
   source_counts: unknown;
   audio_status: string;
+  audio_generated_at: string | null;
 };
 
 function parseMorningBriefAudioStatus(value: string): MorningBriefAudioStatus {
@@ -109,6 +110,7 @@ export type CommandCenterBriefing = {
   preview: string | null;
   safeErrorMessage: string | null;
   audioStatus: MorningBriefAudioStatus;
+  audioGeneratedAt: string | null;
 };
 
 export type CommandCenterPlanItem = {
@@ -302,7 +304,7 @@ export async function loadCommandCenter(
     supabase
       .from("morning_briefings")
       .select(
-        "id, briefing_date, status, content, safe_error_message, source_counts, audio_status",
+        "id, briefing_date, status, content, safe_error_message, source_counts, audio_status, audio_generated_at",
       )
       .eq("user_id", userId)
       .eq("briefing_date", todayDate)
@@ -362,6 +364,7 @@ export async function loadCommandCenter(
             : null,
         safeErrorMessage: briefingRow.safe_error_message,
         audioStatus: parseMorningBriefAudioStatus(briefingRow.audio_status),
+        audioGeneratedAt: briefingRow.audio_generated_at,
       }
     : null;
 
