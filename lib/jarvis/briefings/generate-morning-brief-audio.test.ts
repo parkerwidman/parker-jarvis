@@ -8,11 +8,25 @@ import {
   resolveMorningBriefTtsConfig,
 } from "@/lib/jarvis/audio/tts-config";
 import {
+  MORNING_BRIEF_AUDIO_TIMELINE_VERSION,
+  MORNING_BRIEF_TIMELINE_ERROR_CODES,
+  type MorningBriefAudioTimeline,
+} from "@/lib/jarvis/briefings/audio-timeline-types";
+import {
   generateMorningBriefAudio,
   MORNING_BRIEF_AUDIO_ERROR_CODES,
   MORNING_BRIEF_AUDIO_GENERATION_STALE_MS,
+  MORNING_BRIEF_AUDIO_TIMELINE_UNEXPECTED_ERROR_CODE,
+  STALE_AUDIO_TIMELINE_CLEAR_FIELDS,
   timestampsRepresentSameInstant,
 } from "@/lib/jarvis/briefings/generate-morning-brief-audio";
+
+const mockGenerateAndPersistTimeline = vi.fn();
+
+vi.mock("@/lib/jarvis/briefings/ensure-morning-brief-audio-timeline", () => ({
+  generateAndPersistMorningBriefAudioTimeline: (...args: unknown[]) =>
+    mockGenerateAndPersistTimeline(...args),
+}));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const BRIEFING_DATE = "2026-08-07";
@@ -22,6 +36,24 @@ const WORKER_A_CLAIM_AT = new Date("2026-08-07T12:00:00.000Z");
 const WORKER_B_RECLAIM_AT = new Date(
   WORKER_A_CLAIM_AT.getTime() + MORNING_BRIEF_AUDIO_GENERATION_STALE_MS,
 );
+
+const TIMELINE: MorningBriefAudioTimeline = {
+  version: MORNING_BRIEF_AUDIO_TIMELINE_VERSION,
+  sentences: [
+    {
+      index: 0,
+      text: "Good morning, Parker.",
+      startMs: 0,
+      endMs: 900,
+    },
+    {
+      index: 1,
+      text: "Your top priority is finishing the proposal.",
+      startMs: 1000,
+      endMs: 2900,
+    },
+  ],
+};
 
 const mockCreateSpeech = vi.fn();
 const mockUpload = vi.fn();
@@ -45,7 +77,27 @@ type BriefingRow = {
   audio_storage_path: string | null;
   audio_generation_started_at: string | null;
   audio_error_code?: string | null;
+  audio_timeline?: MorningBriefAudioTimeline | null;
+  audio_timeline_content_hash?: string | null;
+  audio_duration_ms?: number | null;
+  audio_timeline_generated_at?: string | null;
+  audio_timeline_model?: string | null;
+  audio_timeline_error_code?: string | null;
 };
+
+function applyTimelineClearFromPayload(
+  row: BriefingRow,
+  payload: Record<string, unknown>,
+): BriefingRow {
+  if (payload.audio_timeline !== null) {
+    return row;
+  }
+
+  return {
+    ...row,
+    ...STALE_AUDIO_TIMELINE_CLEAR_FIELDS,
+  };
+}
 
 type UpdateFilters = Record<string, unknown>;
 
@@ -177,13 +229,16 @@ function createMockAutomationClient(initialRow: BriefingRow | null) {
                 if (payload.audio_status === "generating" && row) {
                   if (canClaimInitial(row, contentHash)) {
                     const persistedClaimStartedAt = persistClaimStartedAt(payload);
-                    row = {
-                      ...row,
-                      audio_status: "generating",
-                      audio_content_hash: contentHash,
-                      audio_generation_started_at: persistedClaimStartedAt,
-                      audio_error_code: null,
-                    };
+                    row = applyTimelineClearFromPayload(
+                      {
+                        ...row,
+                        audio_status: "generating",
+                        audio_content_hash: contentHash,
+                        audio_generation_started_at: persistedClaimStartedAt,
+                        audio_error_code: null,
+                      },
+                      payload,
+                    );
                     claimCount += 1;
                     return {
                       data: {
@@ -321,6 +376,10 @@ describe("generateMorningBriefAudio", () => {
     mockCreateSpeech.mockResolvedValue({
       success: true,
       audioBytes: new Uint8Array([1, 2, 3, 4]),
+    });
+    mockGenerateAndPersistTimeline.mockResolvedValue({
+      success: true,
+      reused: false,
     });
   });
 
@@ -964,5 +1023,226 @@ describe("generateMorningBriefAudio", () => {
     );
     expect(mock.getRow()?.audio_status).not.toBe("ready");
     expect(mockUpload).not.toHaveBeenCalled();
+  });
+
+  it("clears stale timeline metadata when claiming a different audio hash", async () => {
+    const oldHash = "b".repeat(64);
+    const { supabase, updates, getRow } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "ready",
+      audio_content_hash: oldHash,
+      audio_storage_path: `${USER_ID}/${BRIEFING_DATE}/${oldHash}.mp3`,
+      audio_generation_started_at: null,
+      audio_timeline: TIMELINE,
+      audio_timeline_content_hash: oldHash,
+      audio_duration_ms: 3000,
+      audio_timeline_generated_at: "2026-08-07T12:00:00.000Z",
+      audio_timeline_model: "whisper-1",
+      audio_timeline_error_code: null,
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_A_CLAIM_AT,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(
+      updates.some(
+        (update) =>
+          update.audio_status === "generating" &&
+          update.audio_timeline === null &&
+          update.audio_timeline_content_hash === null &&
+          update.audio_duration_ms === null &&
+          update.audio_timeline_generated_at === null &&
+          update.audio_timeline_model === null &&
+          update.audio_timeline_error_code === null,
+      ),
+    ).toBe(true);
+    expect(getRow()?.audio_timeline).toBeNull();
+    expect(getRow()?.audio_timeline_content_hash).toBeNull();
+    expect(getRow()?.audio_duration_ms).toBeNull();
+  });
+
+  it("preserves same-hash timeline metadata on stale reclaim", async () => {
+    const hash = expectedContentHash();
+    const staleStartedAt = new Date(
+      WORKER_B_RECLAIM_AT.getTime() - MORNING_BRIEF_AUDIO_GENERATION_STALE_MS,
+    ).toISOString();
+    const { supabase, getRow } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "generating",
+      audio_content_hash: hash,
+      audio_storage_path: null,
+      audio_generation_started_at: staleStartedAt,
+      audio_timeline: TIMELINE,
+      audio_timeline_content_hash: hash,
+      audio_duration_ms: 3000,
+      audio_timeline_generated_at: "2026-08-07T12:00:00.000Z",
+      audio_timeline_model: "whisper-1",
+      audio_timeline_error_code: null,
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_B_RECLAIM_AT,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(getRow()?.audio_timeline).toEqual(TIMELINE);
+    expect(getRow()?.audio_timeline_content_hash).toBe(hash);
+    expect(getRow()?.audio_duration_ms).toBe(3000);
+  });
+
+  it("returns ready when timeline generation fails with an expected error code", async () => {
+    mockGenerateAndPersistTimeline.mockResolvedValueOnce({
+      success: false,
+      errorCode: MORNING_BRIEF_TIMELINE_ERROR_CODES.alignmentFailed,
+    });
+
+    const { supabase, getRow } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "none",
+      audio_content_hash: null,
+      audio_storage_path: null,
+      audio_generation_started_at: null,
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_A_CLAIM_AT,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(getRow()?.audio_status).toBe("ready");
+    expect(getRow()?.audio_storage_path).toContain(".mp3");
+  });
+
+  it("returns ready when timeline generation throws unexpectedly", async () => {
+    mockGenerateAndPersistTimeline.mockRejectedValueOnce(
+      new Error("raw transcript path leaked"),
+    );
+
+    const { supabase, getRow } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "none",
+      audio_content_hash: null,
+      audio_storage_path: null,
+      audio_generation_started_at: null,
+    });
+
+    const result = await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_A_CLAIM_AT,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(getRow()?.audio_status).toBe("ready");
+    expect(getRow()?.audio_storage_path).toContain(".mp3");
+  });
+
+  it("does not delete MP3 when timeline generation throws unexpectedly", async () => {
+    const hash = expectedContentHash();
+    const storagePath = `${USER_ID}/${BRIEFING_DATE}/${hash}.mp3`;
+    mockGenerateAndPersistTimeline.mockRejectedValueOnce(new Error("boom"));
+
+    const { supabase, removeCalls } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "none",
+      audio_content_hash: null,
+      audio_storage_path: null,
+      audio_generation_started_at: null,
+    });
+
+    await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_A_CLAIM_AT,
+      },
+    );
+
+    expect(removeCalls.flat()).not.toContain(storagePath);
+  });
+
+  it("logs only sanitized timeline codes when timeline generation throws", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    mockGenerateAndPersistTimeline.mockRejectedValueOnce(
+      new Error("secret transcript /tmp/leak"),
+    );
+
+    const { supabase } = createMockAutomationClient({
+      content: SPOKEN_TEXT,
+      audio_status: "none",
+      audio_content_hash: null,
+      audio_storage_path: null,
+      audio_generation_started_at: null,
+    });
+
+    await generateMorningBriefAudio(
+      {
+        userId: USER_ID,
+        briefingDate: BRIEFING_DATE,
+        normalizedSpokenContent: SPOKEN_TEXT,
+      },
+      {
+        automationClient: supabase,
+        createSpeech: mockCreateSpeech,
+        now: () => WORKER_A_CLAIM_AT,
+      },
+    );
+
+    const timelineLog = infoSpy.mock.calls
+      .map(([message, payload]) => ({ message, payload }))
+      .find(
+        (entry) =>
+          entry.message === "[morning-brief-audio]" &&
+          (entry.payload as { stage?: string }).stage === "timeline",
+      );
+
+    expect(timelineLog?.payload).toMatchObject({
+      stage: "timeline",
+      resultCode: MORNING_BRIEF_AUDIO_TIMELINE_UNEXPECTED_ERROR_CODE,
+    });
+    expect(JSON.stringify(timelineLog?.payload)).not.toContain("secret");
+    expect(JSON.stringify(timelineLog?.payload)).not.toContain("/tmp/leak");
+    infoSpy.mockRestore();
   });
 });

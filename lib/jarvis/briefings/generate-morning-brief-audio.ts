@@ -11,6 +11,7 @@ import {
   MORNING_BRIEF_AUDIO_BUCKET,
 } from "@/lib/jarvis/audio/storage-path";
 import { resolveMorningBriefTtsConfig } from "@/lib/jarvis/audio/tts-config";
+import { generateAndPersistMorningBriefAudioTimeline } from "@/lib/jarvis/briefings/ensure-morning-brief-audio-timeline";
 import { createAutomationClient } from "@/lib/supabase/automation";
 
 export const MORNING_BRIEF_AUDIO_ERROR_CODES = {
@@ -51,6 +52,18 @@ type BriefingAudioRow = {
 
 export const MORNING_BRIEF_AUDIO_GENERATION_STALE_MS = 10 * 60 * 1000;
 
+export const STALE_AUDIO_TIMELINE_CLEAR_FIELDS = {
+  audio_timeline: null,
+  audio_timeline_content_hash: null,
+  audio_duration_ms: null,
+  audio_timeline_generated_at: null,
+  audio_timeline_model: null,
+  audio_timeline_error_code: null,
+} as const;
+
+export const MORNING_BRIEF_AUDIO_TIMELINE_UNEXPECTED_ERROR_CODE =
+  "timeline_unexpected_error";
+
 export type GenerateMorningBriefAudioInput = {
   userId: string;
   briefingDate: string;
@@ -65,7 +78,7 @@ type GenerateMorningBriefAudioDeps = {
 
 function logMorningBriefAudioDiagnostic(details: {
   stage: string;
-  resultCode: MorningBriefAudioResultCode;
+  resultCode: MorningBriefAudioResultCode | string;
   model?: string;
   reused?: boolean;
 }): void {
@@ -191,6 +204,7 @@ async function claimAudioGeneration(
       audio_content_hash: contentHash,
       audio_generation_started_at: claimStartedAt,
       audio_error_code: null,
+      ...STALE_AUDIO_TIMELINE_CLEAR_FIELDS,
     })
     .eq("user_id", userId)
     .eq("briefing_date", briefingDate)
@@ -825,6 +839,38 @@ export async function generateMorningBriefAudio(
       input.briefingDate,
       storagePath,
     );
+  }
+
+  try {
+    const timelineResult = await generateAndPersistMorningBriefAudioTimeline({
+      supabase,
+      userId: input.userId,
+      briefingDate: input.briefingDate,
+      normalizedSpokenContent,
+      contentHash,
+      audioBytes: speechResult.audioBytes,
+    });
+
+    if (!timelineResult.success) {
+      logMorningBriefAudioDiagnostic({
+        stage: "timeline",
+        resultCode: timelineResult.errorCode,
+        model: ttsConfig.model,
+      });
+    } else if (!("skipped" in timelineResult && timelineResult.skipped)) {
+      logMorningBriefAudioDiagnostic({
+        stage: "timeline",
+        resultCode: "ready",
+        model: ttsConfig.model,
+        reused: timelineResult.reused,
+      });
+    }
+  } catch {
+    logMorningBriefAudioDiagnostic({
+      stage: "timeline",
+      resultCode: MORNING_BRIEF_AUDIO_TIMELINE_UNEXPECTED_ERROR_CODE,
+      model: ttsConfig.model,
+    });
   }
 
   const result: GenerateMorningBriefAudioResult = {
