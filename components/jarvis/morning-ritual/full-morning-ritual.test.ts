@@ -180,15 +180,14 @@ describe("Sleep screen phase 6B production flow", () => {
     }
   });
 
-  it("keeps Command Center, home page, and login redirect untouched", () => {
+  it("routes daily entry through /wake with validated Command Center bypass", () => {
     const homeSource = readFileSync(HOME_PAGE_PATH, "utf8");
     const loginSource = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
     const briefingSource = readFileSync(BRIEFING_PLAYER_PATH, "utf8");
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualGate");
-    expect(loginSource).toContain('redirect("/")');
-    expect(loginSource).not.toContain('redirect("/wake")');
+    expect(loginSource).toContain('redirect("/wake")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("FullMorningRitual");
   });

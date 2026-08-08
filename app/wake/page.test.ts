@@ -125,20 +125,19 @@ describe("WakePage", () => {
 });
 
 describe("Morning Ritual phase 2 safety boundaries", () => {
-  it("keeps login redirect on /", () => {
+  it("redirects successful login to /wake", () => {
     const source = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
 
-    expect(source).toContain('redirect("/")');
-    expect(source).not.toContain('redirect("/wake")');
+    expect(source).toContain('redirect("/wake")');
+    expect(source).not.toContain('redirect("/")');
   });
 
-  it("keeps root page behavior unchanged", () => {
+  it("gates root bare entry through /wake", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
-    expect(source).toContain("loadCommandCenter");
+    expect(source).toContain('redirect("/wake")');
+    expect(source).toContain("getDailyRitual");
     expect(source).toContain('redirect("/login")');
-    expect(source).not.toContain("/wake");
-    expect(source).not.toContain("loadMorningRitualEntry");
   });
 
   it("keeps Command Center components unchanged by this phase", () => {
@@ -153,10 +152,11 @@ describe("Morning Ritual phase 2 safety boundaries", () => {
     expect(source).not.toContain("/wake");
   });
 
-  it("does not gate root / through the wake route", () => {
+  it("does not gate root / through wake without the bypass marker", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
-    expect(source).not.toMatch(/redirect\("\/wake"\)/);
+    expect(source).toContain('ritualEntry !== "complete"');
+    expect(source).toMatch(/redirect\("\/wake"\)/);
   });
 
   it("does not trust client-supplied userId in the wake route", () => {

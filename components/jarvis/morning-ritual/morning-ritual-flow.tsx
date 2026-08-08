@@ -602,7 +602,7 @@ export function MorningRitualFlow({ entry }: MorningRitualFlowProps) {
   }, [requestCompletion]);
 
   const handleEnterJarvis = useCallback(() => {
-    router.push("/");
+    router.push("/?ritualEntry=complete");
   }, [router]);
 
   const signInEnabled = canStartMorningRitual({

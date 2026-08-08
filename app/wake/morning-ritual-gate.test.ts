@@ -158,15 +158,14 @@ describe("MorningRitualGate phase 3 visuals", () => {
     expect(WELCOME_STARFIELD).toHaveLength(45);
   });
 
-  it("keeps /wake separate from Command Center and unchanged root/login flows", () => {
+  it("keeps /wake separate from Command Center with daily entry routing on root", () => {
     const homeSource = readFileSync(HOME_PAGE_PATH, "utf8");
     const loginSource = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
     const briefingSource = readFileSync(BRIEFING_PLAYER_PATH, "utf8");
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualGate");
-    expect(loginSource).toContain('redirect("/")');
-    expect(loginSource).not.toContain('redirect("/wake")');
+    expect(loginSource).toContain('redirect("/wake")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("MorningRitualGate");
   });

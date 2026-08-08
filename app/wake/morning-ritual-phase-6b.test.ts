@@ -297,10 +297,10 @@ describe("Morning Ritual phase 6B orchestration", () => {
     });
   });
 
-  it("welcome back navigates to / after flash and never preloads audio", () => {
+  it("welcome back navigates to /?ritualEntry=complete after flash and never preloads audio", () => {
     const welcomeSource = readFileSync(WELCOME_PATH, "utf8");
 
-    expect(welcomeSource).toContain('router.push("/")');
+    expect(welcomeSource).toContain('router.replace("/?ritualEntry=complete")');
     expect(welcomeSource).not.toContain("fetchMorningRitualSignedAudioUrl");
     expect(welcomeSource).not.toMatch(/HTMLAudioElement|new Audio/);
   });
@@ -346,15 +346,15 @@ describe("Morning Ritual phase 6B orchestration", () => {
     }
   });
 
-  it("keeps /, login redirect, and Command Center unchanged", () => {
+  it("routes daily entry through /wake with validated Command Center bypass", () => {
     const homeSource = readFileSync(HOME_PAGE_PATH, "utf8");
     const loginSource = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
     const briefingSource = readFileSync(BRIEFING_PLAYER_PATH, "utf8");
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualFlow");
-    expect(loginSource).toContain('redirect("/")');
-    expect(loginSource).not.toContain('redirect("/wake")');
+    expect(homeSource).toContain('ritualEntry !== "complete"');
+    expect(loginSource).toContain('redirect("/wake")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("MorningRitualFlow");
   });

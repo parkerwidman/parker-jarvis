@@ -18,7 +18,7 @@ export function WelcomeBackScreen({ displayName }: WelcomeBackScreenProps) {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      router.push("/");
+      router.replace("/?ritualEntry=complete");
     }, WELCOME_BACK_FLASH_MS);
 
     return () => {
