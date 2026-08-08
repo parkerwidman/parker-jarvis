@@ -14,6 +14,7 @@ import type { MorningBriefingRowForRitual } from "@/lib/jarvis/rituals/morning-r
 import {
   loadMorningRitualEntry,
   resolveMorningRitualDisplayName,
+  resolveMorningRitualRootRoute,
 } from "@/lib/jarvis/rituals/load-morning-ritual-entry";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -656,5 +657,61 @@ describe("loadMorningRitualEntry", () => {
     expect(entry.briefingDate).toBe("2026-08-06");
     expect(entry.briefing).toBeNull();
     expect(entry.playbackReadiness).toBe("no_brief");
+  });
+});
+
+describe("resolveMorningRitualRootRoute", () => {
+  it("returns command_center for not_started with no_brief", () => {
+    expect(
+      resolveMorningRitualRootRoute({
+        ritualStatus: "not_started",
+        playbackReadiness: "no_brief",
+      }),
+    ).toBe("command_center");
+  });
+
+  it("returns command_center for not_started with audio_not_ready", () => {
+    expect(
+      resolveMorningRitualRootRoute({
+        ritualStatus: "not_started",
+        playbackReadiness: "audio_not_ready",
+      }),
+    ).toBe("command_center");
+  });
+
+  it("returns command_center for not_started with timeline_missing", () => {
+    expect(
+      resolveMorningRitualRootRoute({
+        ritualStatus: "not_started",
+        playbackReadiness: "timeline_missing",
+      }),
+    ).toBe("command_center");
+  });
+
+  it("returns wake for not_started with ready playback", () => {
+    expect(
+      resolveMorningRitualRootRoute({
+        ritualStatus: "not_started",
+        playbackReadiness: "ready",
+      }),
+    ).toBe("wake");
+  });
+
+  it("returns wake for started ritual regardless of playback readiness", () => {
+    expect(
+      resolveMorningRitualRootRoute({
+        ritualStatus: "started",
+        playbackReadiness: "no_brief",
+      }),
+    ).toBe("wake");
+  });
+
+  it("returns wake for completed ritual", () => {
+    expect(
+      resolveMorningRitualRootRoute({
+        ritualStatus: "completed",
+        playbackReadiness: "ready",
+      }),
+    ).toBe("wake");
   });
 });

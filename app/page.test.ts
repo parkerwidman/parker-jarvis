@@ -1,17 +1,18 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { MorningRitualEntry } from "@/lib/jarvis/rituals/load-morning-ritual-entry";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
 const {
   createClientMock,
-  getDailyRitualMock,
+  loadMorningRitualEntryMock,
   loadCommandCenterMock,
   redirectMock,
 } = vi.hoisted(() => ({
   createClientMock: vi.fn(),
-  getDailyRitualMock: vi.fn(),
+  loadMorningRitualEntryMock: vi.fn(),
   loadCommandCenterMock: vi.fn(),
   redirectMock: vi.fn((url: string) => {
     throw new Error(`REDIRECT:${url}`);
@@ -26,11 +27,14 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: createClientMock,
 }));
 
-vi.mock("@/lib/jarvis/rituals/daily-ritual", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/jarvis/rituals/daily-ritual")>();
+vi.mock("@/lib/jarvis/rituals/load-morning-ritual-entry", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/jarvis/rituals/load-morning-ritual-entry")
+    >();
   return {
     ...actual,
-    getDailyRitual: getDailyRitualMock,
+    loadMorningRitualEntry: loadMorningRitualEntryMock,
   };
 });
 
@@ -83,23 +87,34 @@ const BRIEFING_PLAYER_PATH = resolve(
   "components/jarvis/command-center/briefing-player.tsx",
 );
 
-const COMPLETED_RITUAL = {
-  userId: USER_ID,
-  ritualDate: "2026-08-07",
-  timezone: "America/Chicago",
-  status: "completed" as const,
-  briefingDate: "2026-08-07",
-  startedAt: "2026-08-07T12:00:00.000Z",
-  completedAt: "2026-08-07T12:30:00.000Z",
-  createdAt: "2026-08-07T12:00:00.000Z",
-  updatedAt: "2026-08-07T12:30:00.000Z",
-};
+function createEntry(
+  overrides: Partial<MorningRitualEntry> = {},
+): MorningRitualEntry {
+  return {
+    displayName: "Alex",
+    timezone: "America/Chicago",
+    ritualDate: "2026-08-07",
+    ritualState: "full_required",
+    ritualStatus: "not_started",
+    briefingDate: null,
+    briefing: null,
+    playbackReadiness: "no_brief",
+    ...overrides,
+  };
+}
 
-const STARTED_RITUAL = {
-  ...COMPLETED_RITUAL,
-  status: "started" as const,
-  completedAt: null,
-};
+const COMPLETED_ENTRY = createEntry({
+  ritualState: "welcome_back",
+  ritualStatus: "completed",
+  briefingDate: "2026-08-07",
+  playbackReadiness: "ready",
+});
+
+const STARTED_ENTRY = createEntry({
+  ritualStatus: "started",
+  briefingDate: "2026-08-07",
+  playbackReadiness: "ready",
+});
 
 function mockAuthenticatedClient(options?: {
   userId?: string | null;
@@ -133,7 +148,7 @@ describe("Home daily entry gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuthenticatedClient();
-    getDailyRitualMock.mockResolvedValue(COMPLETED_RITUAL);
+    loadMorningRitualEntryMock.mockResolvedValue(COMPLETED_ENTRY);
     loadCommandCenterMock.mockResolvedValue({
       preferredName: "Alex",
       timezone: "America/Chicago",
@@ -145,7 +160,7 @@ describe("Home daily entry gate", () => {
 
     await expect(callHome()).rejects.toThrow("REDIRECT:/login");
     expect(redirectMock).toHaveBeenCalledWith("/login");
-    expect(getDailyRitualMock).not.toHaveBeenCalled();
+    expect(loadMorningRitualEntryMock).not.toHaveBeenCalled();
   });
 
   it("redirects unauthenticated /?ritualEntry=complete to /login", async () => {
@@ -155,38 +170,19 @@ describe("Home daily entry gate", () => {
       callHome({ ritualEntry: "complete" }),
     ).rejects.toThrow("REDIRECT:/login");
     expect(redirectMock).toHaveBeenCalledWith("/login");
-    expect(getDailyRitualMock).not.toHaveBeenCalled();
+    expect(loadMorningRitualEntryMock).not.toHaveBeenCalled();
   });
 
-  it("redirects authenticated no-row bare / to /wake", async () => {
-    getDailyRitualMock.mockResolvedValue(null);
+  it("A: renders Command Center when no ritual and no same-day brief", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(createEntry());
 
-    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
-    expect(redirectMock).toHaveBeenCalledWith("/wake");
-    expect(loadCommandCenterMock).not.toHaveBeenCalled();
-  });
+    await callHome();
 
-  it("redirects authenticated started bare / to /wake", async () => {
-    getDailyRitualMock.mockResolvedValue(STARTED_RITUAL);
-
-    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
-    expect(redirectMock).toHaveBeenCalledWith("/wake");
-    expect(loadCommandCenterMock).not.toHaveBeenCalled();
-  });
-
-  it("redirects authenticated completed bare / to /wake", async () => {
-    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
-    expect(redirectMock).toHaveBeenCalledWith("/wake");
-    expect(loadCommandCenterMock).not.toHaveBeenCalled();
-  });
-
-  it("renders Command Center when completed and ritualEntry=complete", async () => {
-    await callHome({ ritualEntry: "complete" });
-
-    expect(getDailyRitualMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      USER_ID,
-    );
+    expect(loadMorningRitualEntryMock).toHaveBeenCalledWith({
+      supabase: expect.any(Object),
+      userId: USER_ID,
+      email: "owner@example.com",
+    });
     expect(loadCommandCenterMock).toHaveBeenCalledWith(
       expect.any(Object),
       USER_ID,
@@ -194,12 +190,91 @@ describe("Home daily entry gate", () => {
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
-  it("redirects malformed completed bypass when briefing_date does not match ritual_date", async () => {
-    getDailyRitualMock.mockResolvedValue({
-      ...COMPLETED_RITUAL,
-      ritualDate: "2026-08-08",
-      briefingDate: "2026-08-07",
+  it("B: renders Command Center when no ritual and same-day audio_not_ready", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({ playbackReadiness: "audio_not_ready" }),
+    );
+
+    await callHome();
+
+    expect(loadCommandCenterMock).toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("C: renders Command Center when no ritual and same-day timeline_missing", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({ playbackReadiness: "timeline_missing" }),
+    );
+
+    await callHome();
+
+    expect(loadCommandCenterMock).toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("D: redirects bare / to /wake when no ritual and same-day ready", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({ playbackReadiness: "ready" }),
+    );
+
+    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
+    expect(redirectMock).toHaveBeenCalledWith("/wake");
+    expect(loadCommandCenterMock).not.toHaveBeenCalled();
+  });
+
+  it("E: renders Command Center when yesterday ready and today missing", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({
+        ritualDate: "2026-08-08",
+        playbackReadiness: "no_brief",
+      }),
+    );
+
+    await callHome();
+
+    expect(loadCommandCenterMock).toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("F: redirects authenticated started bare / to /wake", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(STARTED_ENTRY);
+
+    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
+    expect(redirectMock).toHaveBeenCalledWith("/wake");
+    expect(loadCommandCenterMock).not.toHaveBeenCalled();
+  });
+
+  it("G: redirects authenticated completed bare / to /wake", async () => {
+    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
+    expect(redirectMock).toHaveBeenCalledWith("/wake");
+    expect(loadCommandCenterMock).not.toHaveBeenCalled();
+  });
+
+  it("H: renders Command Center when completed and ritualEntry=complete", async () => {
+    await callHome({ ritualEntry: "complete" });
+
+    expect(loadMorningRitualEntryMock).toHaveBeenCalledWith({
+      supabase: expect.any(Object),
+      userId: USER_ID,
+      email: "owner@example.com",
     });
+    expect(loadCommandCenterMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      USER_ID,
+    );
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("I: redirects malformed completed bypass when briefing_date does not match ritual_date", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({
+        ritualState: "full_required",
+        ritualStatus: "not_started",
+        ritualDate: "2026-08-08",
+        briefingDate: null,
+        playbackReadiness: "ready",
+      }),
+    );
 
     await expect(
       callHome({ ritualEntry: "complete" }),
@@ -208,7 +283,7 @@ describe("Home daily entry gate", () => {
   });
 
   it("redirects no-row forged bypass to /wake", async () => {
-    getDailyRitualMock.mockResolvedValue(null);
+    loadMorningRitualEntryMock.mockResolvedValue(createEntry());
 
     await expect(
       callHome({ ritualEntry: "complete" }),
@@ -217,7 +292,7 @@ describe("Home daily entry gate", () => {
   });
 
   it("redirects started forged bypass to /wake", async () => {
-    getDailyRitualMock.mockResolvedValue(STARTED_RITUAL);
+    loadMorningRitualEntryMock.mockResolvedValue(STARTED_ENTRY);
 
     await expect(
       callHome({ ritualEntry: "complete" }),
@@ -226,39 +301,43 @@ describe("Home daily entry gate", () => {
   });
 
   it.each(["1", "true", "completed", "COMPLETE"])(
-    "rejects wrong marker ritualEntry=%s",
+    "rejects wrong marker ritualEntry=%s without bypass",
     async (value) => {
+      loadMorningRitualEntryMock.mockResolvedValue(COMPLETED_ENTRY);
+
       await expect(callHome({ ritualEntry: value })).rejects.toThrow(
         "REDIRECT:/wake",
       );
-      expect(getDailyRitualMock).not.toHaveBeenCalled();
+      expect(loadCommandCenterMock).not.toHaveBeenCalled();
     },
   );
 
   it("redirects stale bypass when today has no completed row", async () => {
-    getDailyRitualMock.mockResolvedValue(null);
+    loadMorningRitualEntryMock.mockResolvedValue(createEntry());
 
     await expect(
       callHome({ ritualEntry: "complete" }),
     ).rejects.toThrow("REDIRECT:/wake");
-    expect(getDailyRitualMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      USER_ID,
-    );
+    expect(loadMorningRitualEntryMock).toHaveBeenCalledWith({
+      supabase: expect.any(Object),
+      userId: USER_ID,
+      email: "owner@example.com",
+    });
   });
 
-  it("uses getDailyRitual for timezone-aware today lookup on bypass", async () => {
+  it("uses loadMorningRitualEntry for timezone-aware today lookup on bypass", async () => {
     await callHome({ ritualEntry: "complete" });
 
-    expect(getDailyRitualMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      USER_ID,
-    );
-    expect(getDailyRitualMock).toHaveBeenCalledTimes(1);
+    expect(loadMorningRitualEntryMock).toHaveBeenCalledWith({
+      supabase: expect.any(Object),
+      userId: USER_ID,
+      email: "owner@example.com",
+    });
+    expect(loadMorningRitualEntryMock).toHaveBeenCalledTimes(1);
   });
 
-  it("redirects to /wake when ritual lookup fails", async () => {
-    getDailyRitualMock.mockRejectedValue(new Error("db unavailable"));
+  it("redirects to /wake when entry lookup fails", async () => {
+    loadMorningRitualEntryMock.mockRejectedValue(new Error("db unavailable"));
 
     await expect(
       callHome({ ritualEntry: "complete" }),
@@ -266,10 +345,10 @@ describe("Home daily entry gate", () => {
     expect(loadCommandCenterMock).not.toHaveBeenCalled();
   });
 
-  it("does not perform ritual mutations on GET /", async () => {
+  it("J: does not perform ritual mutations on GET /", async () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
-    expect(source).toContain("getDailyRitual");
+    expect(source).toContain("loadMorningRitualEntry");
     expect(source).not.toMatch(/startDailyRitual/);
     expect(source).not.toMatch(/completeDailyRitual/);
     expect(source).not.toMatch(/bindDailyRitualBriefing/);
@@ -284,8 +363,8 @@ describe("Daily entry routing safety boundaries", () => {
 
     expect(source).toContain("loadCommandCenter");
     expect(source).toContain("CommandCenterDashboard");
-    expect(source).toContain('ritualEntry !== "complete"');
-    expect(source).toContain("isValidCompletedDailyRitual");
+    expect(source).toContain('ritualEntry === "complete"');
+    expect(source).toContain("resolveMorningRitualRootRoute");
   });
 
   it("validated bypass renders RitualEntryUrlCleanup", () => {
@@ -416,24 +495,30 @@ describe("Midnight stale bypass", () => {
     });
   });
 
-  it("yesterday completed does not satisfy today when getDailyRitual returns null", async () => {
-    getDailyRitualMock.mockResolvedValue(null);
+  it("yesterday completed does not satisfy today when entry is not_started", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({
+        ritualDate: "2026-08-08",
+        playbackReadiness: "no_brief",
+      }),
+    );
 
     await expect(
       callHome({ ritualEntry: "complete" }),
     ).rejects.toThrow("REDIRECT:/wake");
 
-    expect(getDailyRitualMock).toHaveBeenCalledWith(
-      expect.any(Object),
-      USER_ID,
-    );
+    expect(loadMorningRitualEntryMock).toHaveBeenCalledWith({
+      supabase: expect.any(Object),
+      userId: USER_ID,
+      email: "owner@example.com",
+    });
     expect(loadCommandCenterMock).not.toHaveBeenCalled();
   });
 
-  it("uses configured timezone via getDailyRitual without browser date", () => {
+  it("uses configured timezone via loadMorningRitualEntry without browser date", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
-    expect(source).toContain("getDailyRitual");
+    expect(source).toContain("loadMorningRitualEntry");
     expect(source).not.toContain("localStorage");
     expect(source).not.toContain("sessionStorage");
     expect(source).not.toMatch(/new Date\(\)/);

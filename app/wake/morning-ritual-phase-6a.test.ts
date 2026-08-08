@@ -40,13 +40,14 @@ describe("Morning Ritual phase 6A safety boundaries", () => {
     expect(loaderSource).not.toMatch(/generateMorningBrief/);
   });
 
-  it("redirects successful login to /wake and gates bare root through /wake", () => {
+  it("redirects successful login to /wake and gates bare root when playback-ready", () => {
     const homeSource = readFileSync(HOME_PAGE_PATH, "utf8");
     const loginSource = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
 
     expect(loginSource).toContain('redirect("/wake")');
     expect(loginSource).not.toContain('redirect("/")');
     expect(homeSource).toContain("loadCommandCenter");
+    expect(homeSource).toContain("resolveMorningRitualRootRoute");
     expect(homeSource).toContain('redirect("/wake")');
   });
 

@@ -36,6 +36,22 @@ export type {
   MorningRitualPlaybackReadiness,
 } from "@/lib/jarvis/rituals/morning-ritual-briefing";
 
+export type MorningRitualRootRoute = "command_center" | "wake";
+
+export function resolveMorningRitualRootRoute(
+  entry: Pick<MorningRitualEntry, "ritualStatus" | "playbackReadiness">,
+): MorningRitualRootRoute {
+  if (entry.ritualStatus === "started" || entry.ritualStatus === "completed") {
+    return "wake";
+  }
+
+  if (entry.playbackReadiness === "ready") {
+    return "wake";
+  }
+
+  return "command_center";
+}
+
 export function resolveMorningRitualDisplayName(
   preferredName: string | null | undefined,
   email: string | null | undefined,

@@ -132,11 +132,12 @@ describe("Morning Ritual phase 2 safety boundaries", () => {
     expect(source).not.toContain('redirect("/")');
   });
 
-  it("gates root bare entry through /wake", () => {
+  it("gates root bare entry through playback readiness and ritual state", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
+    expect(source).toContain("loadMorningRitualEntry");
+    expect(source).toContain("resolveMorningRitualRootRoute");
     expect(source).toContain('redirect("/wake")');
-    expect(source).toContain("getDailyRitual");
     expect(source).toContain('redirect("/login")');
   });
 
@@ -152,10 +153,11 @@ describe("Morning Ritual phase 2 safety boundaries", () => {
     expect(source).not.toContain("/wake");
   });
 
-  it("does not gate root / through wake without the bypass marker", () => {
+  it("does not gate root / through wake without readiness or ritual state", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
-    expect(source).toContain('ritualEntry !== "complete"');
+    expect(source).toContain('ritualEntry === "complete"');
+    expect(source).toContain("resolveMorningRitualRootRoute");
     expect(source).toMatch(/redirect\("\/wake"\)/);
   });
 

@@ -353,7 +353,8 @@ describe("Morning Ritual phase 6B orchestration", () => {
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualFlow");
-    expect(homeSource).toContain('ritualEntry !== "complete"');
+    expect(homeSource).toContain('ritualEntry === "complete"');
+    expect(homeSource).toContain("resolveMorningRitualRootRoute");
     expect(loginSource).toContain('redirect("/wake")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("MorningRitualFlow");

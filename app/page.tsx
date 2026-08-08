@@ -5,9 +5,9 @@ import { RitualEntryUrlCleanup } from "@/components/jarvis/ritual-entry-url-clea
 import { loadCommandCenter } from "@/lib/jarvis/dashboard/load-command-center";
 import { getGreeting } from "@/lib/jarvis/dashboard/command-center-utils";
 import {
-  getDailyRitual,
-  isValidCompletedDailyRitual,
-} from "@/lib/jarvis/rituals/daily-ritual";
+  loadMorningRitualEntry,
+  resolveMorningRitualRootRoute,
+} from "@/lib/jarvis/rituals/load-morning-ritual-entry";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -31,20 +31,22 @@ export default async function Home({ searchParams }: HomeProps) {
   }
 
   const { ritualEntry } = await searchParams;
+  const email =
+    typeof authData.claims.email === "string" ? authData.claims.email : null;
 
-  if (ritualEntry !== "complete") {
-    redirect("/wake");
-  }
-
-  let ritual;
+  let entry;
 
   try {
-    ritual = await getDailyRitual(supabase, userId);
+    entry = await loadMorningRitualEntry({ supabase, userId, email });
   } catch {
     redirect("/wake");
   }
 
-  if (!isValidCompletedDailyRitual(ritual)) {
+  if (ritualEntry === "complete") {
+    if (entry.ritualStatus !== "completed") {
+      redirect("/wake");
+    }
+  } else if (resolveMorningRitualRootRoute(entry) === "wake") {
     redirect("/wake");
   }
 
