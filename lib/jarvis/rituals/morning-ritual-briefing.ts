@@ -215,6 +215,33 @@ export function isMorningBriefingReadyForRitualStart(
   );
 }
 
+export async function loadMorningBriefingForRitualByDate({
+  supabase,
+  userId,
+  briefingDate,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+  briefingDate: string;
+}): Promise<MorningRitualBriefing | null> {
+  const { data, error } = await supabase
+    .from("morning_briefings")
+    .select(RITUAL_BRIEFING_SELECT)
+    .eq("user_id", userId)
+    .eq("briefing_date", briefingDate)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error("Could not load morning briefing.");
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return buildMorningRitualBriefingFromRow(data as MorningBriefingRowForRitual);
+}
+
 export async function loadDisplayedMorningBriefingForRitual({
   supabase,
   userId,

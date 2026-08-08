@@ -2,6 +2,7 @@ import styles from "./morning-ritual.module.css";
 
 type RitualTranscriptProps = {
   sentences: readonly string[];
+  /** -1 before the first sentence startMs is reached. */
   activeSentenceIndex: number;
 };
 

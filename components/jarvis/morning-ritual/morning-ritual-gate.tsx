@@ -1,6 +1,6 @@
 import type { MorningRitualEntry } from "@/lib/jarvis/rituals/load-morning-ritual-entry";
 import styles from "./morning-ritual.module.css";
-import { SleepScreenWithBackground } from "./sleep-screen";
+import { MorningRitualFlow } from "./morning-ritual-flow";
 import { WelcomeBackScreenWithBackground } from "./welcome-back-screen";
 
 type MorningRitualGateProps = {
@@ -18,10 +18,7 @@ export function MorningRitualGate({ entry }: MorningRitualGateProps) {
       {entry.ritualState === "welcome_back" ? (
         <WelcomeBackScreenWithBackground displayName={entry.displayName} />
       ) : (
-        <SleepScreenWithBackground
-          displayName={entry.displayName}
-          ritualDate={entry.ritualDate}
-        />
+        <MorningRitualFlow entry={entry} />
       )}
     </main>
   );

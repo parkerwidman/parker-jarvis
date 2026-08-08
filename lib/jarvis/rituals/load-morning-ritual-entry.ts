@@ -6,6 +6,7 @@ import {
 } from "@/lib/jarvis/dashboard/command-center-utils";
 import {
   loadDisplayedMorningBriefingForRitual,
+  loadMorningBriefingForRitualByDate,
   resolveMorningRitualPlaybackReadiness,
   type MorningRitualBriefing,
   type MorningRitualPlaybackReadiness,
@@ -101,11 +102,17 @@ export async function loadMorningRitualEntry({
 
   const timezone = resolveTimeZone(profile?.timezone);
   const ritualDate = getLocalDateString(timezone, now);
-  const [ritual, briefing] = await Promise.all([
-    getDailyRitual(supabase, userId, ritualDate, now),
-    loadDisplayedMorningBriefingForRitual({ supabase, userId, now }),
-  ]);
+  const ritual = await getDailyRitual(supabase, userId, ritualDate, now);
   const ritualFields = mapRitualToEntryState(ritual);
+
+  const briefing =
+    ritualFields.ritualStatus === "started" && ritualFields.briefingDate
+      ? await loadMorningBriefingForRitualByDate({
+          supabase,
+          userId,
+          briefingDate: ritualFields.briefingDate,
+        })
+      : await loadDisplayedMorningBriefingForRitual({ supabase, userId, now });
 
   return {
     displayName: resolveMorningRitualDisplayName(profile?.preferred_name, email),

@@ -147,31 +147,36 @@ describe("FullMorningRitual phase 4 visuals", () => {
   });
 });
 
-describe("Sleep screen phase 4 demo transition", () => {
-  it("transitions locally on Sign in without backend calls", () => {
-    const source = readFileSync(SLEEP_PATH, "utf8");
-    expect(source).toContain("FullMorningRitualDemo");
-    expect(source).toContain("setShowRitual(true)");
-    expect(source).not.toMatch(/startDailyRitual/);
-    expect(source).not.toMatch(/completeDailyRitual/);
-    expect(source).not.toMatch(/router\.push/);
-    expect(source).not.toMatch(/redirect\("/);
+describe("Sleep screen phase 6B production flow", () => {
+  it("uses MorningRitualFlow for real playback orchestration", () => {
+    const gateSource = readFileSync(GATE_PATH, "utf8");
+    const flowPath = resolve(
+      ROOT,
+      "components/jarvis/morning-ritual/morning-ritual-flow.tsx",
+    );
+    const flowSource = readFileSync(flowPath, "utf8");
+
+    expect(gateSource).toContain("MorningRitualFlow");
+    expect(flowSource).toContain("startMorningRitualRequest");
+    expect(flowSource).toContain("completeMorningRitualRequest");
+    expect(flowSource).not.toContain("FullMorningRitualDemo");
   });
 
-  it("does not call audio, API, or OpenAI from ritual visuals", () => {
+  it("does not call OpenAI or generation from ritual visuals", () => {
+    const flowPath = resolve(
+      ROOT,
+      "components/jarvis/morning-ritual/morning-ritual-flow.tsx",
+    );
     const sources = [
-      readFileSync(SLEEP_PATH, "utf8"),
+      readFileSync(flowPath, "utf8"),
       readFileSync(FULL_RITUAL_PATH, "utf8"),
       readFileSync(GATE_PATH, "utf8"),
     ];
 
     for (const source of sources) {
-      expect(source).not.toMatch(/startDailyRitual/);
-      expect(source).not.toMatch(/completeDailyRitual/);
       expect(source).not.toMatch(/generateMorningBrief/);
       expect(source).not.toMatch(/generateMorningBriefAudio/);
       expect(source).not.toMatch(/openai/i);
-      expect(source).not.toMatch(/fetch\(/);
     }
   });
 

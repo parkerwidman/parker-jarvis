@@ -28,6 +28,13 @@ export type FullMorningRitualProps = {
   modeRevealed?: boolean;
   isPlaying?: boolean;
   isFinished?: boolean;
+  completionPending?: boolean;
+  completionFailed?: boolean;
+  autoplayBlocked?: boolean;
+  playbackPreparing?: boolean;
+  onEnterJarvis?: () => void;
+  onPlaybackRetry?: () => void;
+  onCompletionRetry?: () => void;
   demoMode?: boolean;
 };
 
@@ -40,6 +47,13 @@ export function FullMorningRitual({
   modeRevealed: modeRevealedProp,
   isPlaying: isPlayingProp,
   isFinished: isFinishedProp,
+  completionPending = false,
+  completionFailed = false,
+  autoplayBlocked = false,
+  playbackPreparing = false,
+  onEnterJarvis,
+  onPlaybackRetry,
+  onCompletionRetry,
   demoMode = false,
 }: FullMorningRitualProps) {
   const [demoSnapshot, setDemoSnapshot] = useState(() =>
@@ -69,7 +83,7 @@ export function FullMorningRitual({
   const activeSentenceIndex =
     demoMode && demoSnapshot
       ? demoSnapshot.activeSentenceIndex
-      : (activeSentenceIndexProp ?? 0);
+      : (activeSentenceIndexProp ?? -1);
   const recommendedMode =
     demoMode && demoSnapshot
       ? demoSnapshot.recommendedMode
@@ -125,6 +139,44 @@ export function FullMorningRitual({
           activeSentenceIndex={activeSentenceIndex}
         />
 
+        {autoplayBlocked ? (
+          <button
+            type="button"
+            className={
+              playbackPreparing
+                ? styles.playbackRetryButtonDisabled
+                : styles.playbackRetryButton
+            }
+            data-testid="playback-retry-button"
+            data-preparing={playbackPreparing ? "true" : "false"}
+            disabled={playbackPreparing}
+            onClick={() => {
+              onPlaybackRetry?.();
+            }}
+          >
+            {playbackPreparing ? "Preparing briefing…" : "Start briefing"}
+          </button>
+        ) : null}
+
+        {completionPending ? (
+          <p className={styles.completionPendingMessage} data-testid="completion-pending">
+            Finishing up…
+          </p>
+        ) : null}
+
+        {completionFailed ? (
+          <button
+            type="button"
+            className={styles.completionRetryButton}
+            data-testid="completion-retry-button"
+            onClick={() => {
+              onCompletionRetry?.();
+            }}
+          >
+            Retry completion
+          </button>
+        ) : null}
+
         <button
           type="button"
           className={
@@ -135,6 +187,11 @@ export function FullMorningRitual({
           style={{
             ["--accent" as string]: accentColor,
             ["--accent-border" as string]: accentBorder,
+          }}
+          onClick={() => {
+            if (isFinished) {
+              onEnterJarvis?.();
+            }
           }}
         >
           Enter Jarvis

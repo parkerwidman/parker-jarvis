@@ -1,12 +1,31 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
 import { WELCOME_STARFIELD } from "@/lib/jarvis/morning-ritual/starfield";
 import styles from "./morning-ritual.module.css";
 import { RitualBackground } from "./ritual-background";
+
+const WELCOME_BACK_FLASH_MS = 1900;
 
 type WelcomeBackScreenProps = {
   displayName: string;
 };
 
 export function WelcomeBackScreen({ displayName }: WelcomeBackScreenProps) {
+  const router = useRouter();
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      router.push("/");
+    }, WELCOME_BACK_FLASH_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [router]);
+
   return (
     <div className={styles.content} data-testid="welcome-back-screen">
       <p className={styles.welcomeText} data-testid="welcome-back-text">

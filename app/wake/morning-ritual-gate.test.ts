@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
 
 import { MorningRitualGate } from "@/components/jarvis/morning-ritual/morning-ritual-gate";
 import {
@@ -123,20 +130,14 @@ describe("MorningRitualGate phase 3 visuals", () => {
     expect(welcomeHtml.match(/data-testid="ritual-star"/g)?.length).toBe(45);
   });
 
-  it("does not call ritual mutation, audio, generation, or redirect", () => {
+  it("routes full_required through MorningRitualFlow and welcome_back without audio preload", () => {
     const gateSource = readFileSync(GATE_PATH, "utf8");
-    const sleepSource = readFileSync(SLEEP_PATH, "utf8");
     const welcomeSource = readFileSync(WELCOME_PATH, "utf8");
 
-    for (const source of [gateSource, sleepSource, welcomeSource]) {
-      expect(source).not.toMatch(/startDailyRitual/);
-      expect(source).not.toMatch(/completeDailyRitual/);
-      expect(source).not.toMatch(/generateMorningBrief/);
-      expect(source).not.toMatch(/generateMorningBriefAudio/);
-      expect(source).not.toMatch(/redirect\("/);
-      expect(source).not.toMatch(/router\.push/);
-      expect(source).not.toMatch(/audio/i);
-    }
+    expect(gateSource).toContain("MorningRitualFlow");
+    expect(gateSource).not.toContain("SleepScreenWithBackground");
+    expect(welcomeSource).not.toContain("fetchMorningRitualSignedAudioUrl");
+    expect(welcomeSource).not.toMatch(/new Audio/);
   });
 
   it("does not introduce Math.random during render", () => {

@@ -557,4 +557,54 @@ describe("loadMorningRitualEntry", () => {
     expect(serialized).not.toContain("user_id");
     expect(serialized).not.toContain("source_counts");
   });
+
+  it("loads the exact bound briefing row for a started ritual", async () => {
+    const { supabase } = createRitualStore({
+      initialRows: [createStartedRow("2026-08-06")],
+      briefingRows: [
+        createReadyBriefingRow("2026-08-06", {
+          recommended_mode: "personal",
+          recommendation_sentence_index: 3,
+        }),
+        createReadyBriefingRow("2026-08-07", {
+          recommended_mode: "melusi",
+          recommendation_sentence_index: 3,
+        }),
+      ],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.briefingDate).toBe("2026-08-06");
+    expect(entry.briefing?.briefingDate).toBe("2026-08-06");
+    expect(entry.briefing?.transcript).toBe(TRANSCRIPT);
+    expect(entry.briefing?.recommendedMode).toBe("personal");
+    expect(entry.briefing?.recommendationSentenceIndex).toBe(3);
+    expect(entry.briefing?.timeline?.durationMs).toBe(25320);
+  });
+
+  it("does not substitute a newer displayed briefing when bound briefing is missing", async () => {
+    const { supabase } = createRitualStore({
+      initialRows: [createStartedRow("2026-08-06")],
+      briefingRows: [
+        createReadyBriefingRow("2026-08-07", {
+          recommended_mode: "melusi",
+        }),
+      ],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.briefingDate).toBe("2026-08-06");
+    expect(entry.briefing).toBeNull();
+    expect(entry.playbackReadiness).toBe("no_brief");
+  });
 });
