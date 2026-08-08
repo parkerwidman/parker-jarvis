@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/plaid-sync",
-      "schedule": "0 10 * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/cron/morning-brief",

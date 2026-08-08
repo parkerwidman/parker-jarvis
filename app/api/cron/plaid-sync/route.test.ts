@@ -273,11 +273,11 @@ describe("plaid-sync cron schedule", () => {
 
     expect(plaidCron).toEqual({
       path: "/api/cron/plaid-sync",
-      schedule: "0 10 * * *",
+      schedule: "0 9 * * *",
     });
     expect(morningBriefCron).toEqual({
       path: "/api/cron/morning-brief",
-      schedule: "0 13 * * *",
+      schedule: "0 11 * * *",
     });
 
     const plaidHour = Number.parseInt(plaidCron!.schedule.split(" ")[1] ?? "", 10);
@@ -291,7 +291,7 @@ describe("plaid-sync cron schedule", () => {
     expect(Math.abs(morningBriefHour - plaidHour)).toBeGreaterThan(1);
   });
 
-  it("preserves the existing Morning Brief cron entry unchanged", () => {
+  it("schedules Morning Brief at 11:00 UTC so it is ready before a 6:30 AM America/Chicago wake-up", () => {
     const vercelConfig = JSON.parse(
       readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"),
     ) as {
@@ -300,7 +300,7 @@ describe("plaid-sync cron schedule", () => {
 
     expect(vercelConfig.crons).toContainEqual({
       path: "/api/cron/morning-brief",
-      schedule: "0 13 * * *",
+      schedule: "0 11 * * *",
     });
   });
 });
