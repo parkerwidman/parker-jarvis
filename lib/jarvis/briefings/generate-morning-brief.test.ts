@@ -95,7 +95,7 @@ function buildResponse(
   } as OpenAI.Responses.Response;
 }
 
-function createMockSupabase() {
+function createMockSupabase(options: { tasks?: MorningBriefTaskRow[] } = {}) {
   const completedUpdates: Array<Record<string, unknown>> = [];
   const failedUpdates: Array<Record<string, unknown>> = [];
 
@@ -114,13 +114,15 @@ function createMockSupabase() {
     eq: vi.fn().mockReturnValue(afterSecondEq),
   };
 
+  const taskRows = options.tasks ?? [];
+
   const supabase = {
     from: vi.fn((table: string) => {
       if (table === "tasks") {
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
-              neq: vi.fn().mockResolvedValue({ data: [], error: null }),
+              neq: vi.fn().mockResolvedValue({ data: taskRows, error: null }),
             }),
           }),
         };
@@ -151,6 +153,19 @@ function createMockSupabase() {
 
   return { supabase, completedUpdates, failedUpdates };
 }
+
+type MorningBriefTaskRow = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  due_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  life_area_id: string | null;
+  notes: string | null;
+  project_id: string | null;
+};
 
 describe("generateMorningBrief OpenAI storage behavior", () => {
   beforeEach(() => {
@@ -368,5 +383,65 @@ describe("generateMorningBrief OpenAI storage behavior", () => {
     expect(completedUpdates).toHaveLength(1);
     expect(failedUpdates).toHaveLength(0);
     expect(mockGenerateMorningBriefAudio).toHaveBeenCalledOnce();
+  });
+
+  it("persists recommendation metadata from the structured main priority task", async () => {
+    vi.mocked(loadJarvisContext).mockResolvedValueOnce({
+      profile: {
+        timezone: "America/Chicago",
+        preferred_name: "Parker",
+        communication_style: null,
+        current_focus: null,
+      },
+      goals: [],
+      memories: [],
+      lifeAreas: [{ id: "life-melusi", name: "Melusi" }],
+    });
+
+    const { supabase, completedUpdates } = createMockSupabase({
+      tasks: [
+        {
+          id: "task-melusi",
+          title: "Post launch update",
+          status: "open",
+          priority: "high",
+          due_at: "2026-08-07T15:00:00.000Z",
+          completed_at: null,
+          created_at: "2026-08-01T00:00:00.000Z",
+          life_area_id: "life-melusi",
+          notes: null,
+          project_id: null,
+        },
+      ],
+    });
+
+    const briefWithPriority =
+      "Good morning, Parker. The main thing I'd focus on first is Post launch update.";
+
+    mockResponsesCreate.mockResolvedValue(
+      buildResponse({
+        status: "completed",
+        output_text: briefWithPriority,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 80,
+          total_tokens: 180,
+          output_tokens_details: { reasoning_tokens: 10 },
+        },
+      }),
+    );
+
+    const result = await generateMorningBrief(supabase, USER_ID);
+
+    expect(result.success).toBe(true);
+    expect(completedUpdates).toHaveLength(1);
+    expect(completedUpdates[0]?.recommended_mode).toBe("melusi");
+    expect(completedUpdates[0]?.recommendation_sentence_index).toBe(2);
+    expect(completedUpdates[0]?.content).toContain("Melusi mode");
+    expect(mockGenerateMorningBriefAudio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        normalizedSpokenContent: expect.stringContaining("Melusi mode"),
+      }),
+    );
   });
 });

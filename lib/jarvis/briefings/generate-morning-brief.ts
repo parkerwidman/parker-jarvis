@@ -60,6 +60,10 @@ import {
   evaluateMorningBriefOpenAiResponse,
 } from "@/lib/jarvis/briefings/morning-brief-openai";
 import { generateMorningBriefAudio } from "@/lib/jarvis/briefings/generate-morning-brief-audio";
+import {
+  finalizeMorningBriefRecommendation,
+  resolveMorningBriefRecommendedModeFromPriority,
+} from "@/lib/jarvis/briefings/morning-brief-recommendation";
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const SAFE_ERROR_MESSAGE = "Jarvis could not generate the morning brief.";
@@ -622,12 +626,12 @@ export async function generateMorningBrief(
 
     currentStage = MORNING_BRIEF_STAGES.spokenTextNormalization;
     const normalizationStartedAt = Date.now();
-    const content = finalizeMorningBriefSpokenText(
+    const normalizedSpokenContent = finalizeMorningBriefSpokenText(
       extractedText,
       context.profile?.preferred_name ?? null,
     );
 
-    if (!content) {
+    if (!normalizedSpokenContent) {
       logMorningBriefEmptyOutput(EMPTY_OUTPUT_REASONS.normalizationRemovedAll, {
         durationMs: Date.now() - normalizationStartedAt,
         extractedLength: extractedText.length,
@@ -636,6 +640,21 @@ export async function generateMorningBrief(
       await markBriefingFailed(supabase, userId, briefingDate);
       return { success: false, error: SAFE_ERROR_MESSAGE };
     }
+
+    const recommendedMode = resolveMorningBriefRecommendedModeFromPriority({
+      topPriority: briefPlan.topPriority,
+      tasks: unfinishedTasks,
+      currentFocus: context.profile?.current_focus ?? null,
+      melusiProjectTaskIds: new Set(
+        Object.keys(melusiSnapshot.projectNameByTaskId),
+      ),
+    });
+
+    const { content, metadata: recommendationMetadata } =
+      finalizeMorningBriefRecommendation({
+        content: normalizedSpokenContent,
+        recommendedMode,
+      });
 
     logMorningBriefDiagnostic({
       stage: MORNING_BRIEF_STAGES.spokenTextNormalization,
@@ -674,6 +693,9 @@ export async function generateMorningBrief(
         generated_at: generatedAt,
         source_counts: finalSourceCounts,
         safe_error_message: null,
+        recommended_mode: recommendationMetadata?.recommendedMode ?? null,
+        recommendation_sentence_index:
+          recommendationMetadata?.recommendationSentenceIndex ?? null,
       })
       .eq("user_id", userId)
       .eq("briefing_date", briefingDate);
