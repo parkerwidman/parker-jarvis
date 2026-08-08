@@ -476,4 +476,188 @@ describe("ensureMorningBriefAudioTimeline", () => {
     });
     expect(mock.getRow()?.audio_timeline_error_code).toBeNull();
   });
+
+  it("accepts canonical builder paths for timeline download", async () => {
+    const contentHash = expectedContentHash();
+    const storagePath = buildMorningBriefAudioStoragePath(
+      USER_ID,
+      BRIEFING_DATE,
+      contentHash,
+    );
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: storagePath,
+    });
+    const downloadAudio = vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6]));
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(downloadAudio).toHaveBeenCalledWith(expect.anything(), storagePath);
+    expect(mockBuildTimeline).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts stored paths with alternate UUID casing when segments match", async () => {
+    const contentHash = expectedContentHash();
+    const storagePath = `${USER_ID.toUpperCase()}/${BRIEFING_DATE}/${contentHash}.mp3`;
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: storagePath,
+    });
+    const downloadAudio = vi.fn().mockResolvedValue(new Uint8Array([7, 8, 9]));
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe("ready");
+    expect(downloadAudio).toHaveBeenCalledWith(expect.anything(), storagePath);
+  });
+
+  it("rejects leading-slash malformed paths before storage download", async () => {
+    const contentHash = expectedContentHash();
+    const storagePath = `/${buildMorningBriefAudioStoragePath(
+      USER_ID,
+      BRIEFING_DATE,
+      contentHash,
+    )}`;
+    const downloadAudio = vi.fn();
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: storagePath,
+    });
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe(MORNING_BRIEF_TIMELINE_ERROR_CODES.invalid);
+    expect(downloadAudio).not.toHaveBeenCalled();
+    expect(mockBuildTimeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects bucket-prefixed malformed paths before storage download", async () => {
+    const contentHash = expectedContentHash();
+    const storagePath = `morning-brief-audio/${buildMorningBriefAudioStoragePath(
+      USER_ID,
+      BRIEFING_DATE,
+      contentHash,
+    )}`;
+    const downloadAudio = vi.fn();
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: storagePath,
+    });
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe(MORNING_BRIEF_TIMELINE_ERROR_CODES.invalid);
+    expect(downloadAudio).not.toHaveBeenCalled();
+    expect(mockBuildTimeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-user paths before storage download", async () => {
+    const contentHash = expectedContentHash();
+    const otherUserId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const downloadAudio = vi.fn();
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: buildMorningBriefAudioStoragePath(
+        otherUserId,
+        BRIEFING_DATE,
+        contentHash,
+      ),
+    });
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe(MORNING_BRIEF_TIMELINE_ERROR_CODES.invalid);
+    expect(downloadAudio).not.toHaveBeenCalled();
+    expect(mockBuildTimeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects wrong briefing-date paths before storage download", async () => {
+    const contentHash = expectedContentHash();
+    const downloadAudio = vi.fn();
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: buildMorningBriefAudioStoragePath(
+        USER_ID,
+        "2026-08-06",
+        contentHash,
+      ),
+    });
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe(MORNING_BRIEF_TIMELINE_ERROR_CODES.invalid);
+    expect(downloadAudio).not.toHaveBeenCalled();
+    expect(mockBuildTimeline).not.toHaveBeenCalled();
+  });
+
+  it("rejects wrong-hash paths before storage download and Whisper", async () => {
+    const contentHash = expectedContentHash();
+    const wrongHash =
+      "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+    const downloadAudio = vi.fn();
+    const { supabase } = createMockAutomationClient({
+      ...createReadyRow(contentHash),
+      audio_storage_path: buildMorningBriefAudioStoragePath(
+        USER_ID,
+        BRIEFING_DATE,
+        wrongHash,
+      ),
+    });
+
+    const result = await ensureMorningBriefAudioTimeline(
+      { userId: USER_ID, briefingDate: BRIEFING_DATE },
+      {
+        automationClient: supabase,
+        buildTimeline: mockBuildTimeline,
+        downloadAudio,
+      },
+    );
+
+    expect(result.resultCode).toBe(MORNING_BRIEF_TIMELINE_ERROR_CODES.invalid);
+    expect(downloadAudio).not.toHaveBeenCalled();
+    expect(mockBuildTimeline).not.toHaveBeenCalled();
+  });
 });

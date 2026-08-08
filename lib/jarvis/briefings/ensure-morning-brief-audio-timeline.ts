@@ -12,10 +12,9 @@ import {
   hasValidTimelineForAudioHash,
 } from "@/lib/jarvis/briefings/build-morning-brief-audio-timeline";
 import {
-  buildMorningBriefAudioStoragePath,
-  isMorningBriefAudioStoragePath,
   isValidBriefingDate,
   MORNING_BRIEF_AUDIO_BUCKET,
+  validateReadyMorningBriefAudioMetadata,
 } from "@/lib/jarvis/audio/storage-path";
 import { createAutomationClient } from "@/lib/supabase/automation";
 
@@ -398,33 +397,33 @@ export async function ensureMorningBriefAudioTimeline(
     return result;
   }
 
-  if (
-    !isMorningBriefAudioStoragePath(
-      row.audio_storage_path,
-      input.userId,
-      input.briefingDate,
-    ) ||
-    row.audio_storage_path !==
-      buildMorningBriefAudioStoragePath(
-        input.userId,
-        input.briefingDate,
-        contentHash,
-      )
-  ) {
+  const pathValidation = validateReadyMorningBriefAudioMetadata({
+    storagePath: row.audio_storage_path,
+    contentHash,
+    userId: input.userId,
+    briefingDate: input.briefingDate,
+  });
+
+  if (!pathValidation.ok) {
     const result: EnsureMorningBriefAudioTimelineResult = {
       resultCode: MORNING_BRIEF_TIMELINE_ERROR_CODES.invalid,
       contentHash,
     };
-    logTimelineDiagnostic({ stage: "path_validation", resultCode: result.resultCode });
+    logTimelineDiagnostic({
+      stage: "path_validation",
+      resultCode: pathValidation.reason,
+    });
     return result;
   }
+
+  const validatedStoragePath = pathValidation.storagePath;
 
   const downloadAudio =
     deps.downloadAudio ??
     ((client, storagePath) =>
       downloadMorningBriefAudioBytes(client, storagePath));
 
-  const audioBytes = await downloadAudio(supabase, row.audio_storage_path);
+  const audioBytes = await downloadAudio(supabase, validatedStoragePath);
 
   if (!audioBytes) {
     await persistTimelineFailure(

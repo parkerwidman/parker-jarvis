@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
-  buildMorningBriefAudioStoragePath,
-  isMorningBriefAudioStoragePath,
+  isReadyMorningBriefAudioMetadataValid,
   isValidBriefingDate,
-  isValidContentHash,
   MORNING_BRIEF_AUDIO_BUCKET,
 } from "@/lib/jarvis/audio/storage-path";
 import { createAutomationClient } from "@/lib/supabase/automation";
@@ -37,25 +35,7 @@ function isReadyAudioMetadataValid(
   userId: string,
   briefingDate: string,
 ): boolean {
-  const contentHash = row.audio_content_hash;
-  const storagePath = row.audio_storage_path;
-
-  if (!contentHash || !isValidContentHash(contentHash)) {
-    return false;
-  }
-
-  if (!storagePath) {
-    return false;
-  }
-
-  if (!isMorningBriefAudioStoragePath(storagePath, userId, briefingDate)) {
-    return false;
-  }
-
-  return (
-    storagePath ===
-    buildMorningBriefAudioStoragePath(userId, briefingDate, contentHash)
-  );
+  return isReadyMorningBriefAudioMetadataValid(row, userId, briefingDate);
 }
 
 export async function GET(request: NextRequest) {
