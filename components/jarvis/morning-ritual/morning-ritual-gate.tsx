@@ -18,7 +18,10 @@ export function MorningRitualGate({ entry }: MorningRitualGateProps) {
       {entry.ritualState === "welcome_back" ? (
         <WelcomeBackScreenWithBackground displayName={entry.displayName} />
       ) : (
-        <SleepScreenWithBackground />
+        <SleepScreenWithBackground
+          displayName={entry.displayName}
+          ritualDate={entry.ritualDate}
+        />
       )}
     </main>
   );
