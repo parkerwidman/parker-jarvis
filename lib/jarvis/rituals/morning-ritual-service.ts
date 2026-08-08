@@ -169,6 +169,14 @@ export async function startMorningRitual({
     };
   }
 
+  if (briefingDate !== ritualDate) {
+    return {
+      success: false,
+      error: "Morning briefing date must match today's ritual date.",
+      code: "briefing_mismatch",
+    };
+  }
+
   let startResult;
 
   try {

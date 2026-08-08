@@ -492,7 +492,23 @@ describe("loadMorningRitualEntry", () => {
     expect(entry.playbackReadiness).toBe("no_brief");
   });
 
-  it("returns ready playback readiness for a valid displayed briefing row", async () => {
+  it("returns no_brief when only a prior-day briefing exists", async () => {
+    const { supabase } = createRitualStore({
+      briefingRows: [createReadyBriefingRow("2026-08-06")],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.briefing).toBeNull();
+    expect(entry.playbackReadiness).toBe("no_brief");
+    expect(entry.briefingDate).toBeNull();
+  });
+
+  it("returns ready playback readiness for a same-day briefing row", async () => {
     const { supabase } = createRitualStore({
       briefingRows: [createReadyBriefingRow()],
     });
@@ -508,22 +524,56 @@ describe("loadMorningRitualEntry", () => {
     expect(entry.playbackReadiness).toBe("ready");
   });
 
-  it("uses the same displayed row for briefingDate and briefing payload", async () => {
+  it("does not expose a prior-day briefing on a new local day", async () => {
+    const newDayNow = new Date("2026-08-08T14:30:00.000Z");
     const { supabase } = createRitualStore({
-      briefingRows: [createReadyBriefingRow("2026-08-06")],
+      briefingRows: [createReadyBriefingRow("2026-08-07")],
     });
 
     const entry = await loadMorningRitualEntry({
       supabase,
       userId: USER_ID,
-      now: FIXED_NOW,
+      now: newDayNow,
     });
 
-    expect(entry.briefing?.briefingDate).toBe("2026-08-06");
-    expect(entry.briefing?.transcript).toBe(TRANSCRIPT);
+    expect(entry.ritualDate).toBe("2026-08-08");
+    expect(entry.briefing).toBeNull();
+    expect(entry.playbackReadiness).toBe("no_brief");
   });
 
-  it("keeps welcome_back state while still loading briefing metadata", async () => {
+  it("does not grant welcome_back for a completed ritual with mismatched briefing_date", async () => {
+    const newDayNow = new Date("2026-08-08T14:30:00.000Z");
+    const { supabase } = createRitualStore({
+      initialRows: [
+        {
+          user_id: USER_ID,
+          ritual_date: "2026-08-08",
+          timezone: "America/Chicago",
+          status: "completed",
+          briefing_date: "2026-08-07",
+          started_at: "2026-08-08T08:00:00.000Z",
+          completed_at: "2026-08-08T08:30:00.000Z",
+          created_at: "2026-08-08T08:00:00.000Z",
+          updated_at: "2026-08-08T08:30:00.000Z",
+        },
+      ],
+      briefingRows: [createReadyBriefingRow("2026-08-07")],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: newDayNow,
+    });
+
+    expect(entry.ritualState).toBe("full_required");
+    expect(entry.ritualStatus).toBe("not_started");
+    expect(entry.briefingDate).toBeNull();
+    expect(entry.briefing).toBeNull();
+    expect(entry.playbackReadiness).toBe("no_brief");
+  });
+
+  it("keeps welcome_back for a valid same-day completed ritual", async () => {
     const { supabase } = createRitualStore({
       initialRows: [createCompletedRow("2026-08-07")],
       briefingRows: [createReadyBriefingRow()],

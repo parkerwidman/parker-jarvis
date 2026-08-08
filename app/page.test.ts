@@ -26,9 +26,13 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: createClientMock,
 }));
 
-vi.mock("@/lib/jarvis/rituals/daily-ritual", () => ({
-  getDailyRitual: getDailyRitualMock,
-}));
+vi.mock("@/lib/jarvis/rituals/daily-ritual", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/jarvis/rituals/daily-ritual")>();
+  return {
+    ...actual,
+    getDailyRitual: getDailyRitualMock,
+  };
+});
 
 vi.mock("@/lib/jarvis/dashboard/load-command-center", () => ({
   loadCommandCenter: loadCommandCenterMock,
@@ -190,6 +194,19 @@ describe("Home daily entry gate", () => {
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
+  it("redirects malformed completed bypass when briefing_date does not match ritual_date", async () => {
+    getDailyRitualMock.mockResolvedValue({
+      ...COMPLETED_RITUAL,
+      ritualDate: "2026-08-08",
+      briefingDate: "2026-08-07",
+    });
+
+    await expect(
+      callHome({ ritualEntry: "complete" }),
+    ).rejects.toThrow("REDIRECT:/wake");
+    expect(loadCommandCenterMock).not.toHaveBeenCalled();
+  });
+
   it("redirects no-row forged bypass to /wake", async () => {
     getDailyRitualMock.mockResolvedValue(null);
 
@@ -268,7 +285,7 @@ describe("Daily entry routing safety boundaries", () => {
     expect(source).toContain("loadCommandCenter");
     expect(source).toContain("CommandCenterDashboard");
     expect(source).toContain('ritualEntry !== "complete"');
-    expect(source).toContain('ritual?.status !== "completed"');
+    expect(source).toContain("isValidCompletedDailyRitual");
   });
 
   it("validated bypass renders RitualEntryUrlCleanup", () => {

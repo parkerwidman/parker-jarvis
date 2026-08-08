@@ -599,6 +599,26 @@ describe("startMorningRitual", () => {
     if (result.success) return;
     expect(result.code).toBe("briefing_mismatch");
   });
+
+  it("rejects a briefing date that does not match the resolved local ritual date", async () => {
+    const { supabase } = createRitualStore({
+      briefingRows: [
+        createReadyBriefingRow(BRIEFING_DATE),
+        createReadyBriefingRow(ALT_BRIEFING_DATE),
+      ],
+    });
+
+    const result = await startMorningRitual({
+      supabase,
+      userId: USER_ID,
+      briefingDate: ALT_BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("briefing_mismatch");
+  });
 });
 
 describe("completeMorningRitual", () => {

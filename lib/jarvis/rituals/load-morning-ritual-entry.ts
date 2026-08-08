@@ -5,13 +5,15 @@ import {
   resolveTimeZone,
 } from "@/lib/jarvis/dashboard/command-center-utils";
 import {
-  loadDisplayedMorningBriefingForRitual,
   loadMorningBriefingForRitualByDate,
   resolveMorningRitualPlaybackReadiness,
   type MorningRitualBriefing,
   type MorningRitualPlaybackReadiness,
 } from "@/lib/jarvis/rituals/morning-ritual-briefing";
-import { getDailyRitual } from "@/lib/jarvis/rituals/daily-ritual";
+import {
+  getDailyRitual,
+  isValidCompletedDailyRitual,
+} from "@/lib/jarvis/rituals/daily-ritual";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type MorningRitualState = "full_required" | "welcome_back";
@@ -72,10 +74,18 @@ function mapRitualToEntryState(
     };
   }
 
+  if (isValidCompletedDailyRitual(ritual)) {
+    return {
+      ritualState: "welcome_back",
+      ritualStatus: "completed",
+      briefingDate: ritual.briefingDate,
+    };
+  }
+
   return {
-    ritualState: "welcome_back",
-    ritualStatus: "completed",
-    briefingDate: ritual.briefingDate,
+    ritualState: "full_required",
+    ritualStatus: "not_started",
+    briefingDate: null,
   };
 }
 
@@ -105,14 +115,16 @@ export async function loadMorningRitualEntry({
   const ritual = await getDailyRitual(supabase, userId, ritualDate, now);
   const ritualFields = mapRitualToEntryState(ritual);
 
-  const briefing =
+  const briefingDateToLoad =
     ritualFields.ritualStatus === "started" && ritualFields.briefingDate
-      ? await loadMorningBriefingForRitualByDate({
-          supabase,
-          userId,
-          briefingDate: ritualFields.briefingDate,
-        })
-      : await loadDisplayedMorningBriefingForRitual({ supabase, userId, now });
+      ? ritualFields.briefingDate
+      : ritualDate;
+
+  const briefing = await loadMorningBriefingForRitualByDate({
+    supabase,
+    userId,
+    briefingDate: briefingDateToLoad,
+  });
 
   return {
     displayName: resolveMorningRitualDisplayName(profile?.preferred_name, email),

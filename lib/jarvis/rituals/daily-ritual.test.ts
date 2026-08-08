@@ -4,6 +4,7 @@ import {
   bindDailyRitualBriefing,
   completeDailyRitual,
   getDailyRitual,
+  isValidCompletedDailyRitual,
   resolveUserRitualDate,
   startDailyRitual,
   startDailyRitualWithBriefing,
@@ -669,7 +670,58 @@ describe("daily ritual domain helpers", () => {
   });
 });
 
+describe("isValidCompletedDailyRitual", () => {
+  it("accepts a completed ritual with matching briefing_date", () => {
+    const ritual: DailyRitual = {
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      timezone: "America/Chicago",
+      status: "completed",
+      briefingDate: BRIEFING_DATE,
+      startedAt: "2026-08-07T08:00:00.000Z",
+      completedAt: "2026-08-07T08:30:00.000Z",
+      createdAt: "2026-08-07T08:00:00.000Z",
+      updatedAt: "2026-08-07T08:30:00.000Z",
+    };
+
+    expect(isValidCompletedDailyRitual(ritual)).toBe(true);
+  });
+
+  it("rejects a completed ritual with mismatched briefing_date", () => {
+    const ritual: DailyRitual = {
+      userId: USER_ID,
+      ritualDate: "2026-08-08",
+      timezone: "America/Chicago",
+      status: "completed",
+      briefingDate: BRIEFING_DATE,
+      startedAt: "2026-08-08T08:00:00.000Z",
+      completedAt: "2026-08-08T08:30:00.000Z",
+      createdAt: "2026-08-08T08:00:00.000Z",
+      updatedAt: "2026-08-08T08:30:00.000Z",
+    };
+
+    expect(isValidCompletedDailyRitual(ritual)).toBe(false);
+  });
+});
+
 describe("startDailyRitualWithBriefing", () => {
+  it("rejects when briefingDate does not match ritualDate", async () => {
+    const { supabase, insertCalls } = createRitualStore();
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: ALT_BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("briefing_mismatch");
+    expect(insertCalls).toHaveLength(0);
+  });
+
   it("inserts a started ritual already bound to the briefing in one write", async () => {
     const { supabase, insertCalls, rituals } = createRitualStore();
 

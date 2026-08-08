@@ -20,6 +20,16 @@ export type DailyRitual = {
   updatedAt: string;
 };
 
+export function isValidCompletedDailyRitual(
+  ritual: DailyRitual | null,
+): ritual is DailyRitual & { briefingDate: string } {
+  return (
+    ritual?.status === "completed" &&
+    ritual.briefingDate !== null &&
+    ritual.briefingDate === ritual.ritualDate
+  );
+}
+
 export type ResolveUserRitualDateResult = {
   timezone: string;
   ritualDate: string;
@@ -437,6 +447,14 @@ export async function startDailyRitualWithBriefing({
   briefingDate: string;
   now?: Date;
 }): Promise<StartDailyRitualWithBriefingResult> {
+  if (briefingDate !== ritualDate) {
+    return {
+      success: false,
+      error: "Morning briefing date must match ritual date.",
+      code: "briefing_mismatch",
+    };
+  }
+
   const existing = await loadDailyRitualRow(supabase, userId, ritualDate);
 
   if (existing) {

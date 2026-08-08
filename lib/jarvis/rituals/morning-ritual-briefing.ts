@@ -9,9 +9,6 @@ import { resolveMorningBriefRecommendation } from "@/lib/jarvis/briefings/mornin
 import type { MorningBriefRecommendedMode } from "@/lib/jarvis/briefings/morning-brief-recommendation-types";
 import { segmentMorningBriefSentences } from "@/lib/jarvis/briefings/segment-morning-brief-sentences";
 import {
-  selectDisplayedMorningBriefingRow,
-} from "@/lib/jarvis/dashboard/load-command-center";
-import {
   getLocalDateString,
   resolveTimeZone,
 } from "@/lib/jarvis/dashboard/command-center-utils";
@@ -264,36 +261,9 @@ export async function loadDisplayedMorningBriefingForRitual({
   const timezone = resolveTimeZone(profile?.timezone);
   const todayDate = getLocalDateString(timezone, now);
 
-  const [todayResult, latestCompletedResult] = await Promise.all([
-    supabase
-      .from("morning_briefings")
-      .select(RITUAL_BRIEFING_SELECT)
-      .eq("user_id", userId)
-      .eq("briefing_date", todayDate)
-      .maybeSingle(),
-    supabase
-      .from("morning_briefings")
-      .select(RITUAL_BRIEFING_SELECT)
-      .eq("user_id", userId)
-      .eq("status", "completed")
-      .not("content", "is", null)
-      .order("briefing_date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  if (todayResult.error || latestCompletedResult.error) {
-    throw new Error("Could not load morning briefing.");
-  }
-
-  const selectedRow = selectDisplayedMorningBriefingRow(
-    (todayResult.data as MorningBriefingRowForRitual | null) ?? null,
-    (latestCompletedResult.data as MorningBriefingRowForRitual | null) ?? null,
-  );
-
-  if (!selectedRow) {
-    return null;
-  }
-
-  return buildMorningRitualBriefingFromRow(selectedRow);
+  return loadMorningBriefingForRitualByDate({
+    supabase,
+    userId,
+    briefingDate: todayDate,
+  });
 }

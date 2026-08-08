@@ -4,7 +4,10 @@ import { CommandCenterDashboard } from "@/components/jarvis/command-center/comma
 import { RitualEntryUrlCleanup } from "@/components/jarvis/ritual-entry-url-cleanup";
 import { loadCommandCenter } from "@/lib/jarvis/dashboard/load-command-center";
 import { getGreeting } from "@/lib/jarvis/dashboard/command-center-utils";
-import { getDailyRitual } from "@/lib/jarvis/rituals/daily-ritual";
+import {
+  getDailyRitual,
+  isValidCompletedDailyRitual,
+} from "@/lib/jarvis/rituals/daily-ritual";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -41,7 +44,7 @@ export default async function Home({ searchParams }: HomeProps) {
     redirect("/wake");
   }
 
-  if (ritual?.status !== "completed") {
+  if (!isValidCompletedDailyRitual(ritual)) {
     redirect("/wake");
   }
 
