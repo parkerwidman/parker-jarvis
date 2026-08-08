@@ -6,6 +6,7 @@ import {
   getDailyRitual,
   resolveUserRitualDate,
   startDailyRitual,
+  startDailyRitualWithBriefing,
   type DailyRitual,
 } from "@/lib/jarvis/rituals/daily-ritual";
 
@@ -41,6 +42,8 @@ function createRitualStore(options?: {
   profileTimezone?: string | null;
   initialRows?: RitualRow[];
   simulateInsertRace?: boolean;
+  simulateInsertFailure?: boolean;
+  simulateBindUpdateFailure?: boolean;
 }) {
   const profiles = new Map<string, ProfileRow>([
     [
@@ -59,6 +62,8 @@ function createRitualStore(options?: {
   }
 
   let insertBlockedOnce = options?.simulateInsertRace ?? false;
+  let insertFailure = options?.simulateInsertFailure ?? false;
+  let bindUpdateFailure = options?.simulateBindUpdateFailure ?? false;
 
   const supabase = {
     from(table: string) {
@@ -136,6 +141,13 @@ function createRitualStore(options?: {
             const payload = state.mutation!;
             const key = `${payload.user_id}:${payload.ritual_date}`;
 
+            if (insertFailure) {
+              return {
+                data: null,
+                error: { code: "XX000", message: "insert failed" },
+              };
+            }
+
             if (insertBlockedOnce) {
               insertBlockedOnce = false;
               rituals.set(key, {
@@ -143,7 +155,7 @@ function createRitualStore(options?: {
                 ritual_date: payload.ritual_date as string,
                 timezone: payload.timezone as string,
                 status: "started",
-                briefing_date: null,
+                briefing_date: (payload.briefing_date as string | null) ?? null,
                 started_at: payload.started_at as string,
                 completed_at: null,
                 created_at: payload.started_at as string,
@@ -183,6 +195,13 @@ function createRitualStore(options?: {
 
             if (!row) {
               return { data: null, error: null };
+            }
+
+            if (bindUpdateFailure && "briefing_date" in (state.mutation ?? {})) {
+              return {
+                data: null,
+                error: { code: "XX000", message: "update failed" },
+              };
             }
 
             if (
@@ -647,5 +666,253 @@ describe("daily ritual domain helpers", () => {
     if (result.success) {
       expect((result.ritual as DailyRitual).briefingDate).toBe(BRIEFING_DATE);
     }
+  });
+});
+
+describe("startDailyRitualWithBriefing", () => {
+  it("inserts a started ritual already bound to the briefing in one write", async () => {
+    const { supabase, insertCalls, rituals } = createRitualStore();
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.outcome).toBe("created");
+    expect(result.ritual.briefingDate).toBe(BRIEFING_DATE);
+    expect(result.ritual.status).toBe("started");
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.briefing_date).toBe(BRIEFING_DATE);
+    expect(insertCalls[0]?.status).toBe("started");
+    expect(rituals.get(`${USER_ID}:${RITUAL_DATE}`)?.briefing_date).toBe(
+      BRIEFING_DATE,
+    );
+  });
+
+  it("does not create a brand-new started ritual with a null briefing binding", async () => {
+    const { supabase, insertCalls } = createRitualStore();
+
+    await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(insertCalls).toHaveLength(1);
+    expect(insertCalls[0]?.briefing_date).toBe(BRIEFING_DATE);
+    expect(insertCalls[0]?.briefing_date).not.toBeNull();
+  });
+
+  it("creates no ritual when the insert fails", async () => {
+    const { supabase, rituals, insertCalls } = createRitualStore({
+      simulateInsertFailure: true,
+    });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("unavailable");
+    expect(insertCalls).toHaveLength(1);
+    expect(rituals.size).toBe(0);
+  });
+
+  it("is idempotent when concurrent callers start the same briefing", async () => {
+    const { supabase } = createRitualStore({ simulateInsertRace: true });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.outcome).toBe("already_started");
+    expect(result.ritual.briefingDate).toBe(BRIEFING_DATE);
+  });
+
+  it("returns briefing_mismatch when a concurrent winner bound a different briefing", async () => {
+    const startedAt = FIXED_NOW.toISOString();
+    const { supabase, rituals } = createRitualStore({
+      initialRows: [
+        {
+          user_id: USER_ID,
+          ritual_date: RITUAL_DATE,
+          timezone: "America/Chicago",
+          status: "started",
+          briefing_date: ALT_BRIEFING_DATE,
+          started_at: startedAt,
+          completed_at: null,
+          created_at: startedAt,
+          updated_at: startedAt,
+        },
+      ],
+    });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("briefing_mismatch");
+    expect(rituals.get(`${USER_ID}:${RITUAL_DATE}`)?.briefing_date).toBe(
+      ALT_BRIEFING_DATE,
+    );
+  });
+
+  it("never downgrades a completed ritual", async () => {
+    const startedAt = "2026-08-07T08:00:00.000Z";
+    const completedAt = "2026-08-07T09:00:00.000Z";
+    const { supabase, rituals } = createRitualStore({
+      initialRows: [
+        {
+          user_id: USER_ID,
+          ritual_date: RITUAL_DATE,
+          timezone: "America/Chicago",
+          status: "completed",
+          briefing_date: BRIEFING_DATE,
+          started_at: startedAt,
+          completed_at: completedAt,
+          created_at: startedAt,
+          updated_at: completedAt,
+        },
+      ],
+    });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.outcome).toBe("already_completed");
+    expect(rituals.get(`${USER_ID}:${RITUAL_DATE}`)?.status).toBe("completed");
+  });
+
+  it("conditionally binds a legacy started ritual with a null briefing_date", async () => {
+    const startedAt = "2026-08-07T08:00:00.000Z";
+    const { supabase, rituals } = createRitualStore({
+      initialRows: [
+        {
+          user_id: USER_ID,
+          ritual_date: RITUAL_DATE,
+          timezone: "America/Chicago",
+          status: "started",
+          briefing_date: null,
+          started_at: startedAt,
+          completed_at: null,
+          created_at: startedAt,
+          updated_at: startedAt,
+        },
+      ],
+    });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    expect(result.outcome).toBe("legacy_bound");
+    expect(rituals.get(`${USER_ID}:${RITUAL_DATE}`)?.briefing_date).toBe(
+      BRIEFING_DATE,
+    );
+  });
+
+  it("does not overwrite a concurrent non-null briefing binding on legacy rows", async () => {
+    const startedAt = "2026-08-07T08:00:00.000Z";
+    const { supabase, rituals } = createRitualStore({
+      initialRows: [
+        {
+          user_id: USER_ID,
+          ritual_date: RITUAL_DATE,
+          timezone: "America/Chicago",
+          status: "started",
+          briefing_date: ALT_BRIEFING_DATE,
+          started_at: startedAt,
+          completed_at: null,
+          created_at: startedAt,
+          updated_at: startedAt,
+        },
+      ],
+    });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("briefing_mismatch");
+    expect(rituals.get(`${USER_ID}:${RITUAL_DATE}`)?.briefing_date).toBe(
+      ALT_BRIEFING_DATE,
+    );
+  });
+
+  it("does not falsely report success when legacy bind update fails", async () => {
+    const startedAt = "2026-08-07T08:00:00.000Z";
+    const { supabase, rituals } = createRitualStore({
+      simulateBindUpdateFailure: true,
+      initialRows: [
+        {
+          user_id: USER_ID,
+          ritual_date: RITUAL_DATE,
+          timezone: "America/Chicago",
+          status: "started",
+          briefing_date: null,
+          started_at: startedAt,
+          completed_at: null,
+          created_at: startedAt,
+          updated_at: startedAt,
+        },
+      ],
+    });
+
+    const result = await startDailyRitualWithBriefing({
+      supabase,
+      userId: USER_ID,
+      ritualDate: RITUAL_DATE,
+      briefingDate: BRIEFING_DATE,
+      now: FIXED_NOW,
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.code).toBe("unavailable");
+    expect(rituals.get(`${USER_ID}:${RITUAL_DATE}`)?.briefing_date).toBeNull();
   });
 });

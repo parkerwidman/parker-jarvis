@@ -4,6 +4,12 @@ import {
   getLocalDateString,
   resolveTimeZone,
 } from "@/lib/jarvis/dashboard/command-center-utils";
+import {
+  loadDisplayedMorningBriefingForRitual,
+  resolveMorningRitualPlaybackReadiness,
+  type MorningRitualBriefing,
+  type MorningRitualPlaybackReadiness,
+} from "@/lib/jarvis/rituals/morning-ritual-briefing";
 import { getDailyRitual } from "@/lib/jarvis/rituals/daily-ritual";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -18,7 +24,14 @@ export type MorningRitualEntry = {
   ritualState: MorningRitualState;
   ritualStatus: MorningRitualStatus;
   briefingDate: string | null;
+  briefing: MorningRitualBriefing | null;
+  playbackReadiness: MorningRitualPlaybackReadiness;
 };
+
+export type {
+  MorningRitualBriefing,
+  MorningRitualPlaybackReadiness,
+} from "@/lib/jarvis/rituals/morning-ritual-briefing";
 
 export function resolveMorningRitualDisplayName(
   preferredName: string | null | undefined,
@@ -88,7 +101,10 @@ export async function loadMorningRitualEntry({
 
   const timezone = resolveTimeZone(profile?.timezone);
   const ritualDate = getLocalDateString(timezone, now);
-  const ritual = await getDailyRitual(supabase, userId, ritualDate, now);
+  const [ritual, briefing] = await Promise.all([
+    getDailyRitual(supabase, userId, ritualDate, now),
+    loadDisplayedMorningBriefingForRitual({ supabase, userId, now }),
+  ]);
   const ritualFields = mapRitualToEntryState(ritual);
 
   return {
@@ -96,5 +112,7 @@ export async function loadMorningRitualEntry({
     timezone,
     ritualDate,
     ...ritualFields,
+    briefing,
+    playbackReadiness: resolveMorningRitualPlaybackReadiness(briefing),
   };
 }

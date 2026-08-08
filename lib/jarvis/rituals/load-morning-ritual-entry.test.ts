@@ -1,12 +1,70 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  MORNING_BRIEF_AUDIO_TIMELINE_VERSION,
+} from "@/lib/jarvis/briefings/audio-timeline-types";
+import { computeTtsContentHash } from "@/lib/jarvis/audio/content-hash";
+import {
+  DEFAULT_TTS_FORMAT,
+  MORNING_BRIEF_TTS_INSTRUCTION_VERSION,
+  resolveMorningBriefTtsConfig,
+} from "@/lib/jarvis/audio/tts-config";
+import { segmentMorningBriefSentences } from "@/lib/jarvis/briefings/segment-morning-brief-sentences";
+import type { MorningBriefingRowForRitual } from "@/lib/jarvis/rituals/morning-ritual-briefing";
+import {
   loadMorningRitualEntry,
   resolveMorningRitualDisplayName,
 } from "@/lib/jarvis/rituals/load-morning-ritual-entry";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const FIXED_NOW = new Date("2026-08-07T14:30:00.000Z");
+const TRANSCRIPT =
+  "Good morning, Parker. Your top priority is finishing the proposal. You have two meetings today. Personal mode makes the most sense this morning. Have a focused day.";
+
+function expectedContentHash(text = TRANSCRIPT) {
+  const config = resolveMorningBriefTtsConfig();
+  return computeTtsContentHash({
+    text,
+    model: config.model,
+    voice: config.voice,
+    format: DEFAULT_TTS_FORMAT,
+    instructionVersion: MORNING_BRIEF_TTS_INSTRUCTION_VERSION,
+  });
+}
+
+function createReadyBriefingRow(
+  briefingDate = "2026-08-07",
+  overrides: Partial<MorningBriefingRowForRitual> = {},
+): MorningBriefingRowForRitual {
+  const contentHash = expectedContentHash();
+  const sentences = segmentMorningBriefSentences(TRANSCRIPT);
+
+  return {
+    briefing_date: briefingDate,
+    status: "completed",
+    content: TRANSCRIPT,
+    audio_status: "ready",
+    audio_generated_at: "2026-08-07T12:00:00.000Z",
+    audio_content_hash: contentHash,
+    audio_timeline: {
+      version: MORNING_BRIEF_AUDIO_TIMELINE_VERSION,
+      sentences: sentences.map((text, index) => ({
+        index,
+        text,
+        startMs: index * 5000,
+        endMs: index * 5000 + 4800,
+      })),
+    },
+    audio_timeline_content_hash: contentHash,
+    audio_duration_ms: 25320,
+    audio_timeline_generated_at: "2026-08-07T12:05:00.000Z",
+    audio_timeline_model: "whisper-1",
+    audio_timeline_error_code: null,
+    recommended_mode: null,
+    recommendation_sentence_index: null,
+    ...overrides,
+  };
+}
 
 type RitualRow = {
   user_id: string;
@@ -29,6 +87,7 @@ type ProfileRow = {
 function createRitualStore(options?: {
   profile?: Partial<ProfileRow>;
   initialRows?: RitualRow[];
+  briefingRows?: MorningBriefingRowForRitual[];
   trackMutations?: boolean;
 }) {
   const profiles = new Map<string, ProfileRow>([
@@ -42,11 +101,16 @@ function createRitualStore(options?: {
     ],
   ]);
   const rituals = new Map<string, RitualRow>();
+  const briefings = new Map<string, MorningBriefingRowForRitual>();
   const insertCalls: Array<Record<string, unknown>> = [];
   const updateCalls: Array<Record<string, unknown>> = [];
 
   for (const row of options?.initialRows ?? []) {
     rituals.set(`${row.user_id}:${row.ritual_date}`, { ...row });
+  }
+
+  for (const row of options?.briefingRows ?? []) {
+    briefings.set(`${USER_ID}:${row.briefing_date}`, { ...row });
   }
 
   const supabase = {
@@ -72,6 +136,70 @@ function createRitualStore(options?: {
             };
           },
         };
+      }
+
+      if (table === "morning_briefings") {
+        const state = {
+          filters: {} as Record<string, string>,
+          order: null as { column: string; ascending: boolean } | null,
+        };
+
+        const findBriefing = (): MorningBriefingRowForRitual | null => {
+          const userId = state.filters.user_id;
+          const briefingDate = state.filters.briefing_date;
+
+          if (userId && briefingDate) {
+            return briefings.get(`${userId}:${briefingDate}`) ?? null;
+          }
+
+          if (
+            userId &&
+            state.filters.status === "completed" &&
+            state.order?.column === "briefing_date"
+          ) {
+            return [...briefings.values()]
+              .filter(
+                (row) =>
+                  row.status === "completed" && Boolean(row.content?.trim()),
+              )
+              .sort((a, b) =>
+                state.order!.ascending
+                  ? a.briefing_date.localeCompare(b.briefing_date)
+                  : b.briefing_date.localeCompare(a.briefing_date),
+              )[0] ?? null;
+          }
+
+          return null;
+        };
+
+        const builder = {
+          select() {
+            return builder;
+          },
+          eq(column: string, value: string) {
+            state.filters[column] = value;
+            return builder;
+          },
+          not() {
+            return builder;
+          },
+          order(column: string, options?: { ascending?: boolean }) {
+            state.order = {
+              column,
+              ascending: options?.ascending ?? true,
+            };
+            return builder;
+          },
+          limit() {
+            return builder;
+          },
+          maybeSingle: async () => ({
+            data: findBriefing(),
+            error: null,
+          }),
+        };
+
+        return builder;
       }
 
       if (table !== "jarvis_daily_rituals") {
@@ -349,5 +477,84 @@ describe("loadMorningRitualEntry", () => {
     });
 
     expect(entry.displayName).toBe("Jordan");
+  });
+
+  it("returns no_brief playback readiness when no briefing exists", async () => {
+    const { supabase } = createRitualStore();
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.briefing).toBeNull();
+    expect(entry.playbackReadiness).toBe("no_brief");
+  });
+
+  it("returns ready playback readiness for a valid displayed briefing row", async () => {
+    const { supabase } = createRitualStore({
+      briefingRows: [createReadyBriefingRow()],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.briefing?.briefingDate).toBe("2026-08-07");
+    expect(entry.briefing?.timeline?.durationMs).toBe(25320);
+    expect(entry.playbackReadiness).toBe("ready");
+  });
+
+  it("uses the same displayed row for briefingDate and briefing payload", async () => {
+    const { supabase } = createRitualStore({
+      briefingRows: [createReadyBriefingRow("2026-08-06")],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.briefing?.briefingDate).toBe("2026-08-06");
+    expect(entry.briefing?.transcript).toBe(TRANSCRIPT);
+  });
+
+  it("keeps welcome_back state while still loading briefing metadata", async () => {
+    const { supabase } = createRitualStore({
+      initialRows: [createCompletedRow("2026-08-07")],
+      briefingRows: [createReadyBriefingRow()],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    expect(entry.ritualState).toBe("welcome_back");
+    expect(entry.briefing).not.toBeNull();
+    expect(entry.playbackReadiness).toBe("ready");
+  });
+
+  it("does not expose sensitive briefing fields in the loader payload", async () => {
+    const { supabase } = createRitualStore({
+      briefingRows: [createReadyBriefingRow()],
+    });
+
+    const entry = await loadMorningRitualEntry({
+      supabase,
+      userId: USER_ID,
+      now: FIXED_NOW,
+    });
+
+    const serialized = JSON.stringify(entry);
+    expect(serialized).not.toContain("audio_content_hash");
+    expect(serialized).not.toContain("audio_storage_path");
+    expect(serialized).not.toContain("user_id");
+    expect(serialized).not.toContain("source_counts");
   });
 });

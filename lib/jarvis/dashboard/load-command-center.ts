@@ -114,14 +114,15 @@ export type CommandCenterBriefing = {
   audioGeneratedAt: string | null;
 };
 
-function isCompletedBriefingRow(row: MorningBriefingRow | null): row is MorningBriefingRow {
+function isCompletedBriefingRow(
+  row: Pick<MorningBriefingRow, "status" | "content"> | null,
+): row is MorningBriefingRow {
   return Boolean(row?.status === "completed" && row.content?.trim());
 }
 
-export function selectDisplayedMorningBriefingRow(
-  todayRow: MorningBriefingRow | null,
-  latestCompletedRow: MorningBriefingRow | null,
-): MorningBriefingRow | null {
+export function selectDisplayedMorningBriefingRow<
+  T extends Pick<MorningBriefingRow, "status" | "content">,
+>(todayRow: T | null, latestCompletedRow: T | null): T | null {
   if (isCompletedBriefingRow(todayRow)) {
     return todayRow;
   }

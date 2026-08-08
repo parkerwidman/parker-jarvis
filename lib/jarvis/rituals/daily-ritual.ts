@@ -45,6 +45,24 @@ export type BindDailyRitualBriefingResult =
         | "update_failed";
     };
 
+export type StartDailyRitualWithBriefingOutcome =
+  | "created"
+  | "already_started"
+  | "legacy_bound"
+  | "already_completed";
+
+export type StartDailyRitualWithBriefingResult =
+  | {
+      success: true;
+      ritual: DailyRitual;
+      outcome: StartDailyRitualWithBriefingOutcome;
+    }
+  | {
+      success: false;
+      error: string;
+      code: "briefing_mismatch" | "unavailable";
+    };
+
 type DailyRitualRow = {
   user_id: string;
   ritual_date: string;
@@ -378,5 +396,223 @@ export async function bindDailyRitualBriefing({
     success: false,
     error: "Could not bind daily ritual briefing.",
     code: "update_failed",
+  };
+}
+
+function classifyExistingRitualForBriefing(
+  existing: DailyRitualRow,
+  briefingDate: string,
+):
+  | { action: "already_completed"; ritual: DailyRitual }
+  | { action: "already_started"; ritual: DailyRitual }
+  | { action: "briefing_mismatch" }
+  | { action: "legacy_bind" } {
+  const ritual = mapDailyRitualRow(existing);
+
+  if (existing.status === "completed") {
+    return { action: "already_completed", ritual };
+  }
+
+  if (existing.briefing_date === briefingDate) {
+    return { action: "already_started", ritual };
+  }
+
+  if (existing.briefing_date && existing.briefing_date !== briefingDate) {
+    return { action: "briefing_mismatch" };
+  }
+
+  return { action: "legacy_bind" };
+}
+
+export async function startDailyRitualWithBriefing({
+  supabase,
+  userId,
+  ritualDate,
+  briefingDate,
+  now = new Date(),
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+  ritualDate: string;
+  briefingDate: string;
+  now?: Date;
+}): Promise<StartDailyRitualWithBriefingResult> {
+  const existing = await loadDailyRitualRow(supabase, userId, ritualDate);
+
+  if (existing) {
+    const classification = classifyExistingRitualForBriefing(
+      existing,
+      briefingDate,
+    );
+
+    if (classification.action === "already_completed") {
+      return {
+        success: true,
+        ritual: classification.ritual,
+        outcome: "already_completed",
+      };
+    }
+
+    if (classification.action === "already_started") {
+      return {
+        success: true,
+        ritual: classification.ritual,
+        outcome: "already_started",
+      };
+    }
+
+    if (classification.action === "briefing_mismatch") {
+      return {
+        success: false,
+        error: "Daily ritual is already bound to a different briefing.",
+        code: "briefing_mismatch",
+      };
+    }
+
+    const bindResult = await bindDailyRitualBriefing({
+      supabase,
+      userId,
+      ritualDate,
+      briefingDate,
+    });
+
+    if (!bindResult.success) {
+      if (bindResult.code === "briefing_already_bound") {
+        return {
+          success: false,
+          error: "Daily ritual is already bound to a different briefing.",
+          code: "briefing_mismatch",
+        };
+      }
+
+      if (bindResult.code === "already_completed") {
+        const authoritative = await loadDailyRitualRow(
+          supabase,
+          userId,
+          ritualDate,
+        );
+
+        if (authoritative?.status === "completed") {
+          return {
+            success: true,
+            ritual: mapDailyRitualRow(authoritative),
+            outcome: "already_completed",
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: "Could not bind daily ritual briefing.",
+        code: "unavailable",
+      };
+    }
+
+    return {
+      success: true,
+      ritual: bindResult.ritual,
+      outcome: bindResult.bound ? "legacy_bound" : "already_started",
+    };
+  }
+
+  const timezone = await loadUserTimezone(supabase, userId);
+  const startedAt = now.toISOString();
+
+  const { data: inserted, error: insertError } = await supabase
+    .from("jarvis_daily_rituals")
+    .insert({
+      user_id: userId,
+      ritual_date: ritualDate,
+      timezone,
+      status: "started",
+      briefing_date: briefingDate,
+      started_at: startedAt,
+      completed_at: null,
+    })
+    .select(RITUAL_SELECT)
+    .maybeSingle();
+
+  if (!insertError && inserted) {
+    return {
+      success: true,
+      ritual: mapDailyRitualRow(inserted as DailyRitualRow),
+      outcome: "created",
+    };
+  }
+
+  if (insertError?.code !== UNIQUE_VIOLATION) {
+    return {
+      success: false,
+      error: "Could not start daily ritual.",
+      code: "unavailable",
+    };
+  }
+
+  const authoritative = await loadDailyRitualRow(supabase, userId, ritualDate);
+
+  if (!authoritative) {
+    return {
+      success: false,
+      error: "Could not start daily ritual.",
+      code: "unavailable",
+    };
+  }
+
+  const classification = classifyExistingRitualForBriefing(
+    authoritative,
+    briefingDate,
+  );
+
+  if (classification.action === "already_completed") {
+    return {
+      success: true,
+      ritual: classification.ritual,
+      outcome: "already_completed",
+    };
+  }
+
+  if (classification.action === "already_started") {
+    return {
+      success: true,
+      ritual: classification.ritual,
+      outcome: "already_started",
+    };
+  }
+
+  if (classification.action === "briefing_mismatch") {
+    return {
+      success: false,
+      error: "Daily ritual is already bound to a different briefing.",
+      code: "briefing_mismatch",
+    };
+  }
+
+  const bindResult = await bindDailyRitualBriefing({
+    supabase,
+    userId,
+    ritualDate,
+    briefingDate,
+  });
+
+  if (!bindResult.success) {
+    if (bindResult.code === "briefing_already_bound") {
+      return {
+        success: false,
+        error: "Daily ritual is already bound to a different briefing.",
+        code: "briefing_mismatch",
+      };
+    }
+
+    return {
+      success: false,
+      error: "Could not bind daily ritual briefing.",
+      code: "unavailable",
+    };
+  }
+
+  return {
+    success: true,
+    ritual: bindResult.ritual,
+    outcome: bindResult.bound ? "legacy_bound" : "already_started",
   };
 }

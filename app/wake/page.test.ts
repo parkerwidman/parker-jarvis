@@ -82,6 +82,8 @@ describe("WakePage", () => {
       ritualState: "full_required",
       ritualStatus: "not_started",
       briefingDate: null,
+      briefing: null,
+      playbackReadiness: "no_brief",
     });
   });
 

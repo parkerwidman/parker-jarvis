@@ -42,6 +42,8 @@ const FULL_REQUIRED_ENTRY: MorningRitualEntry = {
   ritualState: "full_required",
   ritualStatus: "not_started",
   briefingDate: null,
+  briefing: null,
+  playbackReadiness: "no_brief",
 };
 
 const WELCOME_BACK_ENTRY: MorningRitualEntry = {
@@ -51,6 +53,8 @@ const WELCOME_BACK_ENTRY: MorningRitualEntry = {
   ritualState: "welcome_back",
   ritualStatus: "completed",
   briefingDate: "2026-08-07",
+  briefing: null,
+  playbackReadiness: "ready",
 };
 
 function renderGate(entry: MorningRitualEntry) {
