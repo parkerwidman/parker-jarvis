@@ -176,7 +176,7 @@ describe("resolveMorningBriefRecommendedModeFromPriority", () => {
     expect(mode).toBe("melusi");
   });
 
-  it("returns null instead of guessing when the priority cannot be mapped safely", () => {
+  it("returns null only when no source task can be resolved", () => {
     expect(
       resolveMorningBriefRecommendedModeFromPriority({
         topPriority: buildPriority({
@@ -191,6 +191,17 @@ describe("resolveMorningBriefRecommendedModeFromPriority", () => {
 
     expect(
       resolveMorningBriefRecommendedModeFromPriority({
+        topPriority: null,
+        tasks: [buildTask({ lifeAreaName: "Melusi" })],
+        currentFocus: null,
+        melusiProjectTaskIds: new Set(),
+      }),
+    ).toBeNull();
+  });
+
+  it("returns personal for a normal untagged task with no Melusi marker", () => {
+    expect(
+      resolveMorningBriefRecommendedModeFromPriority({
         topPriority: buildPriority({ phrase: "Untagged task" }),
         tasks: [
           buildTask({
@@ -202,16 +213,43 @@ describe("resolveMorningBriefRecommendedModeFromPriority", () => {
         currentFocus: null,
         melusiProjectTaskIds: new Set(),
       }),
-    ).toBeNull();
+    ).toBe("personal");
+  });
 
+  it("returns personal for the Aug 8 retroactive withdrawal priority without life area metadata", () => {
     expect(
       resolveMorningBriefRecommendedModeFromPriority({
-        topPriority: null,
-        tasks: [buildTask({ lifeAreaName: "Melusi" })],
+        topPriority: buildPriority({
+          phrase: "Figure out retroactive withdrawal for last semester's classes",
+        }),
+        tasks: [
+          buildTask({
+            title: "Figure out retroactive withdrawal for last semester's classes",
+            lifeAreaName: null,
+            projectId: null,
+          }),
+        ],
+        currentFocus: "Figure out retroactive withdrawal for last semester's classes",
+        melusiProjectTaskIds: new Set(),
+      }),
+    ).toBe("personal");
+  });
+
+  it("does not classify a generic business-sounding task as Melusi without structured association", () => {
+    expect(
+      resolveMorningBriefRecommendedModeFromPriority({
+        topPriority: buildPriority({ phrase: "Review Q3 marketing plan" }),
+        tasks: [
+          buildTask({
+            title: "Review Q3 marketing plan",
+            lifeAreaName: null,
+            projectId: null,
+          }),
+        ],
         currentFocus: null,
         melusiProjectTaskIds: new Set(),
       }),
-    ).toBeNull();
+    ).toBe("personal");
   });
 });
 
@@ -292,7 +330,7 @@ describe("resolveMorningBriefRecommendationContextFromPriority", () => {
     });
   });
 
-  it("returns null when mode cannot be determined safely", () => {
+  it("returns Personal mode for an untagged general task with resolved source task", () => {
     expect(
       buildContextFromPriority({
         topPriority: buildPriority({ phrase: "Untagged task" }),
@@ -303,6 +341,29 @@ describe("resolveMorningBriefRecommendationContextFromPriority", () => {
             projectId: null,
           }),
         ],
+      }),
+    ).toEqual({
+      recommendedMode: "personal",
+      reason: "your top priority is Untagged task",
+    });
+  });
+
+  it("returns null when no source task can be resolved", () => {
+    expect(
+      buildContextFromPriority({
+        topPriority: buildPriority({
+          phrase: "Missing task",
+          source: "profile_focus",
+        }),
+        tasks: [],
+        currentFocus: "Missing task",
+      }),
+    ).toBeNull();
+
+    expect(
+      buildContextFromPriority({
+        topPriority: null,
+        tasks: [buildTask({ lifeAreaName: "Personal" })],
       }),
     ).toBeNull();
   });

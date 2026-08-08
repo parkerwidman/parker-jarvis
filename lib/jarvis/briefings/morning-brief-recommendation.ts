@@ -85,7 +85,7 @@ function findPrioritySourceTask(input: {
 function resolveRecommendedModeFromSourceTask(input: {
   sourceTask: MorningBriefTask;
   melusiProjectTaskIds: ReadonlySet<string>;
-}): MorningBriefRecommendedMode | null {
+}): MorningBriefRecommendedMode {
   if (isMelusiLifeArea(input.sourceTask.lifeAreaName)) {
     return "melusi";
   }
@@ -97,11 +97,7 @@ function resolveRecommendedModeFromSourceTask(input: {
     return "melusi";
   }
 
-  if (input.sourceTask.lifeAreaName) {
-    return "personal";
-  }
-
-  return null;
+  return "personal";
 }
 
 function resolveMorningBriefPrioritySource(input: {
@@ -127,10 +123,6 @@ function resolveMorningBriefPrioritySource(input: {
     sourceTask,
     melusiProjectTaskIds: input.melusiProjectTaskIds,
   });
-
-  if (!recommendedMode) {
-    return null;
-  }
 
   return {
     task: sourceTask,
