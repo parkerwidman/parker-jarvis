@@ -7290,6 +7290,64 @@ body[data-mode="personal"] {
   margin-bottom: 0.25rem;
 }
 
+.cc2-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.cc2-header-main {
+  min-width: 0;
+}
+
+.cc2-mode-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding: 0.1875rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--cc2-border-strong);
+  border-radius: 0.5625rem;
+}
+
+.cc2-mode-seg-btn {
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--cc2-text-2);
+  background: transparent;
+  border: none;
+  border-radius: 0.4375rem;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.cc2-mode-seg-btn:hover:not(.cc2-mode-seg-btn--active) {
+  color: var(--cc2-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.cc2-mode-seg-btn:focus-visible {
+  outline: 2px solid var(--cc2-accent);
+  outline-offset: 1px;
+}
+
+.cc2-mode-seg-btn--active {
+  font-weight: 600;
+  color: var(--cc2-bg);
+  background: var(--cc2-accent);
+  box-shadow: 0 0 0 1px var(--cc2-accent);
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
 .cc2-greeting {
   font-size: 1.625rem;
   font-weight: 700;

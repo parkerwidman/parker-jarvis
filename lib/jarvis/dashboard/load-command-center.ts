@@ -21,9 +21,6 @@ import {
   listOutlookCalendar,
   listOutlookInbox,
 } from "@/lib/jarvis/tools/microsoft-tools";
-import {
-  resolveBriefPriorityText,
-} from "@/lib/jarvis/briefings/morning-brief-display-metadata";
 import { isMelusiLifeArea } from "@/lib/jarvis/dashboard/command-center-mode";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -234,8 +231,6 @@ export type CommandCenterData = {
   todayDateLabel: string;
   headerStatus: string;
   briefing: CommandCenterBriefing | null;
-  briefingTranscript: string | null;
-  briefingPriorityText: string | null;
   plan: CommandCenterPlan | null;
   focusTask: FocusTask | null;
   taskGroups: TaskGroups;
@@ -511,18 +506,6 @@ export async function loadCommandCenter(
     activeGoals: goalRows.length,
   };
 
-  const briefingTranscript =
-    briefingRow?.status === "completed" && briefingRow.content
-      ? briefingRow.content.trim()
-      : null;
-
-  const briefingPriorityText = resolveBriefPriorityText({
-    sourceCounts: briefingRow?.source_counts,
-    transcript: briefingTranscript,
-    currentFocus,
-    focusTaskTitle: view.focusTask?.title ?? null,
-  });
-
   let inbox: CommandCenterInbox = {
     connected: false,
     needsReconnect: false,
@@ -626,8 +609,6 @@ export async function loadCommandCenter(
     todayDateLabel,
     headerStatus: view.headerStatus,
     briefing,
-    briefingTranscript,
-    briefingPriorityText,
     plan,
     focusTask: view.focusTask,
     taskGroups: view.taskGroups,

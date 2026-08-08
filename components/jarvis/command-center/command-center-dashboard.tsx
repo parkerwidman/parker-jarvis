@@ -3,12 +3,12 @@
 import { useCallback, useState } from "react";
 import type { CommandCenterData } from "@/lib/jarvis/dashboard/load-command-center";
 import { AskJarvisBar } from "./ask-jarvis-bar";
-import { BriefingPlayer } from "./briefing-player";
 import { CalendarPulse } from "./calendar-pulse";
 import { CommandCenterModeProvider } from "./command-center-mode-provider";
 import { CommandKanban } from "./command-kanban";
 import { GoalProgressPanel } from "./goal-progress-panel";
 import { InboxPulse } from "./inbox-pulse";
+import { ModeSwitcher } from "./mode-switcher";
 import { PriorityStrip } from "./priority-strip";
 
 type CommandCenterDashboardProps = {
@@ -116,45 +116,19 @@ function CommandCenterDashboardInner({
     [threadId],
   );
 
-  function handleFollowUp(prompt: string, key: string) {
-    void sendToJarvis(prompt, key);
-  }
-
   return (
     <div className="cc2-main">
       <header className="cc2-header">
-        <h1 className="cc2-greeting">
-          {greeting}, {displayName}
-        </h1>
-        <p className="cc2-date">{data.todayDateLabel}</p>
-      </header>
-
-      <BriefingPlayer
-        transcript={data.briefingTranscript}
-        priorityText={data.briefingPriorityText}
-        briefingStatus={data.briefing?.status ?? null}
-        audioStatus={data.briefing?.audioStatus ?? "none"}
-        audioGeneratedAt={data.briefing?.audioGeneratedAt ?? null}
-        briefingDate={
-          data.briefingTranscript ? (data.briefing?.briefingDate ?? null) : null
-        }
-        onFollowUp={handleFollowUp}
-        followUpLoading={chatLoading}
-        followUpUsed={followUpUsed}
-      />
-
-      {followUpThread.length > 0 ? (
-        <div className="cc2-followup-thread" aria-label="Follow-up responses">
-          {followUpThread.map((message, index) => (
-            <div
-              key={`${message.role}-${index}`}
-              className={`cc2-followup-msg cc2-followup-msg--${message.role}`}
-            >
-              {message.content}
-            </div>
-          ))}
+        <div className="cc2-header-row">
+          <div className="cc2-header-main">
+            <h1 className="cc2-greeting">
+              {greeting}, {displayName}
+            </h1>
+            <p className="cc2-date">{data.todayDateLabel}</p>
+          </div>
+          <ModeSwitcher />
         </div>
-      ) : null}
+      </header>
 
       <PriorityStrip
         focusTask={data.focusTask}
@@ -182,6 +156,8 @@ function CommandCenterDashboardInner({
         loading={chatLoading}
         error={chatError}
         lastReply={lastReply}
+        followUpUsed={followUpUsed}
+        followUpThread={followUpThread}
       />
     </div>
   );

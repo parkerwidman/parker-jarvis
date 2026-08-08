@@ -3,11 +3,25 @@
 import Link from "next/link";
 import { useState } from "react";
 
+const QUICK_QUESTIONS = [
+  { key: "overdue", label: "What's overdue?" },
+  { key: "wait", label: "What can wait?" },
+  { key: "melusi", label: "How's Melusi trending?" },
+  { key: "week", label: "What's my week look like?" },
+] as const;
+
+type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 type AskJarvisBarProps = {
-  onSubmit: (message: string) => Promise<void>;
+  onSubmit: (message: string, followUpKey?: string) => Promise<void>;
   loading: boolean;
   error: string | null;
   lastReply: string | null;
+  followUpUsed: Set<string>;
+  followUpThread: ChatMessage[];
 };
 
 export function AskJarvisBar({
@@ -15,6 +29,8 @@ export function AskJarvisBar({
   loading,
   error,
   lastReply,
+  followUpUsed,
+  followUpThread,
 }: AskJarvisBarProps) {
   const [input, setInput] = useState("");
 
@@ -31,6 +47,42 @@ export function AskJarvisBar({
 
   return (
     <div className="cc2-ask-section">
+      <div className="cc2-qbar">
+        <div className="cc2-qlabel">Ask Jarvis — quick questions</div>
+        {QUICK_QUESTIONS.map((item) => {
+          const used = followUpUsed.has(item.key);
+          const disabled = used || loading;
+
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={`cc2-qbtn${used ? " cc2-qbtn--used" : ""}`}
+              disabled={disabled}
+              title={used ? "Already asked" : undefined}
+              onClick={() => {
+                void onSubmit(item.label, item.key);
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {followUpThread.length > 0 ? (
+        <div className="cc2-followup-thread" aria-label="Follow-up responses">
+          {followUpThread.map((message, index) => (
+            <div
+              key={`${message.role}-${index}`}
+              className={`cc2-followup-msg cc2-followup-msg--${message.role}`}
+            >
+              {message.content}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <form className="cc2-ask-bar" onSubmit={handleSubmit}>
         <label htmlFor="cc2-ask-input" className="sr-only">
           Ask Jarvis

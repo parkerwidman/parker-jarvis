@@ -232,12 +232,11 @@ describe("loadCommandCenter briefing audio metadata", () => {
 
     expect(data.todayDate).not.toBe("2026-08-06");
     expect(data.briefing?.briefingDate).toBe("2026-08-06");
-    expect(data.briefingTranscript).toBe("Yesterday brief");
     expect(data.briefing?.audioStatus).toBe("none");
     expect(data.briefing?.audioGeneratedAt).toBeNull();
   });
 
-  it("keeps transcript, audio metadata, and briefingDate on the same displayed row", async () => {
+  it("keeps audio metadata and briefingDate on the same displayed row", async () => {
     const supabase = createSupabaseMock({
       todayBriefingRow: {
         id: "today-id",
@@ -265,7 +264,6 @@ describe("loadCommandCenter briefing audio metadata", () => {
 
     expect(data.briefing?.id).toBe("prior-id");
     expect(data.briefing?.briefingDate).toBe("2026-08-06");
-    expect(data.briefingTranscript).toBe("Prior brief text");
     expect(data.briefing?.audioStatus).toBe("none");
   });
 
@@ -278,6 +276,5 @@ describe("loadCommandCenter briefing audio metadata", () => {
     const data = await loadCommandCenter(supabase as never, USER_ID);
 
     expect(data.briefing).toBeNull();
-    expect(data.briefingTranscript).toBeNull();
   });
 });
