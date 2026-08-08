@@ -6,16 +6,21 @@ import { resolveMorningBriefTtsConfig } from "@/lib/jarvis/audio/tts-config";
 import {
   buildMorningBriefModeRecommendationSentence,
   buildMorningBriefRecommendationMetadata,
+  buildMorningBriefRecommendationReason,
   deriveMorningBriefRecommendationFromTranscript,
   ensureMorningBriefModeRecommendation,
   finalizeMorningBriefRecommendation,
   findRecommendationSentenceIndex,
+  formatPriorityPhraseForRecommendationReason,
   isMorningBriefRecommendedMode,
   MORNING_BRIEF_RECOMMENDED_MODE_VALUES,
   parseMorningBriefRecommendedMode,
   resolveMorningBriefRecommendation,
+  resolveMorningBriefRecommendationContextFromPriority,
   resolveMorningBriefRecommendedModeFromPriority,
+  sanitizePriorityTitleForRecommendationReason,
   sentenceContainsExplicitModeRecommendation,
+  type MorningBriefRecommendationContext,
 } from "@/lib/jarvis/briefings/morning-brief-recommendation";
 import { segmentMorningBriefSentences } from "@/lib/jarvis/briefings/segment-morning-brief-sentences";
 import type {
@@ -50,6 +55,30 @@ function buildPriority(
     dueDate: "2026-08-07",
     ...overrides,
   };
+}
+
+function buildRecommendationContext(
+  overrides: Partial<MorningBriefRecommendationContext> = {},
+): MorningBriefRecommendationContext {
+  return {
+    recommendedMode: "personal",
+    reason: "your top priority is Finish proposal",
+    ...overrides,
+  };
+}
+
+function buildContextFromPriority(input: {
+  topPriority: MorningBriefTopPriority;
+  tasks: MorningBriefTask[];
+  currentFocus?: string | null;
+  melusiProjectTaskIds?: ReadonlySet<string>;
+}): MorningBriefRecommendationContext | null {
+  return resolveMorningBriefRecommendationContextFromPriority({
+    topPriority: input.topPriority,
+    tasks: input.tasks,
+    currentFocus: input.currentFocus ?? null,
+    melusiProjectTaskIds: input.melusiProjectTaskIds ?? new Set(),
+  });
 }
 
 describe("MorningBriefRecommendedMode validation", () => {
@@ -186,9 +215,173 @@ describe("resolveMorningBriefRecommendedModeFromPriority", () => {
   });
 });
 
+describe("resolveMorningBriefRecommendationContextFromPriority", () => {
+  it("returns Melusi mode with reason grounded in the selected top priority", () => {
+    const context = buildContextFromPriority({
+      topPriority: buildPriority({ phrase: "Review Melusi business plan" }),
+      tasks: [
+        buildTask({
+          title: "Review Melusi business plan",
+          lifeAreaName: "Melusi",
+        }),
+      ],
+    });
+
+    expect(context).toEqual({
+      recommendedMode: "melusi",
+      reason: "your top priority is Review Melusi business plan",
+    });
+  });
+
+  it("returns Personal mode with reason grounded in the selected top priority", () => {
+    const context = buildContextFromPriority({
+      topPriority: buildPriority({
+        phrase: "Figure out retroactive withdrawal for last semester's classes",
+      }),
+      tasks: [
+        buildTask({
+          title: "Figure out retroactive withdrawal for last semester's classes",
+          lifeAreaName: "Personal",
+        }),
+      ],
+    });
+
+    expect(context).toEqual({
+      recommendedMode: "personal",
+      reason:
+        "your top priority is Figure out retroactive withdrawal for last semester's classes",
+    });
+  });
+
+  it("does not use an unrelated task as the recommendation reason", () => {
+    const context = buildContextFromPriority({
+      topPriority: buildPriority({ phrase: "Renew passport" }),
+      tasks: [
+        buildTask({
+          title: "Renew passport",
+          lifeAreaName: "Personal",
+        }),
+        buildTask({
+          id: "other-task",
+          title: "Review Melusi business plan",
+          lifeAreaName: "Melusi",
+        }),
+      ],
+    });
+
+    expect(context?.reason).toBe("your top priority is Renew passport");
+    expect(context?.reason).not.toContain("Melusi business plan");
+  });
+
+  it("derives mode and reason from the same resolved source task title", () => {
+    const context = buildContextFromPriority({
+      topPriority: buildPriority({
+        phrase: "  review melusi business plan  ",
+      }),
+      tasks: [
+        buildTask({
+          title: "Review Melusi business plan",
+          lifeAreaName: "Melusi",
+        }),
+      ],
+    });
+
+    expect(context).toEqual({
+      recommendedMode: "melusi",
+      reason: "your top priority is Review Melusi business plan",
+    });
+  });
+
+  it("returns null when mode cannot be determined safely", () => {
+    expect(
+      buildContextFromPriority({
+        topPriority: buildPriority({ phrase: "Untagged task" }),
+        tasks: [
+          buildTask({
+            title: "Untagged task",
+            lifeAreaName: null,
+            projectId: null,
+          }),
+        ],
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("priority title sanitization for recommendation reasons", () => {
+  it("preserves imperative task titles without lowercasing or adding to", () => {
+    expect(
+      buildMorningBriefRecommendationReason(
+        "Figure out retroactive withdrawal for last semester's classes",
+      ),
+    ).toBe(
+      "your top priority is Figure out retroactive withdrawal for last semester's classes",
+    );
+  });
+
+  it("preserves proper nouns and acronyms in task titles", () => {
+    expect(buildMorningBriefRecommendationReason("Review Melusi business plan")).toBe(
+      "your top priority is Review Melusi business plan",
+    );
+    expect(buildMorningBriefRecommendationReason("IRS paperwork")).toBe(
+      "your top priority is IRS paperwork",
+    );
+    expect(buildMorningBriefRecommendationReason("Q3 marketing plan")).toBe(
+      "your top priority is Q3 marketing plan",
+    );
+    expect(buildMorningBriefRecommendationReason("AI training rollout")).toBe(
+      "your top priority is AI training rollout",
+    );
+    expect(buildMorningBriefRecommendationReason("Melusi business plan")).toBe(
+      "your top priority is Melusi business plan",
+    );
+  });
+
+  it("does not produce to to when the title already begins with To", () => {
+    expect(
+      buildMorningBriefRecommendationReason("To review Melusi business plan"),
+    ).toBe("your top priority is To review Melusi business plan");
+    expect(
+      buildMorningBriefRecommendationReason("To review Melusi business plan"),
+    ).not.toContain("to to");
+  });
+
+  it("strips trailing punctuation and normalizes whitespace", () => {
+    expect(sanitizePriorityTitleForRecommendationReason("IRS paperwork.")).toBe(
+      "IRS paperwork",
+    );
+    expect(
+      sanitizePriorityTitleForRecommendationReason("  Q3   marketing   plan  "),
+    ).toBe("Q3 marketing plan");
+    expect(formatPriorityPhraseForRecommendationReason("Review Melusi plan.")).toBe(
+      "Review Melusi plan",
+    );
+  });
+
+  it("returns empty for blank titles and truncates long titles at word boundaries", () => {
+    expect(sanitizePriorityTitleForRecommendationReason("   ")).toBe("");
+    expect(buildMorningBriefRecommendationReason("   ")).toBe("");
+
+    const longTitle = `${"word ".repeat(40).trim()} extra tail words`;
+    const sanitized = sanitizePriorityTitleForRecommendationReason(longTitle);
+
+    expect(sanitized.length).toBeLessThanOrEqual(120);
+    expect(sanitized).not.toContain("extra tail");
+    expect(longTitle.startsWith(sanitized)).toBe(true);
+  });
+});
+
 describe("spoken recommendation sentence production", () => {
   const baseBrief =
     "Good morning, Parker. Your top priority is finishing the proposal before the investor sync.";
+  const personalContext = buildRecommendationContext({
+    recommendedMode: "personal",
+    reason: "your top priority is Finish the proposal before the investor sync",
+  });
+  const melusiContext = buildRecommendationContext({
+    recommendedMode: "melusi",
+    reason: "your top priority is Post launch update",
+  });
 
   function countExplicitRecommendations(content: string): {
     personal: number;
@@ -211,72 +404,76 @@ describe("spoken recommendation sentence production", () => {
     );
   }
 
-  it("appends a concise recommendation when mode is known", () => {
-    const content = ensureMorningBriefModeRecommendation(baseBrief, "melusi");
+  it("appends a concise reasoned recommendation when mode is known", () => {
+    const content = ensureMorningBriefModeRecommendation(baseBrief, melusiContext);
 
-    expect(content).toContain("Melusi mode");
-    expect(content.endsWith("I'd run Melusi mode this morning.")).toBe(true);
+    expect(content).toContain("I suggest Melusi mode today because");
+    expect(content).toContain("your top priority is Post launch update");
+    expect(content.endsWith(
+      "I suggest Melusi mode today because your top priority is Post launch update.",
+    )).toBe(true);
     expect(countMorningBriefWords(content) - countMorningBriefWords(baseBrief)).toBeLessThanOrEqual(
-      8,
+      16,
     );
     expect(countExplicitRecommendations(content)).toEqual({ personal: 0, melusi: 1 });
   });
 
-  it("does not duplicate an existing explicit recommendation sentence", () => {
+  it("normalizes an existing generic same-mode recommendation into the reasoned form", () => {
     const withRecommendation = `${baseBrief} I'd run Melusi mode this morning.`;
-    const content = ensureMorningBriefModeRecommendation(withRecommendation, "melusi");
+    const content = ensureMorningBriefModeRecommendation(withRecommendation, melusiContext);
 
-    expect(content).toBe(withRecommendation);
-    expect(findRecommendationSentenceIndex(withRecommendation, "melusi")).toBe(2);
+    expect(content).toBe(
+      `${baseBrief} I suggest Melusi mode today because your top priority is Post launch update.`,
+    );
     expect(countExplicitRecommendations(content)).toEqual({ personal: 0, melusi: 1 });
   });
 
-  it("replaces an opposite explicit recommendation with the structured target mode", () => {
+  it("replaces an opposite explicit recommendation with the structured target reasoned form", () => {
     const withPersonal = `${baseBrief} Personal mode makes the most sense this morning.`;
-    const content = ensureMorningBriefModeRecommendation(withPersonal, "melusi");
+    const content = ensureMorningBriefModeRecommendation(withPersonal, melusiContext);
 
     expect(content).toBe(
-      `${baseBrief} I'd run Melusi mode this morning.`,
+      `${baseBrief} I suggest Melusi mode today because your top priority is Post launch update.`,
     );
     expect(countExplicitRecommendations(content)).toEqual({ personal: 0, melusi: 1 });
   });
 
   it("replaces structured Personal target over an existing Melusi recommendation", () => {
     const withMelusi = `${baseBrief} I'd run Melusi mode this morning.`;
-    const content = ensureMorningBriefModeRecommendation(withMelusi, "personal");
+    const content = ensureMorningBriefModeRecommendation(withMelusi, personalContext);
 
     expect(content).toBe(
-      `${baseBrief} Personal mode makes the most sense this morning.`,
+      `${baseBrief} I suggest Personal mode today because your top priority is Finish the proposal before the investor sync.`,
     );
     expect(countExplicitRecommendations(content)).toEqual({ personal: 1, melusi: 0 });
   });
 
-  it("collapses duplicate same-mode recommendations to one canonical sentence", () => {
-    const withDuplicates = `${baseBrief} I'd run Melusi mode this morning. I'd run Melusi mode this morning.`;
-    const content = ensureMorningBriefModeRecommendation(withDuplicates, "melusi");
+  it("collapses duplicate same-mode recommendations to one reasoned sentence", () => {
+    const withDuplicates = `${baseBrief} I'd run Melusi mode this morning. I suggest Melusi mode today because your top priority is Post launch update.`;
+    const content = ensureMorningBriefModeRecommendation(withDuplicates, melusiContext);
 
     expect(content).toBe(
-      `${baseBrief} I'd run Melusi mode this morning.`,
+      `${baseBrief} I suggest Melusi mode today because your top priority is Post launch update.`,
     );
     expect(countExplicitRecommendations(content)).toEqual({ personal: 0, melusi: 1 });
   });
 
-  it("normalizes mixed Personal and Melusi recommendations to one target recommendation", () => {
+  it("normalizes mixed Personal and Melusi recommendations to one target reasoned recommendation", () => {
     const withMixed = `${baseBrief} Personal mode makes the most sense this morning. I'd run Melusi mode this morning.`;
-    const content = ensureMorningBriefModeRecommendation(withMixed, "melusi");
+    const content = ensureMorningBriefModeRecommendation(withMixed, melusiContext);
 
     expect(content).toBe(
-      `${baseBrief} I'd run Melusi mode this morning.`,
+      `${baseBrief} I suggest Melusi mode today because your top priority is Post launch update.`,
     );
     expect(countExplicitRecommendations(content)).toEqual({ personal: 0, melusi: 1 });
   });
 
   it("preserves unrelated brief sentences while normalizing recommendations", () => {
     const withContext = `${baseBrief} On Melusi, 2 leads have been waiting over a day. Personal mode makes the most sense this morning.`;
-    const content = ensureMorningBriefModeRecommendation(withContext, "melusi");
+    const content = ensureMorningBriefModeRecommendation(withContext, melusiContext);
 
     expect(content).toBe(
-      `${baseBrief} On Melusi, 2 leads have been waiting over a day. I'd run Melusi mode this morning.`,
+      `${baseBrief} On Melusi, 2 leads have been waiting over a day. I suggest Melusi mode today because your top priority is Post launch update.`,
     );
     expect(content).toContain("On Melusi, 2 leads have been waiting over a day.");
     expect(countExplicitRecommendations(content)).toEqual({ personal: 0, melusi: 1 });
@@ -285,7 +482,7 @@ describe("spoken recommendation sentence production", () => {
   it("derives recommendation sentence index from final canonical sentences", () => {
     const { content, metadata } = finalizeMorningBriefRecommendation({
       content: baseBrief,
-      recommendedMode: "personal",
+      recommendationContext: personalContext,
     });
     const sentences = segmentMorningBriefSentences(content);
 
@@ -302,11 +499,11 @@ describe("spoken recommendation sentence production", () => {
     expect(countExplicitRecommendations(content)).toEqual({ personal: 1, melusi: 0 });
   });
 
-  it("points recommendationSentenceIndex at the exact final canonical sentence after conflict resolution", () => {
+  it("points recommendationSentenceIndex at the exact final reasoned sentence after conflict resolution", () => {
     const withPersonal = `${baseBrief} Personal mode makes the most sense this morning.`;
     const { content, metadata } = finalizeMorningBriefRecommendation({
       content: withPersonal,
-      recommendedMode: "melusi",
+      recommendationContext: melusiContext,
     });
     const sentences = segmentMorningBriefSentences(content);
 
@@ -315,15 +512,25 @@ describe("spoken recommendation sentence production", () => {
       recommendationSentenceIndex: sentences.length - 1,
     });
     expect(sentences[metadata!.recommendationSentenceIndex]).toBe(
-      "I'd run Melusi mode this morning.",
+      "I suggest Melusi mode today because your top priority is Post launch update.",
     );
+  });
+
+  it("returns no recommendation when context is null", () => {
+    const { content, metadata } = finalizeMorningBriefRecommendation({
+      content: baseBrief,
+      recommendationContext: null,
+    });
+
+    expect(content).toBe(baseBrief);
+    expect(metadata).toBeNull();
   });
 });
 
 describe("deriveMorningBriefRecommendationFromTranscript", () => {
   it("derives Personal and Melusi recommendations conservatively from explicit phrases", () => {
     const personalContent =
-      "Good morning, Parker. Nothing urgent needs attention today. Personal mode makes the most sense this morning.";
+      "Good morning, Parker. Nothing urgent needs attention today. I suggest Personal mode today because your top priority is Renew passport.";
 
     expect(deriveMorningBriefRecommendationFromTranscript(personalContent)).toEqual({
       recommendedMode: "personal",
@@ -331,7 +538,7 @@ describe("deriveMorningBriefRecommendationFromTranscript", () => {
     });
 
     const melusiContent =
-      "Two things stand out today. On Melusi, 2 leads have been waiting over a day. I'd run Melusi mode this morning.";
+      "Two things stand out today. On Melusi, 2 leads have been waiting over a day. I suggest Melusi mode today because your top priority is Review the Melusi business plan.";
 
     expect(deriveMorningBriefRecommendationFromTranscript(melusiContent)).toEqual({
       recommendedMode: "melusi",
@@ -354,7 +561,7 @@ describe("deriveMorningBriefRecommendationFromTranscript", () => {
 
     expect(
       deriveMorningBriefRecommendationFromTranscript(
-        "Personal mode makes sense. I'd run Melusi mode this morning.",
+        "I suggest Personal mode today because your top priority is Renew passport. I suggest Melusi mode today because your top priority is Review the Melusi business plan.",
       ),
     ).toBeNull();
 
@@ -368,7 +575,7 @@ describe("deriveMorningBriefRecommendationFromTranscript", () => {
 
 describe("resolveMorningBriefRecommendation", () => {
   const content =
-    "Good morning, Parker. Your top priority is finishing the proposal. I'd run Melusi mode this morning.";
+    "Good morning, Parker. Your top priority is finishing the proposal. I suggest Melusi mode today because your top priority is Finish the proposal.";
   const transcriptDerived = {
     recommendedMode: "melusi" as const,
     recommendationSentenceIndex: 2,
@@ -558,9 +765,13 @@ describe("audio timeline and TTS hash interaction", () => {
     const ttsConfig = resolveMorningBriefTtsConfig();
     const baseBrief =
       "Good morning, Parker. Your top priority is finishing the proposal before the investor sync.";
+    const context = buildRecommendationContext({
+      recommendedMode: "melusi",
+      reason: "your top priority is Finish the proposal before the investor sync",
+    });
     const withRecommendation = ensureMorningBriefModeRecommendation(
       baseBrief,
-      "melusi",
+      context,
     );
 
     const baseHash = computeTtsContentHash({
@@ -579,7 +790,7 @@ describe("audio timeline and TTS hash interaction", () => {
     });
 
     expect(recommendationHash).not.toBe(baseHash);
-    expect(buildMorningBriefRecommendationMetadata(withRecommendation, "melusi")).toEqual({
+    expect(buildMorningBriefRecommendationMetadata(withRecommendation, context)).toEqual({
       recommendedMode: "melusi",
       recommendationSentenceIndex: findRecommendationSentenceIndex(
         withRecommendation,
@@ -590,12 +801,23 @@ describe("audio timeline and TTS hash interaction", () => {
 });
 
 describe("recommendation sentence builders", () => {
-  it("uses exact Personal and Melusi terminology", () => {
-    expect(buildMorningBriefModeRecommendationSentence("melusi")).toBe(
-      "I'd run Melusi mode this morning.",
+  it("uses I suggest phrasing with exact Personal and Melusi terminology and structured reason", () => {
+    expect(
+      buildMorningBriefModeRecommendationSentence({
+        recommendedMode: "melusi",
+        reason: "your top priority is Review the Melusi business plan",
+      }),
+    ).toBe(
+      "I suggest Melusi mode today because your top priority is Review the Melusi business plan.",
     );
-    expect(buildMorningBriefModeRecommendationSentence("personal")).toBe(
-      "Personal mode makes the most sense this morning.",
+    expect(
+      buildMorningBriefModeRecommendationSentence({
+        recommendedMode: "personal",
+        reason:
+          "your top priority is Figure out retroactive withdrawal for last semester's classes",
+      }),
+    ).toBe(
+      "I suggest Personal mode today because your top priority is Figure out retroactive withdrawal for last semester's classes.",
     );
   });
 });

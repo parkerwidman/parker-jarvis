@@ -9,11 +9,13 @@ import type {
 } from "@/lib/jarvis/briefings/morning-brief-structure";
 import {
   MORNING_BRIEF_RECOMMENDED_MODE_VALUES,
+  type MorningBriefRecommendationContext,
   type MorningBriefRecommendationMetadata,
   type MorningBriefRecommendedMode,
 } from "@/lib/jarvis/briefings/morning-brief-recommendation-types";
 
 export type {
+  MorningBriefRecommendationContext,
   MorningBriefRecommendationMetadata,
   MorningBriefRecommendedMode,
 } from "@/lib/jarvis/briefings/morning-brief-recommendation-types";
@@ -52,6 +54,8 @@ function normalizePhrase(value: string): string {
   return value.trim().toLowerCase();
 }
 
+const MAX_PRIORITY_TITLE_LENGTH = 120;
+
 function findPrioritySourceTask(input: {
   topPriority: MorningBriefTopPriority;
   tasks: MorningBriefTask[];
@@ -78,16 +82,37 @@ function findPrioritySourceTask(input: {
   return null;
 }
 
-export function resolveMorningBriefRecommendedModeFromPriority(input: {
-  topPriority: MorningBriefTopPriority | null;
+function resolveRecommendedModeFromSourceTask(input: {
+  sourceTask: MorningBriefTask;
+  melusiProjectTaskIds: ReadonlySet<string>;
+}): MorningBriefRecommendedMode | null {
+  if (isMelusiLifeArea(input.sourceTask.lifeAreaName)) {
+    return "melusi";
+  }
+
+  if (
+    input.sourceTask.projectId &&
+    input.melusiProjectTaskIds.has(input.sourceTask.projectId)
+  ) {
+    return "melusi";
+  }
+
+  if (input.sourceTask.lifeAreaName) {
+    return "personal";
+  }
+
+  return null;
+}
+
+function resolveMorningBriefPrioritySource(input: {
+  topPriority: MorningBriefTopPriority;
   tasks: MorningBriefTask[];
   currentFocus: string | null;
   melusiProjectTaskIds: ReadonlySet<string>;
-}): MorningBriefRecommendedMode | null {
-  if (!input.topPriority) {
-    return null;
-  }
-
+}): {
+  task: MorningBriefTask;
+  recommendedMode: MorningBriefRecommendedMode;
+} | null {
   const sourceTask = findPrioritySourceTask({
     topPriority: input.topPriority,
     tasks: input.tasks,
@@ -98,22 +123,117 @@ export function resolveMorningBriefRecommendedModeFromPriority(input: {
     return null;
   }
 
-  if (isMelusiLifeArea(sourceTask.lifeAreaName)) {
-    return "melusi";
+  const recommendedMode = resolveRecommendedModeFromSourceTask({
+    sourceTask,
+    melusiProjectTaskIds: input.melusiProjectTaskIds,
+  });
+
+  if (!recommendedMode) {
+    return null;
   }
 
-  if (
-    sourceTask.projectId &&
-    input.melusiProjectTaskIds.has(sourceTask.projectId)
-  ) {
-    return "melusi";
+  return {
+    task: sourceTask,
+    recommendedMode,
+  };
+}
+
+export function resolveMorningBriefRecommendedModeFromPriority(input: {
+  topPriority: MorningBriefTopPriority | null;
+  tasks: MorningBriefTask[];
+  currentFocus: string | null;
+  melusiProjectTaskIds: ReadonlySet<string>;
+}): MorningBriefRecommendedMode | null {
+  if (!input.topPriority) {
+    return null;
   }
 
-  if (sourceTask.lifeAreaName) {
-    return "personal";
+  return (
+    resolveMorningBriefPrioritySource({
+      topPriority: input.topPriority,
+      tasks: input.tasks,
+      currentFocus: input.currentFocus,
+      melusiProjectTaskIds: input.melusiProjectTaskIds,
+    })?.recommendedMode ?? null
+  );
+}
+
+export function sanitizePriorityTitleForRecommendationReason(
+  title: string,
+): string {
+  let sanitized = title.trim().replace(/\s+/g, " ");
+
+  if (!sanitized) {
+    return "";
   }
 
-  return null;
+  sanitized = sanitized.replace(/[.!?]+$/u, "");
+
+  if (sanitized.length > MAX_PRIORITY_TITLE_LENGTH) {
+    const truncated = sanitized.slice(0, MAX_PRIORITY_TITLE_LENGTH);
+    const lastSpace = truncated.lastIndexOf(" ");
+
+    sanitized =
+      lastSpace > 0 ? truncated.slice(0, lastSpace).trim() : truncated.trim();
+  }
+
+  return sanitized;
+}
+
+/** @deprecated Prefer sanitizePriorityTitleForRecommendationReason */
+export function formatPriorityPhraseForRecommendationReason(
+  phrase: string,
+): string {
+  return sanitizePriorityTitleForRecommendationReason(phrase);
+}
+
+export function buildMorningBriefRecommendationReason(
+  priorityTitle: string,
+): string {
+  const sanitizedTitle = sanitizePriorityTitleForRecommendationReason(
+    priorityTitle,
+  );
+
+  if (!sanitizedTitle) {
+    return "";
+  }
+
+  return `your top priority is ${sanitizedTitle}`;
+}
+
+export function resolveMorningBriefRecommendationContextFromPriority(input: {
+  topPriority: MorningBriefTopPriority | null;
+  tasks: MorningBriefTask[];
+  currentFocus: string | null;
+  melusiProjectTaskIds: ReadonlySet<string>;
+}): MorningBriefRecommendationContext | null {
+  if (!input.topPriority) {
+    return null;
+  }
+
+  const prioritySource = resolveMorningBriefPrioritySource({
+    topPriority: input.topPriority,
+    tasks: input.tasks,
+    currentFocus: input.currentFocus,
+    melusiProjectTaskIds: input.melusiProjectTaskIds,
+  });
+
+  if (!prioritySource) {
+    return null;
+  }
+
+  const reason = buildMorningBriefRecommendationReason(
+    prioritySource.task.title,
+  );
+
+  if (!reason) {
+    return null;
+  }
+
+  return {
+    recommendedMode: prioritySource.recommendedMode,
+    reason,
+  };
 }
 
 export function sentenceContainsExplicitModeRecommendation(
@@ -187,13 +307,11 @@ export function deriveMorningBriefRecommendationFromTranscript(
 }
 
 export function buildMorningBriefModeRecommendationSentence(
-  mode: MorningBriefRecommendedMode,
+  context: MorningBriefRecommendationContext,
 ): string {
-  if (mode === "melusi") {
-    return "I'd run Melusi mode this morning.";
-  }
+  const modePhrase = getExplicitModePhrase(context.recommendedMode);
 
-  return "Personal mode makes the most sense this morning.";
+  return `I suggest ${modePhrase} today because ${context.reason}.`;
 }
 
 export function contentHasExplicitModeRecommendation(
@@ -209,20 +327,20 @@ export function contentHasExplicitModeRecommendation(
 
 export function ensureMorningBriefModeRecommendation(
   content: string,
-  recommendedMode: MorningBriefRecommendedMode,
+  context: MorningBriefRecommendationContext,
 ): string {
+  const recommendedMode = context.recommendedMode;
   const normalized = content.replace(/\s+/g, " ").trim();
+  const canonical = buildMorningBriefModeRecommendationSentence(context);
 
   if (!normalized) {
-    return buildMorningBriefModeRecommendationSentence(recommendedMode);
+    return canonical;
   }
 
   const sentences = segmentMorningBriefSentences(normalized);
   const oppositeMode: MorningBriefRecommendedMode =
     recommendedMode === "melusi" ? "personal" : "melusi";
   const recommendationIndexes: number[] = [];
-  const targetIndexes: number[] = [];
-  const oppositeIndexes: number[] = [];
 
   for (let index = 0; index < sentences.length; index += 1) {
     const isTarget = sentenceContainsExplicitModeRecommendation(
@@ -234,34 +352,15 @@ export function ensureMorningBriefModeRecommendation(
       oppositeMode,
     );
 
-    if (!isTarget && !isOpposite) {
-      continue;
-    }
-
-    recommendationIndexes.push(index);
-
-    if (isTarget) {
-      targetIndexes.push(index);
-    }
-
-    if (isOpposite) {
-      oppositeIndexes.push(index);
+    if (isTarget || isOpposite) {
+      recommendationIndexes.push(index);
     }
   }
 
   if (recommendationIndexes.length === 0) {
-    return `${normalized} ${buildMorningBriefModeRecommendationSentence(recommendedMode)}`;
+    return `${normalized} ${canonical}`;
   }
 
-  if (
-    targetIndexes.length === 1 &&
-    oppositeIndexes.length === 0 &&
-    recommendationIndexes.length === 1
-  ) {
-    return normalized;
-  }
-
-  const canonical = buildMorningBriefModeRecommendationSentence(recommendedMode);
   const preserved = sentences.filter(
     (_, index) => !recommendationIndexes.includes(index),
   );
@@ -273,19 +372,16 @@ export function ensureMorningBriefModeRecommendation(
 
 export function buildMorningBriefRecommendationMetadata(
   content: string,
-  recommendedMode: MorningBriefRecommendedMode | null,
+  context: MorningBriefRecommendationContext | null,
 ): MorningBriefRecommendationMetadata | null {
-  if (!recommendedMode) {
+  if (!context) {
     return null;
   }
 
-  const finalContent = ensureMorningBriefModeRecommendation(
-    content,
-    recommendedMode,
-  );
+  const finalContent = ensureMorningBriefModeRecommendation(content, context);
   const sentenceIndex = findRecommendationSentenceIndex(
     finalContent,
-    recommendedMode,
+    context.recommendedMode,
   );
 
   if (sentenceIndex === null) {
@@ -293,19 +389,19 @@ export function buildMorningBriefRecommendationMetadata(
   }
 
   return {
-    recommendedMode,
+    recommendedMode: context.recommendedMode,
     recommendationSentenceIndex: sentenceIndex,
   };
 }
 
 export function finalizeMorningBriefRecommendation(input: {
   content: string;
-  recommendedMode: MorningBriefRecommendedMode | null;
+  recommendationContext: MorningBriefRecommendationContext | null;
 }): {
   content: string;
   metadata: MorningBriefRecommendationMetadata | null;
 } {
-  if (!input.recommendedMode) {
+  if (!input.recommendationContext) {
     return {
       content: input.content.replace(/\s+/g, " ").trim(),
       metadata: null,
@@ -314,11 +410,11 @@ export function finalizeMorningBriefRecommendation(input: {
 
   const content = ensureMorningBriefModeRecommendation(
     input.content,
-    input.recommendedMode,
+    input.recommendationContext,
   );
   const metadata = buildMorningBriefRecommendationMetadata(
     content,
-    input.recommendedMode,
+    input.recommendationContext,
   );
 
   return {

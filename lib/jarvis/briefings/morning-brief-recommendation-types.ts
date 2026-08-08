@@ -9,3 +9,8 @@ export type MorningBriefRecommendationMetadata = {
   recommendedMode: MorningBriefRecommendedMode;
   recommendationSentenceIndex: number;
 };
+
+export type MorningBriefRecommendationContext = {
+  recommendedMode: MorningBriefRecommendedMode;
+  reason: string;
+};

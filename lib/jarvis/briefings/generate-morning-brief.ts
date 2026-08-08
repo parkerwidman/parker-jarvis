@@ -62,7 +62,7 @@ import {
 import { generateMorningBriefAudio } from "@/lib/jarvis/briefings/generate-morning-brief-audio";
 import {
   finalizeMorningBriefRecommendation,
-  resolveMorningBriefRecommendedModeFromPriority,
+  resolveMorningBriefRecommendationContextFromPriority,
 } from "@/lib/jarvis/briefings/morning-brief-recommendation";
 
 const DEFAULT_TIMEZONE = "America/Chicago";
@@ -641,19 +641,20 @@ export async function generateMorningBrief(
       return { success: false, error: SAFE_ERROR_MESSAGE };
     }
 
-    const recommendedMode = resolveMorningBriefRecommendedModeFromPriority({
-      topPriority: briefPlan.topPriority,
-      tasks: unfinishedTasks,
-      currentFocus: context.profile?.current_focus ?? null,
-      melusiProjectTaskIds: new Set(
-        Object.keys(melusiSnapshot.projectNameByTaskId),
-      ),
-    });
+    const recommendationContext =
+      resolveMorningBriefRecommendationContextFromPriority({
+        topPriority: briefPlan.topPriority,
+        tasks: unfinishedTasks,
+        currentFocus: context.profile?.current_focus ?? null,
+        melusiProjectTaskIds: new Set(
+          Object.keys(melusiSnapshot.projectNameByTaskId),
+        ),
+      });
 
     const { content, metadata: recommendationMetadata } =
       finalizeMorningBriefRecommendation({
         content: normalizedSpokenContent,
-        recommendedMode,
+        recommendationContext,
       });
 
     logMorningBriefDiagnostic({
