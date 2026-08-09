@@ -4,6 +4,7 @@ import {
   createJarvisGoalWithRoadmap,
   type GoalBuilderInput,
 } from "@/lib/jarvis/goals/create-goal";
+import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import type { JarvisGoalType } from "@/lib/jarvis/goals/types";
 import { GOAL_PAGE_CONFIG } from "@/lib/jarvis/goals/types";
 import { createClient } from "@/lib/supabase/server";
@@ -64,4 +65,33 @@ export async function publishLongTermGoal(
   payload: GoalBuilderInput,
 ): Promise<PublishGoalResult> {
   return publishJarvisGoal("long_term", payload);
+}
+
+export type SetGoalTaskCompletionActionResult =
+  | { ok: true; code: string }
+  | { ok: false; error: string };
+
+export async function setGoalTaskCompletion(
+  taskId: string,
+  completed: boolean,
+): Promise<SetGoalTaskCompletionActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this task." };
+  }
+
+  const result = await setJarvisGoalTaskCompletion(supabase, taskId, completed);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  for (const config of Object.values(GOAL_PAGE_CONFIG)) {
+    revalidatePath(config.route);
+  }
+  revalidatePath("/");
+
+  return { ok: true, code: result.code };
 }

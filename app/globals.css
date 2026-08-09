@@ -8800,6 +8800,18 @@ body[data-mode="personal"] {
   margin-top: 0.125rem;
   border: 1.5px solid rgba(255, 255, 255, 0.18);
   border-radius: 0.25rem;
+  padding: 0;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.goals-task-check--interactive {
+  cursor: pointer;
+}
+
+.goals-task-check:disabled {
+  cursor: default;
+  opacity: 0.85;
 }
 
 .goals-task-check--done {
@@ -8871,11 +8883,16 @@ body[data-mode="personal"] {
 }
 
 .goals-task-blocked-reason,
-.goals-task-notes-text {
+.goals-task-notes-text,
+.goals-task-error {
   margin: 0.3125rem 0 0;
   font-size: 0.75rem;
   line-height: 1.45;
   color: var(--cc2-text-3);
+}
+
+.goals-task-error {
+  color: #f87171;
 }
 
 .goals-task-notes-text {

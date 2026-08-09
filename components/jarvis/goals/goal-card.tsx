@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { domainLabel, type GoalView } from "@/lib/jarvis/goals/types";
+import {
+  domainLabel,
+  type GoalView,
+} from "@/lib/jarvis/goals/types";
 import { LevelRoadmap } from "./level-roadmap";
 
 type GoalCardProps = {

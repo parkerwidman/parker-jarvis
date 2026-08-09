@@ -46,7 +46,11 @@ export function LevelRoadmap({ levels }: LevelRoadmapProps) {
                 <p className="goals-roadmap-tasks-label">Tasks</p>
                 <ul className="goals-task-list">
                   {level.tasks.map((task) => (
-                    <GoalTaskRow key={task.id} task={task} />
+                    <GoalTaskRow
+                      key={task.id}
+                      task={task}
+                      levelState={level.state}
+                    />
                   ))}
                 </ul>
               </>

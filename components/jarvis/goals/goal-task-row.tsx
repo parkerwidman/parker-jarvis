@@ -1,7 +1,13 @@
-import type { GoalTaskView } from "@/lib/jarvis/goals/types";
+"use client";
+
+import { setGoalTaskCompletion } from "@/app/goals/actions";
+import type { GoalTaskView, LevelState } from "@/lib/jarvis/goals/types";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 
 type GoalTaskRowProps = {
   task: GoalTaskView;
+  levelState: LevelState;
 };
 
 function statusLabel(status: GoalTaskView["status"]): string {
@@ -15,7 +21,34 @@ function statusLabel(status: GoalTaskView["status"]): string {
   }
 }
 
-export function GoalTaskRow({ task }: GoalTaskRowProps) {
+export function GoalTaskRow({ task, levelState }: GoalTaskRowProps) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const canComplete = levelState === "current" && !task.isDone;
+  const canReopen = task.isDone;
+  const isInteractive = (canComplete || canReopen) && !isPending;
+
+  async function handleToggle() {
+    if (!isInteractive) {
+      return;
+    }
+
+    setError(null);
+
+    startTransition(async () => {
+      const result = await setGoalTaskCompletion(task.id, !task.isDone);
+
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+
+      router.refresh();
+    });
+  }
+
   return (
     <li
       className={`goals-task-row${
@@ -24,11 +57,23 @@ export function GoalTaskRow({ task }: GoalTaskRowProps) {
         task.isBlocked ? " goals-task-row--blocked" : ""
       }`}
     >
-      <span
+      <button
+        type="button"
         className={`goals-task-check${
           task.isDone ? " goals-task-check--done" : ""
-        }${task.isActionable ? " goals-task-check--current" : ""}`}
-        aria-hidden="true"
+        }${task.isActionable ? " goals-task-check--current" : ""}${
+          isInteractive ? " goals-task-check--interactive" : ""
+        }`}
+        aria-label={
+          task.isDone
+            ? `Reopen ${task.title}`
+            : canComplete
+              ? `Complete ${task.title}`
+              : `${task.title} locked until earlier levels finish`
+        }
+        aria-pressed={task.isDone}
+        disabled={!isInteractive}
+        onClick={handleToggle}
       />
       <div className="goals-task-body">
         <div className="goals-task-title-row">
@@ -45,6 +90,7 @@ export function GoalTaskRow({ task }: GoalTaskRowProps) {
             </span>
           ) : null}
         </div>
+        {error ? <p className="goals-task-error">{error}</p> : null}
         {task.isBlocked && task.blockedReason ? (
           <p className="goals-task-blocked-reason">{task.blockedReason}</p>
         ) : null}

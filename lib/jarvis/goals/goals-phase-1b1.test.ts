@@ -61,6 +61,7 @@ vi.mock("@/app/goals/actions", () => ({
   publishShortTermGoal: vi.fn(),
   publishThreeMonthGoal: vi.fn(),
   publishLongTermGoal: vi.fn(),
+  setGoalTaskCompletion: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
