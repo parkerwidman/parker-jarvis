@@ -16,6 +16,7 @@ type GoalTaskRowProps = {
   levelState: LevelState;
   goalStatus: JarvisGoalStatus;
   levelTaskCount: number;
+  levelStructuralPending?: boolean;
 };
 
 type EditorMode = "none" | "notes" | "block" | "title" | "deleteConfirm";
@@ -36,6 +37,7 @@ export function GoalTaskRow({
   levelState,
   goalStatus,
   levelTaskCount,
+  levelStructuralPending = false,
 }: GoalTaskRowProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -56,7 +58,8 @@ export function GoalTaskRow({
   const canBlockNew = !task.isDone && !task.isBlocked;
   const canEditBlocker = task.isBlocked;
   const canUnblock = task.isBlocked;
-  const metadataDisabled = isPending || editorOpen;
+  const metadataDisabled = isPending || editorOpen || levelStructuralPending;
+  const structuralDisabled = metadataDisabled;
   const canEditTitle = true;
   const canDelete = isActiveGoal && levelTaskCount > 1;
 
@@ -330,7 +333,7 @@ export function GoalTaskRow({
               <button
                 type="button"
                 className="goals-task-action"
-                disabled={metadataDisabled}
+                disabled={structuralDisabled}
                 onClick={() => {
                   setStructuralError(null);
                   setTitleDraft(task.title);
@@ -344,7 +347,7 @@ export function GoalTaskRow({
               <button
                 type="button"
                 className="goals-task-action goals-task-action--danger"
-                disabled={metadataDisabled}
+                disabled={structuralDisabled}
                 onClick={() => {
                   setStructuralError(null);
                   setEditorMode("deleteConfirm");

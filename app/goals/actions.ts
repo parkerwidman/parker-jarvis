@@ -5,8 +5,11 @@ import {
   type GoalBuilderInput,
 } from "@/lib/jarvis/goals/create-goal";
 import { addJarvisGoalTask } from "@/lib/jarvis/goals/mutations/add-goal-task";
+import { addJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/add-goal-level";
 import { deleteJarvisGoalTask } from "@/lib/jarvis/goals/mutations/delete-goal-task";
+import { deleteJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/delete-goal-level";
 import { editJarvisGoalTaskTitle } from "@/lib/jarvis/goals/mutations/edit-goal-task-title";
+import { editJarvisGoalLevelName } from "@/lib/jarvis/goals/mutations/edit-goal-level-name";
 import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import { setJarvisGoalTaskBlockState } from "@/lib/jarvis/goals/mutations/set-goal-task-block-state";
 import { setJarvisGoalTaskNotes } from "@/lib/jarvis/goals/mutations/set-goal-task-notes";
@@ -292,4 +295,87 @@ export async function deleteGoalTask(
   revalidateGoalPages();
 
   return { ok: true, taskId: result.taskId, goalId: result.goalId };
+}
+
+export type AddGoalLevelActionResult =
+  | { ok: true; levelId: string; taskId: string; goalId: string }
+  | { ok: false; error: string };
+
+export async function addGoalLevel(
+  goalId: unknown,
+  levelName: unknown,
+  firstTaskTitle: unknown,
+): Promise<AddGoalLevelActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to add a level." };
+  }
+
+  const result = await addJarvisGoalLevel(supabase, goalId, levelName, firstTaskTitle);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return {
+    ok: true,
+    levelId: result.levelId,
+    taskId: result.taskId,
+    goalId: result.goalId,
+  };
+}
+
+export type EditGoalLevelNameActionResult =
+  | { ok: true; levelId: string }
+  | { ok: false; error: string };
+
+export async function editGoalLevelName(
+  levelId: unknown,
+  name: unknown,
+): Promise<EditGoalLevelNameActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this level." };
+  }
+
+  const result = await editJarvisGoalLevelName(supabase, userId, levelId, name);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, levelId: result.levelId };
+}
+
+export type DeleteGoalLevelActionResult =
+  | { ok: true; levelId: string; goalId: string }
+  | { ok: false; error: string };
+
+export async function deleteGoalLevel(
+  levelId: unknown,
+): Promise<DeleteGoalLevelActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to delete this level." };
+  }
+
+  const result = await deleteJarvisGoalLevel(supabase, levelId);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, levelId: result.levelId, goalId: result.goalId };
 }

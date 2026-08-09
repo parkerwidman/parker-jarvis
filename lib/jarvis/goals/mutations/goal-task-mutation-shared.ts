@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const GOAL_TASK_NOTES_MAX_LENGTH = 2000;
 export const GOAL_TASK_BLOCKED_REASON_MAX_LENGTH = 500;
 export const GOAL_TASK_TITLE_MAX_LENGTH = 200;
+export const GOAL_LEVEL_NAME_MAX_LENGTH = 200;
 
 export const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -62,6 +63,68 @@ export function parseGoalTaskId(taskId: unknown): string | null {
 
 export function parseGoalLevelId(levelId: unknown): string | null {
   return parseGoalTaskId(levelId);
+}
+
+export function parseGoalId(goalId: unknown): string | null {
+  return parseGoalTaskId(goalId);
+}
+
+export type GoalLevelMutationContext = {
+  levelId: string;
+  goalId: string;
+  goalStatus: string;
+  levelName: string;
+};
+
+export async function loadGoalLevelMutationContext(
+  supabase: SupabaseClient,
+  userId: string,
+  levelId: string,
+): Promise<GoalLevelMutationContext | GoalTaskMutationFailure> {
+  const { data: level, error } = await supabase
+    .from("jarvis_goal_levels")
+    .select("id, goal_id, name")
+    .eq("id", levelId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    return { success: false, error: "Could not update level. Try again." };
+  }
+
+  if (!level) {
+    return { success: false, error: "Level not found.", code: "level_not_found" };
+  }
+
+  const { data: goal, error: goalError } = await supabase
+    .from("jarvis_goals")
+    .select("id, status")
+    .eq("id", level.goal_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (goalError) {
+    return { success: false, error: "Could not update level. Try again." };
+  }
+
+  if (!goal) {
+    return { success: false, error: "Goal not found.", code: "goal_not_found" };
+  }
+
+  if (goal.status === "archived") {
+    return {
+      success: false,
+      error: "Archived goals cannot be updated.",
+      code: "goal_archived",
+    };
+  }
+
+  return {
+    levelId: level.id,
+    goalId: level.goal_id,
+    goalStatus: goal.status,
+    levelName: level.name,
+  };
 }
 
 export async function loadGoalTaskMutationContext(

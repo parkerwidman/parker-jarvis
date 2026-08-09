@@ -83,6 +83,7 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
   it("BG/BH. active and locked levels show Add task", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
+        goalId: "goal-1",
         goalStatus: "active",
         levels: [
           sampleLevel({ state: "current" }),
@@ -97,6 +98,7 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
   it("BI. completed goal levels do NOT show Add task", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
+        goalId: "goal-1",
         goalStatus: "completed",
         levels: [sampleLevel({ state: "complete" })],
       }),

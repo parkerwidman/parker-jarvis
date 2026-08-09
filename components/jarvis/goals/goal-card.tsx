@@ -143,7 +143,7 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
 
       {(!isCompleted || expanded) ? (
         <div className="goals-card-body">
-          <LevelRoadmap levels={goal.levels} goalStatus={goal.status} />
+          <LevelRoadmap goalId={goal.id} levels={goal.levels} goalStatus={goal.status} />
         </div>
       ) : null}
     </article>

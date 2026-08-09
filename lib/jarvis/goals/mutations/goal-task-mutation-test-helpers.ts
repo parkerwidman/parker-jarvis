@@ -59,7 +59,7 @@ type ScopedSupabaseMockOptions = {
   taskError?: Error | null;
   goal?: { id: string; status: string } | null;
   goalError?: Error | null;
-  level?: { id: string; goal_id: string } | null;
+  level?: { id: string; goal_id: string; name?: string } | null;
   levelError?: Error | null;
   updateResult?: (filters: QueryFilters, payload: Record<string, unknown>) => unknown | null;
   updateError?: Error | null;
@@ -151,10 +151,40 @@ export function createScopedSupabaseMock(options: ScopedSupabaseMockOptions = {}
       return {
         select: vi.fn(() =>
           createQueryChain(filters, async () => ({
-            data: options.level ?? { id: LEVEL_ID, goal_id: GOAL_ID },
+            data: options.level ?? { id: LEVEL_ID, goal_id: GOAL_ID, name: "Foundation" },
             error: options.levelError ?? null,
           })),
         ),
+        update: vi.fn((payload: Record<string, unknown>) => {
+          updateCallCount += 1;
+          updatePayloads.push(payload);
+          const updateChainFilters: QueryFilters = {};
+          updateFilters.push(updateChainFilters);
+
+          return createQueryChain(updateChainFilters, async () => {
+            if (options.updateError) {
+              return { data: null, error: options.updateError };
+            }
+
+            const data = options.updateResult?.(updateChainFilters, payload);
+
+            if (data === null) {
+              return { data: null, error: null };
+            }
+
+            if (data !== undefined) {
+              return { data, error: null };
+            }
+
+            return {
+              data: {
+                id: LEVEL_ID,
+                name: "name" in payload ? payload.name : "Foundation",
+              },
+              error: null,
+            };
+          });
+        }),
       };
     }
 
