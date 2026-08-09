@@ -3,6 +3,7 @@
 import {
   deleteGoalTask,
   editGoalTaskTitle,
+  moveGoalTask,
   setGoalTaskBlockState,
   setGoalTaskCompletion,
   setGoalTaskNotes,
@@ -16,6 +17,7 @@ type GoalTaskRowProps = {
   levelState: LevelState;
   goalStatus: JarvisGoalStatus;
   levelTaskCount: number;
+  taskIndex?: number;
   levelStructuralPending?: boolean;
 };
 
@@ -37,6 +39,7 @@ export function GoalTaskRow({
   levelState,
   goalStatus,
   levelTaskCount,
+  taskIndex = 0,
   levelStructuralPending = false,
 }: GoalTaskRowProps) {
   const router = useRouter();
@@ -48,8 +51,13 @@ export function GoalTaskRow({
   const [noteDraft, setNoteDraft] = useState(task.notes ?? "");
   const [blockReasonDraft, setBlockReasonDraft] = useState(task.blockedReason ?? "");
   const [titleDraft, setTitleDraft] = useState(task.title);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
 
   const isActiveGoal = goalStatus === "active";
+  const canMoveTasks = isActiveGoal;
+  const isFirstTask = taskIndex === 0;
+  const isLastTask = taskIndex === levelTaskCount - 1;
   const canComplete = levelState === "current" && !task.isDone;
   const canReopen = task.isDone;
   const editorOpen = editorMode !== "none";
@@ -58,7 +66,7 @@ export function GoalTaskRow({
   const canBlockNew = !task.isDone && !task.isBlocked;
   const canEditBlocker = task.isBlocked;
   const canUnblock = task.isBlocked;
-  const metadataDisabled = isPending || editorOpen || levelStructuralPending;
+  const metadataDisabled = isPending || editorOpen || levelStructuralPending || isMoving;
   const structuralDisabled = metadataDisabled;
   const canEditTitle = true;
   const canDelete = isActiveGoal && levelTaskCount > 1;
@@ -169,6 +177,24 @@ export function GoalTaskRow({
       }
 
       closeEditor();
+      router.refresh();
+    });
+  }
+
+  function handleMoveTask(direction: "up" | "down") {
+    setMoveError(null);
+    setIsMoving(true);
+
+    startTransition(async () => {
+      const result = await moveGoalTask(task.id, direction);
+
+      setIsMoving(false);
+
+      if (!result.ok) {
+        setMoveError(result.error);
+        return;
+      }
+
       router.refresh();
     });
   }
@@ -329,6 +355,28 @@ export function GoalTaskRow({
         ) : null}
         {editorMode === "none" ? (
           <div className="goals-task-actions">
+            {canMoveTasks ? (
+              <>
+                <button
+                  type="button"
+                  className="goals-task-action"
+                  disabled={structuralDisabled || isFirstTask}
+                  aria-label={`Move ${task.title} up`}
+                  onClick={() => handleMoveTask("up")}
+                >
+                  Move up
+                </button>
+                <button
+                  type="button"
+                  className="goals-task-action"
+                  disabled={structuralDisabled || isLastTask}
+                  aria-label={`Move ${task.title} down`}
+                  onClick={() => handleMoveTask("down")}
+                >
+                  Move down
+                </button>
+              </>
+            ) : null}
             {canEditTitle ? (
               <button
                 type="button"
@@ -411,6 +459,7 @@ export function GoalTaskRow({
         {completionError ? <p className="goals-task-error">{completionError}</p> : null}
         {metadataError ? <p className="goals-task-error">{metadataError}</p> : null}
         {structuralError ? <p className="goals-task-error">{structuralError}</p> : null}
+        {moveError ? <p className="goals-task-error">{moveError}</p> : null}
       </div>
     </li>
   );

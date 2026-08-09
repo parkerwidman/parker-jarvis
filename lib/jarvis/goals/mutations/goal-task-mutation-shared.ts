@@ -69,6 +69,16 @@ export function parseGoalId(goalId: unknown): string | null {
   return parseGoalTaskId(goalId);
 }
 
+export type MoveDirection = "up" | "down";
+
+export function parseMoveDirection(direction: unknown): MoveDirection | null {
+  if (direction === "up" || direction === "down") {
+    return direction;
+  }
+
+  return null;
+}
+
 export type GoalLevelMutationContext = {
   levelId: string;
   goalId: string;

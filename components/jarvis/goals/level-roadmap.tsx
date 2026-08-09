@@ -5,6 +5,7 @@ import {
   addGoalTask,
   deleteGoalLevel,
   editGoalLevelName,
+  moveGoalLevel,
 } from "@/app/goals/actions";
 import type { GoalLevelView, JarvisGoalStatus } from "@/lib/jarvis/goals/types";
 import { useRouter } from "next/navigation";
@@ -44,10 +45,12 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
   const [levelEditorMode, setLevelEditorMode] = useState<LevelEditorMode>("none");
   const [levelNameEditDraft, setLevelNameEditDraft] = useState("");
   const [levelStructuralError, setLevelStructuralError] = useState<string | null>(null);
+  const [movingLevelId, setMovingLevelId] = useState<string | null>(null);
 
   const canAddTasks = goalStatus === "active";
   const canAddLevels = goalStatus === "active";
   const canDeleteLevels = goalStatus === "active";
+  const canMoveLevels = goalStatus === "active";
   const levelStructuralOpen = levelEditorId !== null && levelEditorMode !== "none";
   const anyLevelAddOpen = addingLevel;
   const anyTaskAddOpen = addingTaskLevelId !== null;
@@ -140,8 +143,26 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
     });
   }
 
+  function handleMoveLevel(levelId: string, direction: "up" | "down") {
+    setLevelStructuralError(null);
+    setMovingLevelId(levelId);
+
+    startTransition(async () => {
+      const result = await moveGoalLevel(levelId, direction);
+
+      setMovingLevelId(null);
+
+      if (!result.ok) {
+        setLevelStructuralError(result.error);
+        return;
+      }
+
+      router.refresh();
+    });
+  }
+
   const levelStructuralDisabled =
-    isPending || levelStructuralOpen || anyLevelAddOpen || anyTaskAddOpen;
+    isPending || levelStructuralOpen || anyLevelAddOpen || anyTaskAddOpen || movingLevelId !== null;
 
   return (
     <>
@@ -149,6 +170,9 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
         {levels.map((level, index) => {
           const isLevelEditing = levelEditorId === level.id;
           const levelEditorOpen = isLevelEditing && levelEditorMode !== "none";
+          const isFirstLevel = index === 0;
+          const isLastLevel = index === levels.length - 1;
+          const levelMovePending = movingLevelId === level.id;
 
           return (
             <li
@@ -203,14 +227,15 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
                   <>
                     <p className="goals-roadmap-tasks-label">Tasks</p>
                     <ul className="goals-task-list">
-                      {level.tasks.map((task) => (
+                      {level.tasks.map((task, taskIndex) => (
                         <GoalTaskRow
                           key={task.id}
                           task={task}
                           levelState={level.state}
                           goalStatus={goalStatus}
                           levelTaskCount={level.tasks.length}
-                          levelStructuralPending={levelEditorOpen}
+                          taskIndex={taskIndex}
+                          levelStructuralPending={levelEditorOpen || levelMovePending}
                         />
                       ))}
                     </ul>
@@ -296,6 +321,28 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
                   </div>
                 ) : levelEditorMode === "none" || !isLevelEditing ? (
                   <div className="goals-level-actions">
+                    {canMoveLevels ? (
+                      <>
+                        <button
+                          type="button"
+                          className="goals-task-action"
+                          disabled={levelStructuralDisabled || isFirstLevel}
+                          aria-label={`Move ${level.name} up`}
+                          onClick={() => handleMoveLevel(level.id, "up")}
+                        >
+                          Move up
+                        </button>
+                        <button
+                          type="button"
+                          className="goals-task-action"
+                          disabled={levelStructuralDisabled || isLastLevel}
+                          aria-label={`Move ${level.name} down`}
+                          onClick={() => handleMoveLevel(level.id, "down")}
+                        >
+                          Move down
+                        </button>
+                      </>
+                    ) : null}
                     <button
                       type="button"
                       className="goals-task-action"

@@ -10,6 +10,8 @@ import { deleteJarvisGoalTask } from "@/lib/jarvis/goals/mutations/delete-goal-t
 import { deleteJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/delete-goal-level";
 import { editJarvisGoalTaskTitle } from "@/lib/jarvis/goals/mutations/edit-goal-task-title";
 import { editJarvisGoalLevelName } from "@/lib/jarvis/goals/mutations/edit-goal-level-name";
+import { moveJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/move-goal-level";
+import { moveJarvisGoalTask } from "@/lib/jarvis/goals/mutations/move-goal-task";
 import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import { setJarvisGoalTaskBlockState } from "@/lib/jarvis/goals/mutations/set-goal-task-block-state";
 import { setJarvisGoalTaskNotes } from "@/lib/jarvis/goals/mutations/set-goal-task-notes";
@@ -378,4 +380,66 @@ export async function deleteGoalLevel(
   revalidateGoalPages();
 
   return { ok: true, levelId: result.levelId, goalId: result.goalId };
+}
+
+export type MoveGoalLevelActionResult =
+  | { ok: true; code: string; levelId: string; goalId: string }
+  | { ok: false; error: string };
+
+export async function moveGoalLevel(
+  levelId: unknown,
+  direction: unknown,
+): Promise<MoveGoalLevelActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to reorder this level." };
+  }
+
+  const result = await moveJarvisGoalLevel(supabase, levelId, direction);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return {
+    ok: true,
+    code: result.code,
+    levelId: result.levelId,
+    goalId: result.goalId,
+  };
+}
+
+export type MoveGoalTaskActionResult =
+  | { ok: true; code: string; taskId: string; goalId: string }
+  | { ok: false; error: string };
+
+export async function moveGoalTask(
+  taskId: unknown,
+  direction: unknown,
+): Promise<MoveGoalTaskActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to reorder this task." };
+  }
+
+  const result = await moveJarvisGoalTask(supabase, taskId, direction);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return {
+    ok: true,
+    code: result.code,
+    taskId: result.taskId,
+    goalId: result.goalId,
+  };
 }
