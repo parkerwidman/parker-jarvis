@@ -8934,6 +8934,30 @@ body[data-mode="personal"] {
   color: var(--cc2-text);
 }
 
+.goals-task-action--danger {
+  color: #e06c6c;
+}
+
+.goals-task-input {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--cc2-text-1);
+  font: inherit;
+}
+
+.goals-level-add {
+  margin-top: 0.625rem;
+}
+
+.goals-task-delete-prompt {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--cc2-text-2);
+}
+
 .goals-task-editor {
   display: flex;
   flex-direction: column;

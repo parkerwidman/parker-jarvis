@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const GOAL_TASK_NOTES_MAX_LENGTH = 2000;
 export const GOAL_TASK_BLOCKED_REASON_MAX_LENGTH = 500;
+export const GOAL_TASK_TITLE_MAX_LENGTH = 200;
 
 export const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -57,6 +58,10 @@ export function parseGoalTaskId(taskId: unknown): string | null {
   }
 
   return normalized;
+}
+
+export function parseGoalLevelId(levelId: unknown): string | null {
+  return parseGoalTaskId(levelId);
 }
 
 export async function loadGoalTaskMutationContext(

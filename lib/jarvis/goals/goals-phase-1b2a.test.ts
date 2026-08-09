@@ -92,11 +92,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("Jarvis goals phase 1B2A task completion UI", () => {
+  const rowProps = { goalStatus: "active" as const, levelTaskCount: 2 };
+
   it("renders interactive completion control for current-level tasks", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
         task: sampleGoal().levels[0].tasks[0],
         levelState: "current",
+        ...rowProps,
       }),
     );
 
@@ -109,6 +112,7 @@ describe("Jarvis goals phase 1B2A task completion UI", () => {
       createElement(GoalTaskRow, {
         task: sampleGoal().levels[1].tasks[0],
         levelState: "locked",
+        ...rowProps,
       }),
     );
 
@@ -127,6 +131,7 @@ describe("Jarvis goals phase 1B2A task completion UI", () => {
           isActionable: false,
         },
         levelState: "complete",
+        ...rowProps,
       }),
     );
 

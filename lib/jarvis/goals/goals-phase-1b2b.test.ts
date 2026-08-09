@@ -71,11 +71,14 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("Jarvis goals phase 1B2B task metadata", () => {
+  const rowProps = { goalStatus: "active" as const, levelTaskCount: 2 };
+
   it("shows note and block controls for unfinished unblocked tasks", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
         task: sampleTask(),
         levelState: "current",
+        ...rowProps,
       }),
     );
 
@@ -92,6 +95,7 @@ describe("Jarvis goals phase 1B2B task metadata", () => {
           blockedReason: "Waiting on review",
         }),
         levelState: "current",
+        ...rowProps,
       }),
     );
 
@@ -112,6 +116,7 @@ describe("Jarvis goals phase 1B2B task metadata", () => {
           notes: "Shipped",
         }),
         levelState: "complete",
+        ...rowProps,
       }),
     );
 
@@ -124,6 +129,7 @@ describe("Jarvis goals phase 1B2B task metadata", () => {
       createElement(GoalTaskRow, {
         task: sampleTask({ isActionable: false }),
         levelState: "locked",
+        ...rowProps,
       }),
     );
 

@@ -4,6 +4,9 @@ import {
   createJarvisGoalWithRoadmap,
   type GoalBuilderInput,
 } from "@/lib/jarvis/goals/create-goal";
+import { addJarvisGoalTask } from "@/lib/jarvis/goals/mutations/add-goal-task";
+import { deleteJarvisGoalTask } from "@/lib/jarvis/goals/mutations/delete-goal-task";
+import { editJarvisGoalTaskTitle } from "@/lib/jarvis/goals/mutations/edit-goal-task-title";
 import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import { setJarvisGoalTaskBlockState } from "@/lib/jarvis/goals/mutations/set-goal-task-block-state";
 import { setJarvisGoalTaskNotes } from "@/lib/jarvis/goals/mutations/set-goal-task-notes";
@@ -37,6 +40,7 @@ function revalidateGoalPages(): void {
     revalidatePath(config.route);
   }
   revalidatePath("/");
+  revalidatePath("/tasks");
 }
 
 async function publishJarvisGoal(
@@ -211,4 +215,81 @@ export async function clearTodayPriorityGoal(): Promise<ClearTodayPriorityGoalAc
   revalidateGoalPages();
 
   return { ok: true };
+}
+
+export type AddGoalTaskActionResult =
+  | { ok: true; taskId: string; goalId: string }
+  | { ok: false; error: string };
+
+export async function addGoalTask(
+  levelId: unknown,
+  title: unknown,
+): Promise<AddGoalTaskActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to add a task." };
+  }
+
+  const result = await addJarvisGoalTask(supabase, levelId, title);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, taskId: result.taskId, goalId: result.goalId };
+}
+
+export type EditGoalTaskTitleActionResult =
+  | { ok: true; taskId: string }
+  | { ok: false; error: string };
+
+export async function editGoalTaskTitle(
+  taskId: unknown,
+  title: unknown,
+): Promise<EditGoalTaskTitleActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this task." };
+  }
+
+  const result = await editJarvisGoalTaskTitle(supabase, userId, taskId, title);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, taskId: result.taskId };
+}
+
+export type DeleteGoalTaskActionResult =
+  | { ok: true; taskId: string; goalId: string }
+  | { ok: false; error: string };
+
+export async function deleteGoalTask(
+  taskId: unknown,
+): Promise<DeleteGoalTaskActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to delete this task." };
+  }
+
+  const result = await deleteJarvisGoalTask(supabase, taskId);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, taskId: result.taskId, goalId: result.goalId };
 }
