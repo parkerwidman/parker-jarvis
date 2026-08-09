@@ -202,8 +202,18 @@ describe("Jarvis goals phase 1A UI", () => {
     ]) {
       const source = readSource(route);
       expect(source).toContain('className="jv-page-content--goals"');
-      expect(source).toContain('mainClassName="cc2-shell"');
+      expect(source).toContain('mainClassName="cc2-shell cc2-shell--goals"');
     }
+  });
+
+  it("uses a goals-specific shell override to remove the cc2-shell width cap", () => {
+    const css = readSource("app/globals.css");
+
+    expect(css).toContain(".app-main.cc2-shell.cc2-shell--goals");
+    expect(css).toMatch(
+      /\.app-main\.cc2-shell\.cc2-shell--goals[\s\S]*max-width:\s*none/,
+    );
+    expect(css).toMatch(/\.app-main\.cc2-shell\s*\{[\s\S]*max-width:\s*87\.5rem/);
   });
 
   it("keeps roadmap level headers flexible with auto-sized status column", () => {
