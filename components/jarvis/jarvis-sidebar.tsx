@@ -14,6 +14,12 @@ const PRIMARY_LINKS: SidebarLink[] = [
   { href: "/tasks", label: "Tasks" },
 ];
 
+const GOALS_LINKS: SidebarLink[] = [
+  { href: "/goals/short-term", label: "Short Term Goals" },
+  { href: "/goals/three-month", label: "3 Month Goals" },
+  { href: "/goals/long-term", label: "Long Term Goals" },
+];
+
 const SECONDARY_LINKS: SidebarLink[] = [
   { href: "/melusi", label: "Melusi" },
   { href: "/assistant", label: "Assistant" },
@@ -62,6 +68,9 @@ export function JarvisSidebar({ displayName, userEmail }: JarvisSidebarProps) {
 
       <nav className="cc2-nav" aria-label="Jarvis navigation">
         {PRIMARY_LINKS.map((link) => (
+          <NavLink key={link.href} {...link} />
+        ))}
+        {GOALS_LINKS.map((link) => (
           <NavLink key={link.href} {...link} />
         ))}
         <div className="cc2-nav-divider" aria-hidden="true" />

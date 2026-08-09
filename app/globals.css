@@ -8339,3 +8339,442 @@ body[data-mode="personal"] {
     align-items: stretch;
   }
 }
+
+/* ── Goals pages ── */
+
+.jv-page-content--goals {
+  max-width: 52rem;
+}
+
+.goals-domain-seg {
+  display: inline-flex;
+  padding: 0.1875rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--cc2-border);
+  border-radius: 0.625rem;
+}
+
+.goals-domain-seg-btn {
+  padding: 0.4375rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cc2-text-2);
+  background: transparent;
+  border: none;
+  border-radius: 0.4375rem;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.goals-domain-seg-btn--active.goals-domain-seg-btn--personal {
+  color: #f0a93b;
+  background: rgba(240, 169, 59, 0.14);
+}
+
+.goals-domain-seg-btn--active.goals-domain-seg-btn--melusi {
+  color: #3b7ddd;
+  background: rgba(59, 125, 221, 0.13);
+}
+
+.goals-domain-seg-btn:focus-visible {
+  outline: 2px solid var(--cc2-accent);
+  outline-offset: 2px;
+}
+
+.goals-empty {
+  padding: 2rem 1.25rem;
+  text-align: center;
+  background: var(--cc2-card-2);
+  border: 1px solid var(--cc2-border);
+  border-radius: 0.75rem;
+}
+
+.goals-empty-title {
+  margin: 0 0 0.375rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--cc2-text);
+}
+
+.goals-empty-desc {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--cc2-text-3);
+}
+
+.goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.goals-completed-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.goals-completed-label {
+  margin: 0.5rem 0 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cc2-text-3);
+}
+
+.goals-card {
+  padding: 1rem 1.125rem;
+  background: var(--cc2-card);
+  border: 1px solid var(--cc2-border);
+  border-radius: 0.75rem;
+}
+
+.goals-card--priority {
+  border-color: rgba(240, 169, 59, 0.42);
+  box-shadow: 0 0 0 1px rgba(240, 169, 59, 0.08);
+}
+
+.goals-card--completed {
+  padding: 0.75rem 1rem;
+  background: var(--cc2-card-2);
+}
+
+.goals-card--collapsed .goals-progress-track {
+  margin-bottom: 0;
+}
+
+.goals-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.625rem;
+}
+
+.goals-card-head-main {
+  min-width: 0;
+}
+
+.goals-card-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.goals-card-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--cc2-text);
+}
+
+.goals-card--completed .goals-card-title {
+  font-size: 0.875rem;
+  color: var(--cc2-text-2);
+}
+
+.goals-domain-tag {
+  padding: 0.125rem 0.4375rem;
+  font-size: 0.59375rem;
+  font-weight: 700;
+  border-radius: 0.3125rem;
+}
+
+.goals-domain-tag--personal {
+  color: #f0a93b;
+  background: rgba(240, 169, 59, 0.14);
+}
+
+.goals-domain-tag--melusi {
+  color: #3b7ddd;
+  background: rgba(59, 125, 221, 0.13);
+}
+
+.goals-priority-badge {
+  margin: 0.375rem 0 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f0a93b;
+}
+
+.goals-card-description {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--cc2-text-2);
+}
+
+.goals-card-head-meta {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.goals-card-progress {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cc2-text-2);
+}
+
+.goals-card-toggle {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--cc2-text-3);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--cc2-border);
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+
+.goals-card-toggle:hover {
+  color: var(--cc2-text);
+}
+
+.goals-progress-track {
+  height: 0.375rem;
+  margin-bottom: 0.875rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 0.25rem;
+}
+
+.goals-progress-fill {
+  height: 100%;
+  background: var(--cc2-accent);
+  border-radius: 0.25rem;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+
+.goals-card--personal .goals-progress-fill {
+  background: #f0a93b;
+}
+
+.goals-card--melusi .goals-progress-fill {
+  background: #3b7ddd;
+}
+
+.goals-roadmap {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goals-roadmap-empty,
+.goals-roadmap-level-empty {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--cc2-text-3);
+}
+
+.goals-roadmap-level {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  gap: 0.75rem;
+}
+
+.goals-roadmap-marker {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 0.125rem;
+}
+
+.goals-roadmap-dot {
+  position: relative;
+  z-index: 1;
+  width: 0.625rem;
+  height: 0.625rem;
+  background: rgba(255, 255, 255, 0.12);
+  border: 2px solid var(--cc2-border);
+  border-radius: 999px;
+}
+
+.goals-roadmap-level--complete .goals-roadmap-dot {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: rgba(34, 197, 94, 0.55);
+}
+
+.goals-roadmap-level--current .goals-roadmap-dot {
+  background: var(--cc2-accent-bg);
+  border-color: var(--cc2-accent);
+}
+
+.goals-roadmap-level--locked .goals-roadmap-dot {
+  opacity: 0.45;
+}
+
+.goals-roadmap-connector {
+  position: absolute;
+  top: 0.75rem;
+  bottom: -0.5rem;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.goals-roadmap-level--complete .goals-roadmap-connector {
+  background: rgba(34, 197, 94, 0.35);
+}
+
+.goals-roadmap-content {
+  padding-bottom: 1rem;
+}
+
+.goals-roadmap-level--last .goals-roadmap-content {
+  padding-bottom: 0;
+}
+
+.goals-roadmap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.goals-roadmap-level-name {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--cc2-text);
+}
+
+.goals-roadmap-level--locked .goals-roadmap-level-name,
+.goals-roadmap-level--locked .goals-task-title {
+  color: var(--cc2-text-3);
+}
+
+.goals-roadmap-state {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cc2-text-3);
+}
+
+.goals-roadmap-level--current .goals-roadmap-state {
+  color: var(--cc2-accent);
+}
+
+.goals-task-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.goals-task-row {
+  display: grid;
+  grid-template-columns: 1rem 1fr;
+  gap: 0.625rem;
+  padding: 0.4375rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.goals-task-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.goals-task-check {
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: 0.125rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.25rem;
+}
+
+.goals-task-check--done {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.55);
+}
+
+.goals-task-check--current {
+  border-color: var(--cc2-accent);
+}
+
+.goals-task-body {
+  min-width: 0;
+}
+
+.goals-task-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.goals-task-title {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--cc2-text);
+}
+
+.goals-task-row--done .goals-task-title {
+  color: var(--cc2-text-3);
+  text-decoration: line-through;
+}
+
+.goals-task-row--actionable .goals-task-title {
+  color: var(--cc2-text);
+}
+
+.goals-task-badge {
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 0.25rem;
+}
+
+.goals-task-badge--blocked {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.goals-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.1875rem;
+}
+
+.goals-task-status,
+.goals-task-notes {
+  font-size: 0.6875rem;
+  color: var(--cc2-text-3);
+}
+
+.goals-task-notes {
+  color: var(--cc2-accent);
+}
+
+.goals-task-blocked-reason,
+.goals-task-notes-text {
+  margin: 0.25rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--cc2-text-3);
+}
+
+.goals-task-notes-text {
+  color: var(--cc2-text-2);
+}
+
+@media (max-width: 640px) {
+  .goals-card-head {
+    flex-direction: column;
+  }
+
+  .goals-card-head-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
