@@ -80,11 +80,12 @@ vi.mock("next/navigation", () => ({
 describe("Jarvis goals phase 1B2D task structural editing", () => {
   const migration = readFileSync(resolve(ROOT, MIGRATION_PATH), "utf8");
 
-  it("BG/BH. active and locked levels show Add task", () => {
+  it("BG/BH. active and locked levels show Add task while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "active",
+        isEditing: true,
         levels: [
           sampleLevel({ state: "current" }),
           sampleLevel({ id: "level-2", name: "Launch", state: "locked", position: 20 }),
@@ -107,13 +108,14 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
     expect(html).not.toContain("Add task");
   });
 
-  it("BJ/BK. active task shows Edit and Delete", () => {
+  it("BJ/BK. active task shows Edit and Delete while editing", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
         task: sampleTask(),
         levelState: "current",
         goalStatus: "active",
         levelTaskCount: 2,
+        isEditing: true,
       }),
     );
 
@@ -121,13 +123,14 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
     expect(html).toContain("Delete");
   });
 
-  it("BL/BM. completed goal task shows Edit but not Delete", () => {
+  it("BL/BM. completed goal task shows Edit but not Delete while editing", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
         task: sampleTask({ status: "done", isDone: true, isActionable: false }),
         levelState: "complete",
         goalStatus: "completed",
         levelTaskCount: 2,
+        isEditing: true,
       }),
     );
 
@@ -153,10 +156,10 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
     }
   });
 
-  it("BP/BQ/BR. retains note, blocker, and completion controls", () => {
+  it("BP/BQ/BR. retains note and completion controls outside edit mode", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
-        task: sampleTask(),
+        task: sampleTask({ notes: null }),
         levelState: "current",
         goalStatus: "active",
         levelTaskCount: 2,
@@ -164,7 +167,7 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
     );
 
     expect(html).toContain("Add note");
-    expect(html).toContain("Block");
+    expect(html).not.toContain(">Block<");
     expect(html).toContain("goals-task-check");
   });
 

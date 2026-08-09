@@ -8648,6 +8648,32 @@ body[data-mode="personal"] {
   margin-top: 0.125rem;
 }
 
+.goals-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.goals-card-edit-toggle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc2-text-3);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.goals-card-edit-toggle:hover {
+  color: var(--cc2-accent);
+}
+
+.goals-card-edit-toggle[aria-pressed="true"] {
+  color: var(--cc2-accent);
+}
+
 .goals-roadmap {
   margin: 0;
   padding: 0;
@@ -8936,6 +8962,16 @@ body[data-mode="personal"] {
 
 .goals-task-action--danger {
   color: #e06c6c;
+}
+
+.goals-task-action--subtle {
+  color: var(--cc2-text-3);
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.goals-task-action--subtle:hover:not(:disabled) {
+  color: var(--cc2-text-2);
 }
 
 .goals-task-input {

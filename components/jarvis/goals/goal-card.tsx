@@ -23,6 +23,9 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
   const [priorityError, setPriorityError] = useState<string | null>(null);
   const isCompleted = goal.status === "completed";
   const [expanded, setExpanded] = useState(!isCompleted);
+  const [isEditing, setIsEditing] = useState(false);
+  const showGoalBody = !isCompleted || expanded;
+  const showEditToggle = showGoalBody;
   const showPriorityBadge = showTodayPriority && goal.isTodayPriority;
   const showHeaderSurface = !isCompleted || expanded;
   const canSetPriority = showTodayPriority && !isCompleted && !goal.isTodayPriority;
@@ -98,7 +101,14 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
             <button
               type="button"
               className="goals-card-toggle"
-              onClick={() => setExpanded((value) => !value)}
+              onClick={() => {
+                setExpanded((value) => {
+                  if (value) {
+                    setIsEditing(false);
+                  }
+                  return !value;
+                });
+              }}
               aria-expanded={expanded}
             >
               {expanded ? "Collapse" : "Expand"}
@@ -141,9 +151,27 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
 
       {priorityError ? <p className="goals-task-error">{priorityError}</p> : null}
 
-      {(!isCompleted || expanded) ? (
+      {showGoalBody ? (
         <div className="goals-card-body">
-          <LevelRoadmap goalId={goal.id} levels={goal.levels} goalStatus={goal.status} />
+          <LevelRoadmap
+            goalId={goal.id}
+            levels={goal.levels}
+            goalStatus={goal.status}
+            isEditing={isEditing}
+          />
+        </div>
+      ) : null}
+
+      {showEditToggle ? (
+        <div className="goals-card-footer">
+          <button
+            type="button"
+            className="goals-card-edit-toggle"
+            aria-pressed={isEditing}
+            onClick={() => setIsEditing((value) => !value)}
+          >
+            {isEditing ? "Done editing" : "Edit goal"}
+          </button>
         </div>
       ) : null}
     </article>

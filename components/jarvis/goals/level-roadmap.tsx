@@ -9,13 +9,14 @@ import {
 } from "@/app/goals/actions";
 import type { GoalLevelView, JarvisGoalStatus } from "@/lib/jarvis/goals/types";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { GoalTaskRow } from "./goal-task-row";
 
 type LevelRoadmapProps = {
   goalId: string;
   levels: GoalLevelView[];
   goalStatus: JarvisGoalStatus;
+  isEditing?: boolean;
 };
 
 type LevelEditorMode = "none" | "editName" | "deleteConfirm";
@@ -31,7 +32,12 @@ function levelStateLabel(state: GoalLevelView["state"]): string {
   }
 }
 
-export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) {
+export function LevelRoadmap({
+  goalId,
+  levels,
+  goalStatus,
+  isEditing = false,
+}: LevelRoadmapProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [addingTaskLevelId, setAddingTaskLevelId] = useState<string | null>(null);
@@ -163,6 +169,17 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
 
   const levelStructuralDisabled =
     isPending || levelStructuralOpen || anyLevelAddOpen || anyTaskAddOpen || movingLevelId !== null;
+  const showStructuralControls = isEditing;
+
+  useEffect(() => {
+    if (!isEditing) {
+      closeLevelEditor();
+      closeTaskAddEditor();
+      closeLevelAddEditor();
+      setMovingLevelId(null);
+      setLevelStructuralError(null);
+    }
+  }, [isEditing]);
 
   return (
     <>
@@ -236,6 +253,7 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
                           levelTaskCount={level.tasks.length}
                           taskIndex={taskIndex}
                           levelStructuralPending={levelEditorOpen || levelMovePending}
+                          isEditing={isEditing}
                         />
                       ))}
                     </ul>
@@ -243,7 +261,7 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
                 ) : (
                   <p className="goals-roadmap-level-empty">No tasks in this level.</p>
                 )}
-                {canAddTasks ? (
+                {showStructuralControls && canAddTasks ? (
                   <div className="goals-level-add">
                     {addingTaskLevelId === level.id ? (
                       <div className="goals-task-editor">
@@ -319,7 +337,7 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
                       <p className="goals-task-error">{levelStructuralError}</p>
                     ) : null}
                   </div>
-                ) : levelEditorMode === "none" || !isLevelEditing ? (
+                ) : showStructuralControls && (levelEditorMode === "none" || !isLevelEditing) ? (
                   <div className="goals-level-actions">
                     {canMoveLevels ? (
                       <>
@@ -380,7 +398,7 @@ export function LevelRoadmap({ goalId, levels, goalStatus }: LevelRoadmapProps) 
           );
         })}
       </ol>
-      {canAddLevels ? (
+      {showStructuralControls && canAddLevels ? (
         <div className="goals-roadmap-add-level">
           {addingLevel ? (
             <div className="goals-task-editor">

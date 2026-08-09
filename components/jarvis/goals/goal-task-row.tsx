@@ -10,7 +10,7 @@ import {
 } from "@/app/goals/actions";
 import type { GoalTaskView, JarvisGoalStatus, LevelState } from "@/lib/jarvis/goals/types";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 type GoalTaskRowProps = {
   task: GoalTaskView;
@@ -19,6 +19,7 @@ type GoalTaskRowProps = {
   levelTaskCount: number;
   taskIndex?: number;
   levelStructuralPending?: boolean;
+  isEditing?: boolean;
 };
 
 type EditorMode = "none" | "notes" | "block" | "title" | "deleteConfirm";
@@ -41,6 +42,7 @@ export function GoalTaskRow({
   levelTaskCount,
   taskIndex = 0,
   levelStructuralPending = false,
+  isEditing = false,
 }: GoalTaskRowProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -70,6 +72,25 @@ export function GoalTaskRow({
   const structuralDisabled = metadataDisabled;
   const canEditTitle = true;
   const canDelete = isActiveGoal && levelTaskCount > 1;
+  const showStructuralControls = isEditing;
+
+  function closeStructuralEditor() {
+    if (editorMode === "title" || editorMode === "deleteConfirm" || editorMode === "block") {
+      setEditorMode("none");
+      setBlockReasonDraft(task.blockedReason ?? "");
+      setTitleDraft(task.title);
+      setStructuralError(null);
+      setMetadataError(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!isEditing) {
+      closeStructuralEditor();
+      setMoveError(null);
+      setIsMoving(false);
+    }
+  }, [isEditing]);
 
   function closeEditor() {
     setEditorMode("none");
@@ -353,106 +374,112 @@ export function GoalTaskRow({
             </div>
           </div>
         ) : null}
-        {editorMode === "none" ? (
+        {editorMode === "none" || editorMode === "notes" ? (
           <div className="goals-task-actions">
-            {canMoveTasks ? (
+            {editorMode === "none" ? (
+              <button
+                type="button"
+                className="goals-task-action goals-task-action--subtle"
+                disabled={metadataDisabled}
+                onClick={() => {
+                  setMetadataError(null);
+                  setNoteDraft(task.notes ?? "");
+                  setEditorMode("notes");
+                }}
+              >
+                {task.notes ? "Edit note" : "Add note"}
+              </button>
+            ) : null}
+            {showStructuralControls ? (
               <>
-                <button
-                  type="button"
-                  className="goals-task-action"
-                  disabled={structuralDisabled || isFirstTask}
-                  aria-label={`Move ${task.title} up`}
-                  onClick={() => handleMoveTask("up")}
-                >
-                  Move up
-                </button>
-                <button
-                  type="button"
-                  className="goals-task-action"
-                  disabled={structuralDisabled || isLastTask}
-                  aria-label={`Move ${task.title} down`}
-                  onClick={() => handleMoveTask("down")}
-                >
-                  Move down
-                </button>
+                {canMoveTasks ? (
+                  <>
+                    <button
+                      type="button"
+                      className="goals-task-action"
+                      disabled={structuralDisabled || isFirstTask}
+                      aria-label={`Move ${task.title} up`}
+                      onClick={() => handleMoveTask("up")}
+                    >
+                      Move up
+                    </button>
+                    <button
+                      type="button"
+                      className="goals-task-action"
+                      disabled={structuralDisabled || isLastTask}
+                      aria-label={`Move ${task.title} down`}
+                      onClick={() => handleMoveTask("down")}
+                    >
+                      Move down
+                    </button>
+                  </>
+                ) : null}
+                {canEditTitle ? (
+                  <button
+                    type="button"
+                    className="goals-task-action"
+                    disabled={structuralDisabled}
+                    onClick={() => {
+                      setStructuralError(null);
+                      setTitleDraft(task.title);
+                      setEditorMode("title");
+                    }}
+                  >
+                    Edit task
+                  </button>
+                ) : null}
+                {canDelete ? (
+                  <button
+                    type="button"
+                    className="goals-task-action goals-task-action--danger"
+                    disabled={structuralDisabled}
+                    onClick={() => {
+                      setStructuralError(null);
+                      setEditorMode("deleteConfirm");
+                    }}
+                  >
+                    Delete
+                  </button>
+                ) : null}
+                {canBlockNew ? (
+                  <button
+                    type="button"
+                    className="goals-task-action"
+                    disabled={metadataDisabled}
+                    onClick={() => {
+                      setMetadataError(null);
+                      setBlockReasonDraft("");
+                      setEditorMode("block");
+                    }}
+                  >
+                    Block
+                  </button>
+                ) : null}
+                {canEditBlocker ? (
+                  <button
+                    type="button"
+                    className="goals-task-action"
+                    disabled={metadataDisabled}
+                    onClick={() => {
+                      setMetadataError(null);
+                      setBlockReasonDraft(task.blockedReason ?? "");
+                      setEditorMode("block");
+                    }}
+                  >
+                    Edit blocker
+                  </button>
+                ) : null}
+                {canUnblock ? (
+                  <button
+                    type="button"
+                    className="goals-task-action"
+                    disabled={metadataDisabled}
+                    onClick={handleUnblockTask}
+                  >
+                    Unblock
+                  </button>
+                ) : null}
               </>
-            ) : null}
-            {canEditTitle ? (
-              <button
-                type="button"
-                className="goals-task-action"
-                disabled={structuralDisabled}
-                onClick={() => {
-                  setStructuralError(null);
-                  setTitleDraft(task.title);
-                  setEditorMode("title");
-                }}
-              >
-                Edit task
-              </button>
-            ) : null}
-            {canDelete ? (
-              <button
-                type="button"
-                className="goals-task-action goals-task-action--danger"
-                disabled={structuralDisabled}
-                onClick={() => {
-                  setStructuralError(null);
-                  setEditorMode("deleteConfirm");
-                }}
-              >
-                Delete
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="goals-task-action"
-              disabled={metadataDisabled}
-              onClick={() => {
-                setMetadataError(null);
-                setNoteDraft(task.notes ?? "");
-                setEditorMode("notes");
-              }}
-            >
-              {task.notes ? "Edit note" : "Add note"}
-            </button>
-            {canBlockNew ? (
-              <button
-                type="button"
-                className="goals-task-action"
-                disabled={metadataDisabled}
-                onClick={() => {
-                  setMetadataError(null);
-                  setBlockReasonDraft("");
-                  setEditorMode("block");
-                }}
-              >
-                Block
-              </button>
-            ) : null}
-            {canEditBlocker ? (
-              <button
-                type="button"
-                className="goals-task-action"
-                disabled={metadataDisabled}
-                onClick={() => {
-                  setMetadataError(null);
-                  setBlockReasonDraft(task.blockedReason ?? "");
-                  setEditorMode("block");
-                }}
-              >
-                Edit blocker
-              </button>
-            ) : null}
-            {canUnblock ? (
-              <button
-                type="button"
-                className="goals-task-action"
-                disabled={metadataDisabled}
-                onClick={handleUnblockTask}
-              >
-                Unblock
-              </button>
             ) : null}
           </div>
         ) : null}

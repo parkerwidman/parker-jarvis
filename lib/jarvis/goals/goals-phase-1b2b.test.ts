@@ -73,37 +73,49 @@ vi.mock("next/navigation", () => ({
 describe("Jarvis goals phase 1B2B task metadata", () => {
   const rowProps = { goalStatus: "active" as const, levelTaskCount: 2 };
 
-  it("shows note and block controls for unfinished unblocked tasks", () => {
+  it("shows note controls but not block controls outside edit mode", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
-        task: sampleTask(),
+        task: sampleTask({ notes: null }),
         levelState: "current",
         ...rowProps,
       }),
     );
 
     expect(html).toContain("Add note");
-    expect(html).toContain("Block");
+    expect(html).not.toContain(">Block<");
   });
 
-  it("shows edit note and unblock for blocked tasks", () => {
-    const html = renderToStaticMarkup(
+  it("shows edit note outside edit mode and block controls only while editing", () => {
+    const blockedTask = sampleTask({
+      isBlocked: true,
+      blockedAt: "2026-08-08T00:00:00.000Z",
+      blockedReason: "Waiting on review",
+      notes: null,
+    });
+    const normalHtml = renderToStaticMarkup(
       createElement(GoalTaskRow, {
-        task: sampleTask({
-          isBlocked: true,
-          blockedAt: "2026-08-08T00:00:00.000Z",
-          blockedReason: "Waiting on review",
-        }),
+        task: blockedTask,
         levelState: "current",
         ...rowProps,
       }),
     );
+    const editingHtml = renderToStaticMarkup(
+      createElement(GoalTaskRow, {
+        task: blockedTask,
+        levelState: "current",
+        isEditing: true,
+        ...rowProps,
+      }),
+    );
 
-    expect(html).toContain("Blocked");
-    expect(html).toContain("Waiting on review");
-    expect(html).toContain("Edit blocker");
-    expect(html).toContain("Unblock");
-    expect(html).not.toContain(">Block<");
+    expect(normalHtml).toContain("Blocked");
+    expect(normalHtml).toContain("Waiting on review");
+    expect(normalHtml).toContain("Add note");
+    expect(normalHtml).not.toContain("Edit blocker");
+    expect(normalHtml).not.toContain("Unblock");
+    expect(editingHtml).toContain("Edit blocker");
+    expect(editingHtml).toContain("Unblock");
   });
 
   it("allows note editing but not new blocking on completed unblocked tasks", () => {
@@ -124,17 +136,17 @@ describe("Jarvis goals phase 1B2B task metadata", () => {
     expect(html).not.toContain(">Block<");
   });
 
-  it("keeps metadata controls available on locked unfinished tasks", () => {
+  it("keeps note controls available on locked unfinished tasks outside edit mode", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
-        task: sampleTask({ isActionable: false }),
+        task: sampleTask({ notes: null }),
         levelState: "locked",
         ...rowProps,
       }),
     );
 
     expect(html).toContain("Add note");
-    expect(html).toContain("Block");
+    expect(html).not.toContain(">Block<");
     expect(html).toContain("disabled");
   });
 

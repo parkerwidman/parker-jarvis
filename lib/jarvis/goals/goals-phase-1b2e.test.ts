@@ -83,11 +83,12 @@ vi.mock("next/navigation", () => ({
 describe("Jarvis goals phase 1B2E level structural editing", () => {
   const migration = readFileSync(resolve(ROOT, MIGRATION_PATH), "utf8");
 
-  it("BK. active goal shows Add level", () => {
+  it("BK. active goal shows Add level while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "active",
+        isEditing: true,
         levels: [
           sampleLevel({ state: "current" }),
           sampleLevel({ id: "level-2", name: "Launch", state: "locked", position: 20 }),
@@ -110,11 +111,12 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
     expect(html).not.toContain("Add level");
   });
 
-  it("BM/BN. active levels show Edit level and Delete level", () => {
+  it("BM/BN. active levels show Edit level and Delete level while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "active",
+        isEditing: true,
         levels: [sampleLevel({ state: "current" })],
       }),
     );
@@ -123,11 +125,12 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
     expect(html).toContain("Delete level");
   });
 
-  it("BO. locked active level shows Edit and Delete", () => {
+  it("BO. locked active level shows Edit and Delete while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "active",
+        isEditing: true,
         levels: [sampleLevel({ state: "locked" })],
       }),
     );
@@ -136,11 +139,12 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
     expect(html).toContain("Delete level");
   });
 
-  it("BP/BQ. completed goal level shows Edit only", () => {
+  it("BP/BQ. completed goal level shows Edit only while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "completed",
+        isEditing: true,
         levels: [sampleLevel({ state: "complete" })],
       }),
     );
@@ -177,10 +181,10 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
     }
   });
 
-  it("BU/BV. retains task and priority controls", () => {
+  it("BU/BV. retains note and priority controls outside edit mode", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
-        task: sampleTask(),
+        task: sampleTask({ notes: null }),
         levelState: "current",
         goalStatus: "active",
         levelTaskCount: 2,
@@ -188,7 +192,7 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
     );
 
     expect(html).toContain("Add note");
-    expect(html).toContain("Edit task");
+    expect(html).not.toContain("Edit task");
 
     const cardHtml = renderToStaticMarkup(
       createElement(GoalCard, {

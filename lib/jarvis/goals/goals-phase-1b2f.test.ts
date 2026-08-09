@@ -91,11 +91,12 @@ vi.mock("next/navigation", () => ({
 describe("Jarvis goals phase 1B2F reordering", () => {
   const migration = readFileSync(resolve(ROOT, MIGRATION_PATH), "utf8");
 
-  it("BA. active levels show Move up and Move down", () => {
+  it("BA. active levels show Move up and Move down while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "active",
+        isEditing: true,
         levels: [
           sampleLevel({ state: "current" }),
           sampleLevel({ id: "level-2", name: "Launch", position: 20, state: "locked" }),
@@ -120,11 +121,12 @@ describe("Jarvis goals phase 1B2F reordering", () => {
     expect(html).not.toContain("Move down");
   });
 
-  it("BC/BD. first level Up disabled and last level Down disabled", () => {
+  it("BC/BD. first level Up disabled and last level Down disabled while editing", () => {
     const html = renderToStaticMarkup(
       createElement(LevelRoadmap, {
         goalId: "goal-1",
         goalStatus: "active",
+        isEditing: true,
         levels: [
           sampleLevel({ id: "level-1", position: 10 }),
           sampleLevel({ id: "level-2", name: "Launch", position: 20, state: "locked" }),
@@ -136,7 +138,7 @@ describe("Jarvis goals phase 1B2F reordering", () => {
     expect(html).toContain('disabled="" aria-label="Move Launch down"');
   });
 
-  it("BE. active tasks show Move up and Move down", () => {
+  it("BE. active tasks show Move up and Move down while editing", () => {
     const html = renderToStaticMarkup(
       createElement(GoalTaskRow, {
         task: sampleTask(),
@@ -144,6 +146,7 @@ describe("Jarvis goals phase 1B2F reordering", () => {
         goalStatus: "active",
         levelTaskCount: 2,
         taskIndex: 0,
+        isEditing: true,
       }),
     );
 
@@ -166,7 +169,7 @@ describe("Jarvis goals phase 1B2F reordering", () => {
     expect(html).not.toContain("Move down");
   });
 
-  it("BG/BH. first task Up disabled and last task Down disabled", () => {
+  it("BG/BH. first task Up disabled and last task Down disabled while editing", () => {
     const firstHtml = renderToStaticMarkup(
       createElement(GoalTaskRow, {
         task: sampleTask(),
@@ -174,6 +177,7 @@ describe("Jarvis goals phase 1B2F reordering", () => {
         goalStatus: "active",
         levelTaskCount: 2,
         taskIndex: 0,
+        isEditing: true,
       }),
     );
     const lastHtml = renderToStaticMarkup(
@@ -183,6 +187,7 @@ describe("Jarvis goals phase 1B2F reordering", () => {
         goalStatus: "active",
         levelTaskCount: 2,
         taskIndex: 1,
+        isEditing: true,
       }),
     );
 
