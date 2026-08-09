@@ -42,11 +42,14 @@ export function LevelRoadmap({ levels }: LevelRoadmapProps) {
               <span className="goals-roadmap-state">{levelStateLabel(level.state)}</span>
             </div>
             {level.tasks.length > 0 ? (
-              <ul className="goals-task-list">
-                {level.tasks.map((task) => (
-                  <GoalTaskRow key={task.id} task={task} />
-                ))}
-              </ul>
+              <>
+                <p className="goals-roadmap-tasks-label">Tasks</p>
+                <ul className="goals-task-list">
+                  {level.tasks.map((task) => (
+                    <GoalTaskRow key={task.id} task={task} />
+                  ))}
+                </ul>
+              </>
             ) : (
               <p className="goals-roadmap-level-empty">No tasks in this level.</p>
             )}

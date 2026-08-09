@@ -13,6 +13,7 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
   const isCompleted = goal.status === "completed";
   const [expanded, setExpanded] = useState(!isCompleted);
   const showPriorityBadge = showTodayPriority && goal.isTodayPriority;
+  const showHeaderSurface = !isCompleted || expanded;
 
   return (
     <article
@@ -24,18 +25,29 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
     >
       <div className="goals-card-head">
         <div className="goals-card-head-main">
-          <div className="goals-card-title-row">
-            <h2 className="goals-card-title">{goal.title}</h2>
-            <span className={`goals-domain-tag goals-domain-tag--${goal.domain}`}>
-              {domainLabel(goal.domain)}
-            </span>
+          <div
+            className={`goals-card-header-surface${
+              showHeaderSurface
+                ? ` goals-card-header-surface--tinted goals-card-header-surface--${goal.domain}`
+                : " goals-card-header-surface--plain"
+            }`}
+          >
+            <div className="goals-card-title-block">
+              <p className="goals-card-eyebrow">Goal</p>
+              <div className="goals-card-title-row">
+                <h2 className="goals-card-title">{goal.title}</h2>
+                <span className={`goals-domain-tag goals-domain-tag--${goal.domain}`}>
+                  {domainLabel(goal.domain)}
+                </span>
+              </div>
+            </div>
+            {showPriorityBadge ? (
+              <p className="goals-priority-badge">★ TODAY&apos;S PRIORITY</p>
+            ) : null}
+            {goal.description && (!isCompleted || expanded) ? (
+              <p className="goals-card-description">{goal.description}</p>
+            ) : null}
           </div>
-          {showPriorityBadge ? (
-            <p className="goals-priority-badge">★ TODAY&apos;S PRIORITY</p>
-          ) : null}
-          {goal.description && (!isCompleted || expanded) ? (
-            <p className="goals-card-description">{goal.description}</p>
-          ) : null}
         </div>
         <div className="goals-card-head-meta">
           <span className="goals-card-progress">{goal.progressPercent}%</span>

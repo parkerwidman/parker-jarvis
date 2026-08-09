@@ -99,6 +99,45 @@ describe("Jarvis goals phase 1A UI", () => {
     expect(completedHtml).not.toContain("Foundation");
   });
 
+  it("X. renders GOAL eyebrow and TASKS labels for visual hierarchy", () => {
+    const activeHtml = renderToStaticMarkup(
+      createElement(GoalCard, {
+        goal: sampleGoal(),
+        showTodayPriority: false,
+      }),
+    );
+    const completedHtml = renderToStaticMarkup(
+      createElement(GoalCard, {
+        goal: sampleGoal({ status: "completed", progressPercent: 100 }),
+        showTodayPriority: false,
+      }),
+    );
+    const noTasksHtml = renderToStaticMarkup(
+      createElement(GoalCard, {
+        goal: sampleGoal({
+          levels: [
+            {
+              id: "level-1",
+              name: "Foundation",
+              position: 1,
+              state: "current",
+              tasks: [],
+            },
+          ],
+        }),
+        showTodayPriority: false,
+      }),
+    );
+
+    expect(activeHtml).toContain("goals-card-eyebrow");
+    expect(activeHtml).toContain(">Goal</p>");
+    expect(activeHtml).toContain("goals-roadmap-tasks-label");
+    expect(activeHtml).toContain(">Tasks</p>");
+    expect(completedHtml).toContain("goals-card-eyebrow");
+    expect(completedHtml).not.toContain("goals-roadmap-tasks-label");
+    expect(noTasksHtml).not.toContain("goals-roadmap-tasks-label");
+  });
+
   it("R. renders a polished empty state for the selected domain", () => {
     const html = renderToStaticMarkup(
       createElement(GoalsPage, {
@@ -140,6 +179,87 @@ describe("Jarvis goals phase 1A UI", () => {
       expect(source).not.toMatch(/\b(insert|update|delete|upsert)\b/i);
       expect(source).not.toContain("/actions");
     }
+  });
+
+  it("U. widens shared goals layout beyond the previous 52rem cap", () => {
+    const css = readSource("app/globals.css");
+    const goalsBlock = css.slice(
+      css.indexOf(".jv-page-content--goals"),
+      css.indexOf(".goals-domain-seg"),
+    );
+
+    expect(goalsBlock).toContain("max-width: 76rem");
+    expect(goalsBlock).toContain("width: 100%");
+    expect(goalsBlock).not.toContain("max-width: 52rem");
+  });
+
+  it("V. keeps the shared goals shell on all three routes", () => {
+    for (const route of [
+      "app/goals/short-term/page.tsx",
+      "app/goals/three-month/page.tsx",
+      "app/goals/long-term/page.tsx",
+    ]) {
+      expect(readSource(route)).toContain('className="jv-page-content--goals"');
+    }
+  });
+
+  it("W. keeps goals responsive rules and Personal/Melusi accents intact", () => {
+    const css = readSource("app/globals.css");
+    const goalsStart = css.indexOf("/* ── Goals pages ── */");
+    const goalsEnd = css.indexOf("@media (max-width: 640px)", goalsStart);
+    const goalsCss = css.slice(goalsStart, goalsEnd);
+
+    expect(css.slice(goalsStart)).toContain("@media (max-width: 640px)");
+    expect(goalsCss).toContain("#f0a93b");
+    expect(goalsCss).toContain("#3b7ddd");
+    expect(goalsCss).toContain(".goals-card-eyebrow");
+    expect(goalsCss).toContain(".goals-roadmap-tasks-label");
+    expect(goalsCss).toContain(".goals-domain-seg-btn--active.goals-domain-seg-btn--personal");
+    expect(goalsCss).toContain(".goals-domain-seg-btn--active.goals-domain-seg-btn--melusi");
+  });
+
+  it("Y. strengthens visual hierarchy with domain header surfaces, level names, and task titles", () => {
+    const css = readSource("app/globals.css");
+    const activeHtml = renderToStaticMarkup(
+      createElement(GoalCard, {
+        goal: sampleGoal(),
+        showTodayPriority: false,
+      }),
+    );
+    const melusiHtml = renderToStaticMarkup(
+      createElement(GoalCard, {
+        goal: sampleGoal({ domain: "melusi" }),
+        showTodayPriority: false,
+      }),
+    );
+    const collapsedCompletedHtml = renderToStaticMarkup(
+      createElement(GoalCard, {
+        goal: sampleGoal({ status: "completed", progressPercent: 100 }),
+        showTodayPriority: false,
+      }),
+    );
+
+    expect(activeHtml).toContain("goals-card-header-surface--tinted");
+    expect(activeHtml).toContain("goals-card-header-surface--personal");
+    expect(melusiHtml).toContain("goals-card-header-surface--melusi");
+    expect(collapsedCompletedHtml).toContain("goals-card-header-surface--plain");
+    expect(collapsedCompletedHtml).not.toContain("goals-card-header-surface--tinted");
+
+    expect(css).toContain(".goals-card-header-surface--tinted.goals-card-header-surface--personal");
+    expect(css).toContain(".goals-card-header-surface--tinted.goals-card-header-surface--melusi");
+    expect(css).toContain("rgba(240, 169, 59, 0.06)");
+    expect(css).toContain("rgba(59, 125, 221, 0.06)");
+    expect(css).toContain("#f0a93b");
+    expect(css).toContain("#3b7ddd");
+
+    expect(css).toMatch(/\.goals-roadmap-level-name[\s\S]*font-weight:\s*700/);
+    expect(css).toMatch(/\.goals-card--personal \.goals-roadmap-level--current \.goals-roadmap-level-name/);
+    expect(css).toMatch(/\.goals-card--melusi \.goals-roadmap-level--current \.goals-roadmap-level-name/);
+    expect(css).toMatch(/\.goals-roadmap-level--locked \.goals-roadmap-level-name/);
+
+    expect(css).toMatch(/\.goals-task-title[\s\S]*font-weight:\s*600/);
+    expect(css).toContain(".goals-card-header-surface--plain");
+    expect(css.slice(css.indexOf("@media (max-width: 640px)"))).toContain(".goals-card-header-surface--tinted");
   });
 });
 

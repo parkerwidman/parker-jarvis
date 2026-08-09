@@ -19,6 +19,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   useTransition,
   type FormEvent,
@@ -49,19 +50,19 @@ const PUBLISH_ACTIONS: Record<
   long_term: publishLongTermGoal,
 };
 
-let builderKeyCounter = 0;
+const INITIAL_BUILDER_LEVEL_KEY = "initial-level";
+const INITIAL_BUILDER_TASK_KEY = "initial-task";
 
-function nextBuilderKey(prefix: string): string {
-  builderKeyCounter += 1;
-  return `${prefix}-${builderKeyCounter}`;
+function createTask(key: string, title = ""): BuilderTask {
+  return { key, title };
 }
 
-function createTask(title = ""): BuilderTask {
-  return { key: nextBuilderKey("task"), title };
-}
-
-function createLevel(name = "", tasks: BuilderTask[] = [createTask()]): BuilderLevel {
-  return { key: nextBuilderKey("level"), name, tasks };
+function createLevel(
+  key: string,
+  name = "",
+  tasks: BuilderTask[] = [createTask(INITIAL_BUILDER_TASK_KEY)],
+): BuilderLevel {
+  return { key, name, tasks };
 }
 
 function createInitialDraft(domain: JarvisGoalDomain): {
@@ -74,7 +75,7 @@ function createInitialDraft(domain: JarvisGoalDomain): {
     title: "",
     description: "",
     domain,
-    levels: [createLevel()],
+    levels: [createLevel(INITIAL_BUILDER_LEVEL_KEY)],
   };
 }
 
@@ -93,9 +94,26 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
   const formId = useId();
   const router = useRouter();
   const { domain: pageDomain } = useGoalsDomain();
+  const nextKeyRef = useRef(0);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => createInitialDraft(pageDomain));
+
+  const nextBuilderKey = useCallback((prefix: string) => {
+    nextKeyRef.current += 1;
+    return `${prefix}-${nextKeyRef.current}`;
+  }, []);
+
+  const resetDraft = useCallback((domain: JarvisGoalDomain) => {
+    nextKeyRef.current = 0;
+    return createInitialDraft(domain);
+  }, []);
+
+  const createNewLevel = useCallback((): BuilderLevel => {
+    const levelKey = nextBuilderKey("level");
+    const taskKey = nextBuilderKey("task");
+    return createLevel(levelKey, "", [createTask(taskKey)]);
+  }, [nextBuilderKey]);
 
   useEffect(() => {
     setDraft((current) => ({ ...current, domain: pageDomain }));
@@ -136,11 +154,11 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
           return;
         }
 
-        setDraft(createInitialDraft(draft.domain));
+        setDraft(resetDraft(draft.domain));
         router.refresh();
       });
     },
-    [draft, publish, router],
+    [draft, publish, resetDraft, router],
   );
 
   const domainButtons = useMemo(
@@ -362,7 +380,10 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
                         ...current,
                         levels: current.levels.map((entry) =>
                           entry.key === level.key
-                            ? { ...entry, tasks: [...entry.tasks, createTask()] }
+                            ? {
+                                ...entry,
+                                tasks: [...entry.tasks, createTask(nextBuilderKey("task"))],
+                              }
                             : entry,
                         ),
                       }))
@@ -384,7 +405,7 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
             onClick={() =>
               updateDraft((current) => ({
                 ...current,
-                levels: [...current.levels, createLevel()],
+                levels: [...current.levels, createNewLevel()],
               }))
             }
           >
