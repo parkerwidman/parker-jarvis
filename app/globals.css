@@ -8342,9 +8342,9 @@ body[data-mode="personal"] {
 
 /* ── Goals pages ── */
 
-.jv-page-content--goals {
+.jv-page-content.jv-page-content--goals {
   width: 100%;
-  max-width: 76rem;
+  max-width: 100%;
   gap: 1rem;
 }
 
@@ -8421,6 +8421,7 @@ body[data-mode="personal"] {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
 }
 
 .goals-completed-section {
@@ -8439,6 +8440,7 @@ body[data-mode="personal"] {
 }
 
 .goals-card {
+  width: 100%;
   padding: 1.25rem 1.375rem;
   background: var(--cc2-card);
   border: 1px solid var(--cc2-border);
@@ -8645,6 +8647,7 @@ body[data-mode="personal"] {
 }
 
 .goals-card-body {
+  width: 100%;
   margin-top: 0.125rem;
 }
 
@@ -8675,6 +8678,7 @@ body[data-mode="personal"] {
 }
 
 .goals-roadmap {
+  width: 100%;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -8689,7 +8693,7 @@ body[data-mode="personal"] {
 
 .goals-roadmap-level {
   display: grid;
-  grid-template-columns: 1.375rem 1fr;
+  grid-template-columns: 1.375rem minmax(0, 1fr);
   gap: 0.875rem;
 }
 
@@ -8737,6 +8741,7 @@ body[data-mode="personal"] {
 }
 
 .goals-roadmap-content {
+  min-width: 0;
   padding-bottom: 1.125rem;
 }
 
@@ -8745,15 +8750,16 @@ body[data-mode="personal"] {
 }
 
 .goals-roadmap-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.875rem;
   margin-bottom: 0.625rem;
 }
 
 .goals-roadmap-level-name {
   margin: 0;
+  min-width: 0;
   font-size: 0.875rem;
   font-weight: 700;
   line-height: 1.35;
@@ -8784,6 +8790,8 @@ body[data-mode="personal"] {
 }
 
 .goals-roadmap-state {
+  justify-self: end;
+  white-space: nowrap;
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -8816,7 +8824,7 @@ body[data-mode="personal"] {
 
 .goals-task-row {
   display: grid;
-  grid-template-columns: 1.125rem 1fr;
+  grid-template-columns: 1.125rem minmax(0, 1fr);
   gap: 0.75rem;
   padding: 0.5rem 0;
   border-top: 1px solid rgba(255, 255, 255, 0.04);

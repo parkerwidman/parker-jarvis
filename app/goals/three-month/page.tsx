@@ -23,7 +23,7 @@ export default async function ThreeMonthGoalsPage() {
   const data = await loadGoals(supabase, userId, "three_month");
 
   return (
-    <JarvisAppShell>
+    <JarvisAppShell mainClassName="cc2-shell">
       <JarvisPageContent className="jv-page-content--goals">
         <GoalsPage data={data} goalType="three_month" />
       </JarvisPageContent>

@@ -23,7 +23,7 @@ export default async function ShortTermGoalsPage() {
   const data = await loadGoals(supabase, userId, "short_term");
 
   return (
-    <JarvisAppShell>
+    <JarvisAppShell mainClassName="cc2-shell">
       <JarvisPageContent className="jv-page-content--goals">
         <GoalsPage data={data} goalType="short_term" />
       </JarvisPageContent>

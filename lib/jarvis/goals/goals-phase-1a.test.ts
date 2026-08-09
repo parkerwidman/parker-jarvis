@@ -184,13 +184,14 @@ describe("Jarvis goals phase 1A UI", () => {
   it("U. widens shared goals layout beyond the previous 52rem cap", () => {
     const css = readSource("app/globals.css");
     const goalsBlock = css.slice(
-      css.indexOf(".jv-page-content--goals"),
+      css.indexOf(".jv-page-content.jv-page-content--goals"),
       css.indexOf(".goals-domain-seg"),
     );
 
-    expect(goalsBlock).toContain("max-width: 76rem");
+    expect(goalsBlock).toContain("max-width: 100%");
     expect(goalsBlock).toContain("width: 100%");
     expect(goalsBlock).not.toContain("max-width: 52rem");
+    expect(goalsBlock).not.toContain("max-width: 76rem");
   });
 
   it("V. keeps the shared goals shell on all three routes", () => {
@@ -199,8 +200,20 @@ describe("Jarvis goals phase 1A UI", () => {
       "app/goals/three-month/page.tsx",
       "app/goals/long-term/page.tsx",
     ]) {
-      expect(readSource(route)).toContain('className="jv-page-content--goals"');
+      const source = readSource(route);
+      expect(source).toContain('className="jv-page-content--goals"');
+      expect(source).toContain('mainClassName="cc2-shell"');
     }
+  });
+
+  it("keeps roadmap level headers flexible with auto-sized status column", () => {
+    const css = readSource("app/globals.css");
+    const goalsStart = css.indexOf("/* ── Goals pages ── */");
+    const goalsCss = css.slice(goalsStart, css.indexOf(".goals-builder", goalsStart));
+
+    expect(goalsCss).toContain("grid-template-columns: minmax(0, 1fr) auto");
+    expect(goalsCss).toContain("grid-template-columns: 1.375rem minmax(0, 1fr)");
+    expect(goalsCss).toContain("grid-template-columns: 1.125rem minmax(0, 1fr)");
   });
 
   it("W. keeps goals responsive rules and Personal/Melusi accents intact", () => {
