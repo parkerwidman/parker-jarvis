@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import {
+  clearTodayPriorityGoal,
+  setTodayPriorityGoal,
+} from "@/app/goals/actions";
 import {
   domainLabel,
   type GoalView,
 } from "@/lib/jarvis/goals/types";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import { LevelRoadmap } from "./level-roadmap";
 
 type GoalCardProps = {
@@ -13,10 +18,45 @@ type GoalCardProps = {
 };
 
 export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [priorityError, setPriorityError] = useState<string | null>(null);
   const isCompleted = goal.status === "completed";
   const [expanded, setExpanded] = useState(!isCompleted);
   const showPriorityBadge = showTodayPriority && goal.isTodayPriority;
   const showHeaderSurface = !isCompleted || expanded;
+  const canSetPriority = showTodayPriority && !isCompleted && !goal.isTodayPriority;
+  const canClearPriority = showTodayPriority && !isCompleted && goal.isTodayPriority;
+
+  function handleSetPriority() {
+    setPriorityError(null);
+
+    startTransition(async () => {
+      const result = await setTodayPriorityGoal(goal.id);
+
+      if (!result.ok) {
+        setPriorityError(result.error);
+        return;
+      }
+
+      router.refresh();
+    });
+  }
+
+  function handleClearPriority() {
+    setPriorityError(null);
+
+    startTransition(async () => {
+      const result = await clearTodayPriorityGoal();
+
+      if (!result.ok) {
+        setPriorityError(result.error);
+        return;
+      }
+
+      router.refresh();
+    });
+  }
 
   return (
     <article
@@ -73,6 +113,33 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
           style={{ width: `${goal.progressPercent}%` }}
         />
       </div>
+
+      {canSetPriority || canClearPriority ? (
+        <div className="goals-card-priority-actions">
+          {canSetPriority ? (
+            <button
+              type="button"
+              className="goals-task-action"
+              disabled={isPending}
+              onClick={handleSetPriority}
+            >
+              Set as Today&apos;s Priority
+            </button>
+          ) : null}
+          {canClearPriority ? (
+            <button
+              type="button"
+              className="goals-task-action"
+              disabled={isPending}
+              onClick={handleClearPriority}
+            >
+              Clear Priority
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {priorityError ? <p className="goals-task-error">{priorityError}</p> : null}
 
       {(!isCompleted || expanded) ? (
         <div className="goals-card-body">

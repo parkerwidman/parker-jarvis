@@ -8586,6 +8586,13 @@ body[data-mode="personal"] {
   color: var(--cc2-text-2);
 }
 
+.goals-card-priority-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  margin-top: 0.5rem;
+}
+
 .goals-card-head-meta {
   display: flex;
   flex-shrink: 0;

@@ -78,6 +78,7 @@ function buildGoalView(
   levels: RawGoalLevel[],
   tasksByLevelId: Map<string, RawGoalTask[]>,
   todayPriorityGoalId: string | null,
+  goalType: JarvisGoalType,
 ): GoalView {
   const progressPercent =
     goal.status === "completed"
@@ -95,7 +96,10 @@ function buildGoalView(
     progressPercent,
     levels: buildGoalLevelViews(levels, tasksByLevelId),
     isTodayPriority:
-      todayPriorityGoalId !== null && todayPriorityGoalId === goal.id,
+      goalType === "short_term" &&
+      goal.status === "active" &&
+      todayPriorityGoalId !== null &&
+      todayPriorityGoalId === goal.id,
   };
 }
 
@@ -184,6 +188,7 @@ export async function loadGoals(
         levelsByGoalId.get(goal.id) ?? [],
         tasksByLevelId,
         todayPriorityGoalId,
+        goalType,
       ),
     );
 

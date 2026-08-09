@@ -141,6 +141,52 @@ describe("loadGoals", () => {
     expect(data.goals[0]?.isTodayPriority).toBe(true);
   });
 
+  it("Z. does not mark completed goals as today's priority even when profile id matches", async () => {
+    const supabase = {
+      from: vi.fn((table: string) => {
+        const chain: Record<string, unknown> = {};
+        chain.select = vi.fn(() => chain);
+        chain.eq = vi.fn(() => chain);
+        chain.neq = vi.fn(() => chain);
+        chain.in = vi.fn(() => chain);
+        chain.order = vi.fn(() => chain);
+        chain.maybeSingle = vi.fn(async () => ({
+          data: { today_priority_goal_id: PRIORITY_GOAL_ID },
+          error: null,
+        }));
+        chain.then = (onFulfilled: (value: unknown) => unknown) =>
+          Promise.resolve(
+            table === "jarvis_goals"
+              ? {
+                  data: [
+                    {
+                      id: PRIORITY_GOAL_ID,
+                      title: "Completed priority",
+                      description: null,
+                      domain: "personal",
+                      status: "completed",
+                      sort_order: 0,
+                      completed_at: "2026-08-08T00:00:00.000Z",
+                      created_at: "2026-08-08T00:00:00.000Z",
+                    },
+                  ],
+                  error: null,
+                }
+              : table === "jarvis_goal_levels"
+                ? { data: [], error: null }
+                : { data: [], error: null },
+          ).then(onFulfilled);
+
+        return chain;
+      }),
+    };
+
+    const data = await loadGoals(supabase as never, USER_ID, "short_term");
+
+    expect(data.todayPriorityGoalId).toBe(PRIORITY_GOAL_ID);
+    expect(data.goals[0]?.isTodayPriority).toBe(false);
+  });
+
   it("T. performs read-only selects without insert/update/delete calls", async () => {
     const { supabase } = createGoalsSupabaseMock("short_term");
     await loadGoals(supabase as never, USER_ID, "short_term");

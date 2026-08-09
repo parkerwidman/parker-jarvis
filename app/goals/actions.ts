@@ -7,6 +7,10 @@ import {
 import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import { setJarvisGoalTaskBlockState } from "@/lib/jarvis/goals/mutations/set-goal-task-block-state";
 import { setJarvisGoalTaskNotes } from "@/lib/jarvis/goals/mutations/set-goal-task-notes";
+import {
+  clearJarvisTodayPriorityGoal,
+  setJarvisTodayPriorityGoal,
+} from "@/lib/jarvis/goals/mutations/set-today-priority-goal";
 import type { JarvisGoalType } from "@/lib/jarvis/goals/types";
 import { GOAL_PAGE_CONFIG } from "@/lib/jarvis/goals/types";
 import { createClient } from "@/lib/supabase/server";
@@ -159,4 +163,52 @@ export async function setGoalTaskBlockState(
   revalidateGoalPages();
 
   return { ok: true, taskId: result.taskId };
+}
+
+export type SetTodayPriorityGoalActionResult =
+  | { ok: true; goalId: string }
+  | { ok: false; error: string };
+
+export async function setTodayPriorityGoal(
+  goalId: unknown,
+): Promise<SetTodayPriorityGoalActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update Today's Priority." };
+  }
+
+  const result = await setJarvisTodayPriorityGoal(supabase, userId, goalId);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, goalId: result.goalId };
+}
+
+export type ClearTodayPriorityGoalActionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function clearTodayPriorityGoal(): Promise<ClearTodayPriorityGoalActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update Today's Priority." };
+  }
+
+  const result = await clearJarvisTodayPriorityGoal(supabase, userId);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true };
 }
