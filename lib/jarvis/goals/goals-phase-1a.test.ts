@@ -157,6 +157,7 @@ const {
 
 vi.mock("next/navigation", () => ({
   redirect: redirectMock,
+  useRouter: () => ({ refresh: vi.fn() }),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({

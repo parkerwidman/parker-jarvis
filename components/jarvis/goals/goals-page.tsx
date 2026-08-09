@@ -7,15 +7,17 @@ import {
   type GoalsPageData,
   type JarvisGoalType,
 } from "@/lib/jarvis/goals/types";
+import { GoalBuilder } from "./goal-builder";
 import { GoalCard } from "./goal-card";
 import { GoalsDomainProvider, useGoalsDomain } from "./goals-domain-provider";
 import { GoalsDomainToggle } from "./goals-domain-toggle";
 
 type GoalsPageInnerProps = {
   data: GoalsPageData;
+  goalType: JarvisGoalType;
 };
 
-function GoalsPageInner({ data }: GoalsPageInnerProps) {
+function GoalsPageInner({ data, goalType }: GoalsPageInnerProps) {
   const config = GOAL_PAGE_CONFIG[data.goalType];
   const { domain } = useGoalsDomain();
   const visibleGoals = filterGoalsByDomain(data.goals, domain);
@@ -60,6 +62,8 @@ function GoalsPageInner({ data }: GoalsPageInnerProps) {
           ) : null}
         </div>
       )}
+
+      <GoalBuilder goalType={goalType} />
     </>
   );
 }
@@ -76,7 +80,7 @@ export function GoalsPage({ data, goalType }: GoalsPageProps) {
 
   return (
     <GoalsDomainProvider>
-      <GoalsPageInner data={data} />
+      <GoalsPageInner data={data} goalType={goalType} />
     </GoalsDomainProvider>
   );
 }

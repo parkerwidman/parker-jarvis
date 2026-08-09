@@ -8778,3 +8778,242 @@ body[data-mode="personal"] {
     justify-content: space-between;
   }
 }
+
+.goals-builder {
+  margin-top: 28px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.goals-builder-head {
+  margin-bottom: 16px;
+}
+
+.goals-builder-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.goals-builder-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.goals-builder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.goals-builder-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.goals-builder-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.goals-builder-optional {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.goals-builder-input,
+.goals-builder-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+}
+
+.goals-builder-input:focus-visible,
+.goals-builder-textarea:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.18);
+  outline-offset: 1px;
+}
+
+.goals-builder-input--title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.goals-builder-textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+
+.goals-builder-domain {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.goals-builder-domain-btn {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.goals-builder-domain-btn--active.goals-builder-domain-btn--personal {
+  background: rgba(255, 138, 61, 0.18);
+  color: #ffb27a;
+}
+
+.goals-builder-domain-btn--active.goals-builder-domain-btn--melusi {
+  background: rgba(88, 166, 255, 0.18);
+  color: #8ec5ff;
+}
+
+.goals-builder-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.goals-builder-level {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.goals-builder-level-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.goals-builder-level-index {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.goals-builder-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.goals-builder-task-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.goals-builder-task-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.goals-builder-task-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.goals-builder-task-input-wrap .goals-builder-input {
+  flex: 1;
+}
+
+.goals-builder-add,
+.goals-builder-remove {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.goals-builder-add {
+  align-self: flex-start;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.goals-builder-add:hover,
+.goals-builder-remove:hover {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.goals-builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.goals-builder-add--level {
+  font-weight: 600;
+}
+
+.goals-builder-publish {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.goals-builder-publish:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.goals-builder-error {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #ff8d8d;
+}
+
+@media (max-width: 640px) {
+  .goals-builder-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .goals-builder-publish {
+    width: 100%;
+  }
+}
