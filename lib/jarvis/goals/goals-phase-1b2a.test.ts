@@ -83,6 +83,8 @@ vi.mock("@/app/goals/actions", () => ({
   publishThreeMonthGoal: vi.fn(),
   publishLongTermGoal: vi.fn(),
   setGoalTaskCompletion: vi.fn(),
+  setGoalTaskNotes: vi.fn(),
+  setGoalTaskBlockState: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -149,10 +151,10 @@ describe("Jarvis goals phase 1B2A task completion UI", () => {
     expect(mutationSource).toContain("/tasks");
   });
 
-  it("does not add notes, priority, or archive controls in phase 1B2A", () => {
+  it("does not add priority or archive controls in phase 1B2A completion UI", () => {
     const taskRowSource = readSource("components/jarvis/goals/goal-task-row.tsx");
 
-    expect(taskRowSource).not.toMatch(/blocked_at|unblock|today_priority|archive/i);
+    expect(taskRowSource).not.toMatch(/today_priority|archive/i);
   });
 
   it("still renders shared builder on goals pages", () => {

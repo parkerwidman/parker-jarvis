@@ -8899,6 +8899,59 @@ body[data-mode="personal"] {
   color: var(--cc2-text-2);
 }
 
+.goals-task-actions,
+.goals-task-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+}
+
+.goals-task-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cc2-accent);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.goals-task-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.goals-task-action--primary {
+  color: var(--cc2-text);
+}
+
+.goals-task-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
+.goals-task-textarea {
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--cc2-text);
+  font: inherit;
+  font-size: 0.8125rem;
+  resize: vertical;
+  min-height: 3.5rem;
+}
+
+.goals-task-textarea:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.14);
+  outline-offset: 1px;
+}
+
 @media (max-width: 640px) {
   .goals-card-head {
     flex-direction: column;

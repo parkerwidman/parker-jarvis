@@ -5,6 +5,8 @@ import {
   type GoalBuilderInput,
 } from "@/lib/jarvis/goals/create-goal";
 import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
+import { setJarvisGoalTaskBlockState } from "@/lib/jarvis/goals/mutations/set-goal-task-block-state";
+import { setJarvisGoalTaskNotes } from "@/lib/jarvis/goals/mutations/set-goal-task-notes";
 import type { JarvisGoalType } from "@/lib/jarvis/goals/types";
 import { GOAL_PAGE_CONFIG } from "@/lib/jarvis/goals/types";
 import { createClient } from "@/lib/supabase/server";
@@ -24,6 +26,13 @@ async function requireAuthenticatedUser(
   }
 
   return typeof data.claims.sub === "string" ? data.claims.sub : null;
+}
+
+function revalidateGoalPages(): void {
+  for (const config of Object.values(GOAL_PAGE_CONFIG)) {
+    revalidatePath(config.route);
+  }
+  revalidatePath("/");
 }
 
 async function publishJarvisGoal(
@@ -88,10 +97,66 @@ export async function setGoalTaskCompletion(
     return { ok: false, error: result.error };
   }
 
-  for (const config of Object.values(GOAL_PAGE_CONFIG)) {
-    revalidatePath(config.route);
-  }
-  revalidatePath("/");
+  revalidateGoalPages();
 
   return { ok: true, code: result.code };
+}
+
+export type SetGoalTaskNotesActionResult =
+  | { ok: true; taskId: string }
+  | { ok: false; error: string };
+
+export async function setGoalTaskNotes(
+  taskId: unknown,
+  notes: unknown,
+): Promise<SetGoalTaskNotesActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this task." };
+  }
+
+  const result = await setJarvisGoalTaskNotes(supabase, userId, taskId, notes);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, taskId: result.taskId };
+}
+
+export type SetGoalTaskBlockStateActionResult =
+  | { ok: true; taskId: string }
+  | { ok: false; error: string };
+
+export async function setGoalTaskBlockState(
+  taskId: unknown,
+  blocked: unknown,
+  reason: unknown,
+): Promise<SetGoalTaskBlockStateActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this task." };
+  }
+
+  const result = await setJarvisGoalTaskBlockState(
+    supabase,
+    userId,
+    taskId,
+    blocked,
+    reason,
+  );
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, taskId: result.taskId };
 }
