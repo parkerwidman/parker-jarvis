@@ -64,14 +64,16 @@ describe("Phase 1B2-H1A unified task completion", () => {
     expect(source).not.toContain("current_focus");
   });
 
-  it("H1A-7. no Command Center filtering or ranking changes", () => {
+  it("H1A-7. H1B owns Command Center goal planning integration", () => {
     const loader = readSource("lib/jarvis/dashboard/load-command-center.ts");
     const view = readSource("lib/jarvis/dashboard/build-command-center-view.ts");
+    const helper = readSource("lib/jarvis/goals/actionable-goal-tasks.ts");
 
-    expect(loader).not.toContain("jarvis_goals");
-    expect(loader).not.toContain("today_priority_goal_id");
-    expect(view).not.toContain("deriveLevelStates");
-    expect(view).not.toContain("goalContext");
+    expect(loader).toContain("jarvis_goals");
+    expect(loader).toContain("today_priority_goal_id");
+    expect(loader).toContain("buildActionableGoalTaskIndex");
+    expect(view).toContain("goalContext");
+    expect(helper).toContain("deriveLevelStates");
   });
 
   it("H1A-8. no database migration added for H1A", () => {

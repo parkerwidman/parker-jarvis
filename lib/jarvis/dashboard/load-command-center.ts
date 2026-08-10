@@ -1,10 +1,16 @@
 import "server-only";
 
 import {
+  buildActionableGoalTaskIndex,
+  filterUnfinishedPlanningTasks,
+  isKanbanUnfinishedCandidate,
+} from "@/lib/jarvis/goals/actionable-goal-tasks";
+import {
   buildCommandCenterView,
   type AttentionItem,
   type DashboardGoal,
   type DashboardSchedule,
+  type DashboardTaskRecord,
   type FocusTask,
   type TaskGroups,
 } from "@/lib/jarvis/dashboard/build-command-center-view";
@@ -16,7 +22,7 @@ import {
   resolveTimeZone,
 } from "@/lib/jarvis/dashboard/command-center-utils";
 import type { PlanItem } from "@/lib/jarvis/plans/generate-daily-plan";
-import type { JarvisProfile, LifeArea } from "@/lib/jarvis/tools/memory-tools";
+import type { LifeArea } from "@/lib/jarvis/tools/memory-tools";
 import {
   listOutlookCalendar,
   listOutlookInbox,
@@ -99,6 +105,24 @@ type TaskRow = {
   completed_at: string | null;
   created_at: string;
   life_area_id: string | null;
+  goal_id: string | null;
+  goal_level_id: string | null;
+  blocked_at: string | null;
+  position: number | null;
+};
+
+type JarvisGoalPlanningRow = {
+  id: string;
+  title: string;
+  goal_type: string;
+  status: string;
+};
+
+type JarvisGoalLevelPlanningRow = {
+  id: string;
+  name: string;
+  position: number;
+  goal_id: string;
 };
 
 export type CommandCenterBriefing = {
@@ -146,6 +170,14 @@ export type CommandCenterPlan = {
   safeErrorMessage: string | null;
 };
 
+export type CommandCenterGoalContext = {
+  goalId: string;
+  goalTitle: string;
+  levelId: string;
+  levelTitle: string;
+  isTodayPriority: boolean;
+};
+
 export type CommandCenterTask = {
   id: string;
   title: string;
@@ -154,6 +186,7 @@ export type CommandCenterTask = {
   overdue: boolean;
   dueToday: boolean;
   lifeAreaName: string | null;
+  goalContext: CommandCenterGoalContext | null;
 };
 
 export type CommandCenterApproval = {
@@ -214,6 +247,7 @@ export type CommandCenterKanbanTask = {
   title: string;
   status: string;
   lifeAreaName: string | null;
+  goalContext: CommandCenterGoalContext | null;
 };
 
 export type CommandCenterGoalProgress = {
@@ -293,20 +327,24 @@ export async function loadCommandCenter(
 
   const { data: profileRow } = await supabase
     .from("jarvis_profiles")
-    .select("user_id, preferred_name, timezone, current_focus")
+    .select("user_id, preferred_name, timezone, current_focus, today_priority_goal_id")
     .eq("user_id", userId)
     .maybeSingle();
 
-  const profile = (profileRow ?? null) as Pick<
-    JarvisProfile,
-    "user_id" | "preferred_name" | "timezone" | "current_focus"
-  > | null;
+  const profile = (profileRow ?? null) as {
+    user_id: string;
+    preferred_name: string | null;
+    timezone: string | null;
+    current_focus: string | null;
+    today_priority_goal_id: string | null;
+  } | null;
 
   const timezone = resolveTimeZone(profile?.timezone);
   const todayDate = getLocalDateString(timezone, now);
   const todayDateLabel = formatLocalDateLabel(timezone, now);
   const preferredName = profile?.preferred_name?.trim() || null;
   const currentFocus = profile?.current_focus?.trim() || null;
+  const todayPriorityGoalId = profile?.today_priority_goal_id ?? null;
 
   const briefingSelect =
     "id, briefing_date, status, content, safe_error_message, source_counts, audio_status, audio_generated_at";
@@ -318,6 +356,8 @@ export async function loadCommandCenter(
     tasksResult,
     approvalsResult,
     goalsResult,
+    jarvisGoalsResult,
+    jarvisGoalLevelsResult,
     lifeAreasResult,
     pendingCountResult,
   ] = await Promise.all([
@@ -345,7 +385,7 @@ export async function loadCommandCenter(
     supabase
       .from("jarvis_visible_tasks")
       .select(
-        "id, title, status, priority, due_at, completed_at, created_at, life_area_id",
+        "id, title, status, priority, due_at, completed_at, created_at, life_area_id, goal_id, goal_level_id, blocked_at, position",
       )
       .eq("user_id", userId),
     supabase
@@ -363,6 +403,16 @@ export async function loadCommandCenter(
       .eq("user_id", userId)
       .eq("status", "active")
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("jarvis_goals")
+      .select("id, title, goal_type, status")
+      .eq("user_id", userId)
+      .eq("goal_type", "short_term")
+      .eq("status", "active"),
+    supabase
+      .from("jarvis_goal_levels")
+      .select("id, name, position, goal_id")
+      .eq("user_id", userId),
     supabase
       .from("life_areas")
       .select("id, name, active, created_at")
@@ -384,8 +434,43 @@ export async function loadCommandCenter(
   );
   const planRow = (planResult.data ?? null) as DailyPlanRow | null;
   const taskRows = (tasksResult.data ?? []) as TaskRow[];
+  const jarvisGoalRows = (jarvisGoalsResult.data ?? []) as JarvisGoalPlanningRow[];
+  const jarvisGoalLevelRows = (jarvisGoalLevelsResult.data ??
+    []) as JarvisGoalLevelPlanningRow[];
   const lifeAreas = (lifeAreasResult.data ?? []) as LifeArea[];
   const lifeAreaNames = new Map(lifeAreas.map((area) => [area.id, area.name]));
+
+  const goalLinkedTasks = taskRows.filter((task) => task.goal_id !== null);
+  const actionableGoalTaskIndex = buildActionableGoalTaskIndex({
+    goals: jarvisGoalRows,
+    levels: jarvisGoalLevelRows.filter((level) =>
+      jarvisGoalRows.some((goal) => goal.id === level.goal_id),
+    ),
+    goalTasks: goalLinkedTasks,
+    todayPriorityGoalId,
+  });
+
+  const toDashboardTask = (task: TaskRow): DashboardTaskRecord => ({
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    due_at: task.due_at,
+    completed_at: task.completed_at,
+    created_at: task.created_at,
+    life_area_id: task.life_area_id,
+    goal_id: task.goal_id,
+    goal_level_id: task.goal_level_id,
+    blocked_at: task.blocked_at,
+    position: task.position,
+    goalContext: actionableGoalTaskIndex.get(task.id) ?? null,
+  });
+
+  const allDashboardTasks = taskRows.map(toDashboardTask);
+  const planningUnfinishedTasks = filterUnfinishedPlanningTasks(
+    allDashboardTasks.filter((task) => task.status !== "done"),
+    actionableGoalTaskIndex,
+  );
 
   const briefing: CommandCenterBriefing | null = briefingRow
     ? {
@@ -424,7 +509,7 @@ export async function loadCommandCenter(
       }
     : null;
 
-  const unfinishedTasks = taskRows.filter((task) => task.status !== "done");
+  const unfinishedTasks = planningUnfinishedTasks;
 
   const approvalRows = (approvalsResult.data ?? []) as ActionRequestRow[];
   const approvals: CommandCenterApproval[] = approvalRows.map((row) => ({
@@ -480,7 +565,7 @@ export async function loadCommandCenter(
 
   const view = buildCommandCenterView({
     unfinishedTasks,
-    allTasks: taskRows,
+    allTasks: allDashboardTasks,
     todayLocal: todayDate,
     timeZone: timezone,
     lifeAreaNames,
@@ -566,6 +651,7 @@ export async function loadCommandCenter(
     .filter((task) =>
       ["todo", "in_progress", "done"].includes(task.status),
     )
+    .filter((task) => isKanbanUnfinishedCandidate(task, actionableGoalTaskIndex))
     .slice(0, MAX_KANBAN_TASKS)
     .map((task) => ({
       id: task.id,
@@ -575,11 +661,12 @@ export async function loadCommandCenter(
         task.life_area_id !== null
           ? (lifeAreaNames.get(task.life_area_id) ?? null)
           : null,
+      goalContext: actionableGoalTaskIndex.get(task.id) ?? null,
     }));
 
   const goalItems: CommandCenterGoalProgress[] = goalRows.map((goal) => {
     const lifeAreaTaskCount = goal.life_area_id
-      ? unfinishedTasks.filter((task) => task.life_area_id === goal.life_area_id)
+      ? planningUnfinishedTasks.filter((task) => task.life_area_id === goal.life_area_id)
           .length
       : 0;
 

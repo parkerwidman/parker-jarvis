@@ -41,7 +41,11 @@ export function PriorityStrip({ focusTask, headerStatus }: PriorityStripProps) {
       <div className="cc2-priority-main">
         <span className="cc2-priority-eyebrow">{eyebrow}</span>
         <span className="cc2-priority-title">{title}</span>
-        {!modeFocus && timer.phase === "idle" ? (
+        {modeFocus?.goalContext ? (
+          <span className="cc2-priority-sub">
+            {modeFocus.goalContext.goalTitle} → {modeFocus.goalContext.levelTitle}
+          </span>
+        ) : !modeFocus && timer.phase === "idle" ? (
           <span className="cc2-priority-sub">{headerStatus}</span>
         ) : null}
       </div>

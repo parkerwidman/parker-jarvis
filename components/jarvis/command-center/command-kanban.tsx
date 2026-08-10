@@ -83,8 +83,18 @@ function KanbanCard({
   return (
     <div className="cc2-kcard">
       <div className="cc2-kcard-name">{task.title}</div>
+      {task.goalContext ? (
+        <div className="cc2-kcard-context">
+          {task.goalContext.goalTitle} → {task.goalContext.levelTitle}
+        </div>
+      ) : null}
       <div className="cc2-kcard-foot">
         <span className="cc2-kcard-tag">{modeTagLabel(mode)}</span>
+        {task.goalContext?.isTodayPriority ? (
+          <span className="cc2-kcard-priority" title="Today's priority goal">
+            ★
+          </span>
+        ) : null}
         {canComplete ? (
           <form action={completeTaskFromDashboard}>
             <input type="hidden" name="taskId" value={task.id} />

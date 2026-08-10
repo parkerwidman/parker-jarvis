@@ -5,6 +5,7 @@ import type {
   CommandCenterBriefing,
   CommandCenterCalendarEvent,
   CommandCenterGoal,
+  CommandCenterGoalContext,
   CommandCenterPlan,
   CommandCenterTask,
 } from "@/lib/jarvis/dashboard/load-command-center";
@@ -29,6 +30,11 @@ export type DashboardTaskRecord = {
   completed_at: string | null;
   created_at: string;
   life_area_id: string | null;
+  goal_id: string | null;
+  goal_level_id: string | null;
+  blocked_at: string | null;
+  position: number | null;
+  goalContext: CommandCenterGoalContext | null;
 };
 
 export type FocusTask = CommandCenterTask & {
@@ -112,7 +118,7 @@ function isTaskDueToday(
   return getLocalDateFromIso(task.due_at, timeZone) === todayLocal;
 }
 
-function compareDashboardTasks(
+export function compareDashboardTasks(
   a: DashboardTaskRecord,
   b: DashboardTaskRecord,
   todayLocal: string,
@@ -163,6 +169,7 @@ function toCommandCenterTask(
     overdue: isTaskOverdue(task, todayLocal, timeZone),
     dueToday: isTaskDueToday(task, todayLocal, timeZone),
     lifeAreaName,
+    goalContext: task.goalContext,
   };
 }
 
@@ -171,9 +178,14 @@ function getFocusSelectionReason(
   todayLocal: string,
   timeZone: string,
   matchedProfileFocus: boolean,
+  matchedTodayPriority: boolean,
 ): string {
   if (matchedProfileFocus) {
     return "Matches your current focus";
+  }
+
+  if (matchedTodayPriority) {
+    return "Today's priority goal";
   }
 
   if (isTaskOverdue(task, todayLocal, timeZone) && task.priority === "high") {
@@ -215,6 +227,7 @@ function selectFocusTask(
 
   let selected = sorted[0];
   let matchedProfileFocus = false;
+  let matchedTodayPriority = false;
 
   if (normalizedFocus.length > 0) {
     const focusMatch = sorted.find(
@@ -228,6 +241,17 @@ function selectFocusTask(
   }
 
   if (!matchedProfileFocus) {
+    const todayPriorityMatch = sorted.find(
+      (task) => task.goalContext?.isTodayPriority === true,
+    );
+
+    if (todayPriorityMatch) {
+      selected = todayPriorityMatch;
+      matchedTodayPriority = true;
+    }
+  }
+
+  if (!matchedProfileFocus && !matchedTodayPriority) {
     const overdueHigh = sorted.find(
       (task) => isTaskOverdue(task, todayLocal, timeZone) && task.priority === "high",
     );
@@ -278,6 +302,7 @@ function selectFocusTask(
       todayLocal,
       timeZone,
       matchedProfileFocus,
+      matchedTodayPriority,
     ),
     nextAction: selected.title,
   };

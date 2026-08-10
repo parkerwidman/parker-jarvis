@@ -7916,6 +7916,21 @@ body[data-mode="personal"] {
   overflow-wrap: anywhere;
 }
 
+.cc2-kcard-context {
+  margin-bottom: 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--cc2-text-3);
+  overflow-wrap: anywhere;
+}
+
+.cc2-kcard-priority {
+  margin-left: auto;
+  margin-right: 0.25rem;
+  font-size: 0.625rem;
+  color: var(--cc2-accent);
+}
+
 .cc2-kcard-foot {
   display: flex;
   align-items: center;
