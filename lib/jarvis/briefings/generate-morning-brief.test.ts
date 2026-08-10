@@ -118,7 +118,7 @@ function createMockSupabase(options: { tasks?: MorningBriefTaskRow[] } = {}) {
 
   const supabase = {
     from: vi.fn((table: string) => {
-      if (table === "tasks") {
+      if (table === "jarvis_visible_tasks") {
         return {
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({

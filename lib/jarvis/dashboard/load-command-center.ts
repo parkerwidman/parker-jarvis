@@ -343,7 +343,7 @@ export async function loadCommandCenter(
       .eq("plan_date", todayDate)
       .maybeSingle(),
     supabase
-      .from("tasks")
+      .from("jarvis_visible_tasks")
       .select(
         "id, title, status, priority, due_at, completed_at, created_at, life_area_id",
       )

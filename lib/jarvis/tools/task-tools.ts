@@ -120,7 +120,10 @@ export async function listTasks(
     return { success: true, tasks: result.tasks };
   }
 
-  let query = supabase.from("tasks").select(TASK_SELECT).eq("user_id", userId);
+  let query = supabase
+    .from("jarvis_visible_tasks")
+    .select(TASK_SELECT)
+    .eq("user_id", userId);
 
   const moduleKey = options?.lifeAreaModuleKey?.trim();
 

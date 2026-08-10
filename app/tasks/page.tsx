@@ -46,7 +46,7 @@ export default async function TasksPage({
   }
 
   const { data: tasks } = await supabase
-    .from("tasks")
+    .from("jarvis_visible_tasks")
     .select("id, title, status, priority, due_at, created_at")
     .order("created_at", { ascending: false });
 
