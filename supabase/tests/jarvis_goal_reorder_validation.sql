@@ -196,6 +196,10 @@ BEGIN
     RAISE EXCEPTION 'expected already_first on first task up';
   END IF;
 
+  UPDATE public.jarvis_profiles
+  SET today_priority_goal_id = v_goal_id
+  WHERE user_id = user_a;
+
   SELECT title, status, priority, notes, blocked_at, blocked_reason, completed_at, goal_id, goal_level_id
   INTO snap_title, snap_status, snap_priority, snap_notes, snap_blocked_at, snap_blocked_reason, snap_completed_at, snap_goal_id, snap_level_id
   FROM public.tasks

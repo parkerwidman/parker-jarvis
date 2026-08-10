@@ -161,6 +161,10 @@ BEGIN
   SET status = 'active', completed_at = NULL
   WHERE id = v_goal_id;
 
+  UPDATE public.jarvis_profiles
+  SET today_priority_goal_id = v_goal_id
+  WHERE user_id = user_a;
+
   result := public.add_jarvis_goal_level(v_goal_id, '  Appended Level  ', '  First task  ');
   IF result->>'code' <> 'added' THEN
     RAISE EXCEPTION 'expected add level success';
