@@ -6,15 +6,21 @@ import {
 } from "@/lib/jarvis/goals/create-goal";
 import { addJarvisGoalTask } from "@/lib/jarvis/goals/mutations/add-goal-task";
 import { addJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/add-goal-level";
+import { archiveJarvisGoal } from "@/lib/jarvis/goals/mutations/archive-goal";
 import { deleteJarvisGoalTask } from "@/lib/jarvis/goals/mutations/delete-goal-task";
 import { deleteJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/delete-goal-level";
 import { editJarvisGoalTaskTitle } from "@/lib/jarvis/goals/mutations/edit-goal-task-title";
 import { editJarvisGoalLevelName } from "@/lib/jarvis/goals/mutations/edit-goal-level-name";
 import { moveJarvisGoalLevel } from "@/lib/jarvis/goals/mutations/move-goal-level";
 import { moveJarvisGoalTask } from "@/lib/jarvis/goals/mutations/move-goal-task";
+import { restoreJarvisGoal } from "@/lib/jarvis/goals/mutations/restore-goal";
 import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import { setJarvisGoalTaskBlockState } from "@/lib/jarvis/goals/mutations/set-goal-task-block-state";
 import { setJarvisGoalTaskNotes } from "@/lib/jarvis/goals/mutations/set-goal-task-notes";
+import {
+  updateJarvisGoalMetadata,
+  type UpdateJarvisGoalMetadataInput,
+} from "@/lib/jarvis/goals/mutations/update-goal-metadata";
 import {
   clearJarvisTodayPriorityGoal,
   setJarvisTodayPriorityGoal,
@@ -442,4 +448,76 @@ export async function moveGoalTask(
     taskId: result.taskId,
     goalId: result.goalId,
   };
+}
+
+export type UpdateGoalMetadataActionResult =
+  | { ok: true; goalId: string }
+  | { ok: false; error: string };
+
+export async function updateGoalMetadata(
+  goalId: unknown,
+  input: UpdateJarvisGoalMetadataInput,
+): Promise<UpdateGoalMetadataActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this goal." };
+  }
+
+  const result = await updateJarvisGoalMetadata(supabase, userId, goalId, input);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, goalId: result.goalId };
+}
+
+export type ArchiveGoalActionResult =
+  | { ok: true; goalId: string; code: string }
+  | { ok: false; error: string };
+
+export async function archiveGoal(goalId: unknown): Promise<ArchiveGoalActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to archive this goal." };
+  }
+
+  const result = await archiveJarvisGoal(supabase, userId, goalId);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, goalId: result.goalId, code: result.code };
+}
+
+export type RestoreGoalActionResult =
+  | { ok: true; goalId: string; status: string }
+  | { ok: false; error: string };
+
+export async function restoreGoal(goalId: unknown): Promise<RestoreGoalActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to restore this goal." };
+  }
+
+  const result = await restoreJarvisGoal(supabase, userId, goalId);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, goalId: result.goalId, status: result.status };
 }
