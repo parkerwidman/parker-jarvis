@@ -1,6 +1,8 @@
 "use server";
 
+import { revalidateAfterTaskCompletion } from "@/lib/jarvis/goals/revalidate-goal-pages";
 import { createClient } from "@/lib/supabase/server";
+import { completeTask as completeTaskUnified } from "@/lib/jarvis/tools/task-tools";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -77,22 +79,19 @@ export async function completeTask(formData: FormData) {
     redirect("/login");
   }
 
-  const now = new Date().toISOString();
+  const userId =
+    typeof data.claims.sub === "string" ? data.claims.sub.trim() : "";
 
-  const { error } = await supabase
-    .from("tasks")
-    .update({
-      status: "done",
-      completed_at: now,
-      updated_at: now,
-    })
-    .eq("id", taskId);
-
-  if (error) {
-    redirect("/tasks?error=Could not complete task");
+  if (!userId) {
+    redirect("/login");
   }
 
-  revalidatePath("/");
-  revalidatePath("/tasks");
+  const result = await completeTaskUnified(supabase, userId, { taskId });
+
+  if (!result.success) {
+    redirect(`/tasks?error=${encodeURIComponent(result.error)}`);
+  }
+
+  revalidateAfterTaskCompletion(result.goalTaskCompleted);
   redirect("/tasks");
 }

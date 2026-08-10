@@ -1,8 +1,8 @@
 "use server";
 
+import { revalidateAfterTaskCompletion } from "@/lib/jarvis/goals/revalidate-goal-pages";
 import { createClient } from "@/lib/supabase/server";
 import { completeTask } from "@/lib/jarvis/tools/task-tools";
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 const TASK_ID_REGEX =
@@ -43,8 +43,7 @@ export async function completePriorityTask(
     return { ok: false, error: result.error };
   }
 
-  revalidatePath("/");
-  revalidatePath("/tasks");
+  revalidateAfterTaskCompletion(result.goalTaskCompleted);
 
   return { ok: true };
 }
@@ -52,11 +51,7 @@ export async function completePriorityTask(
 export async function completeTaskFromDashboard(formData: FormData) {
   const taskId = (formData.get("taskId") as string) ?? "";
 
-  if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      taskId,
-    )
-  ) {
+  if (!TASK_ID_REGEX.test(taskId)) {
     redirect("/");
   }
 
@@ -68,22 +63,19 @@ export async function completeTaskFromDashboard(formData: FormData) {
     redirect("/login");
   }
 
-  const now = new Date().toISOString();
+  const userId =
+    typeof data.claims.sub === "string" ? data.claims.sub.trim() : "";
 
-  const { error } = await supabase
-    .from("tasks")
-    .update({
-      status: "done",
-      completed_at: now,
-      updated_at: now,
-    })
-    .eq("id", taskId);
-
-  if (error) {
-    redirect("/?error=Could%20not%20complete%20task");
+  if (!userId) {
+    redirect("/login");
   }
 
-  revalidatePath("/");
-  revalidatePath("/tasks");
+  const result = await completeTask(supabase, userId, { taskId });
+
+  if (!result.success) {
+    redirect(`/?error=${encodeURIComponent(result.error)}`);
+  }
+
+  revalidateAfterTaskCompletion(result.goalTaskCompleted);
   redirect("/");
 }

@@ -232,7 +232,7 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
   it("revalidates goals routes and /tasks for add/delete/edit level", () => {
     const actionsSource = readSource("app/goals/actions.ts");
 
-    expect(actionsSource).toContain('revalidatePath("/tasks")');
+    expect(actionsSource).toContain("revalidateGoalPages");
     expect(actionsSource).toMatch(/addGoalLevel[\s\S]*revalidateGoalPages/);
     expect(actionsSource).toMatch(/editGoalLevelName[\s\S]*revalidateGoalPages/);
     expect(actionsSource).toMatch(/deleteGoalLevel[\s\S]*revalidateGoalPages/);

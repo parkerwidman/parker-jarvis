@@ -102,7 +102,7 @@ describe("Phase 1B2-G2 archived-goal task read filtering", () => {
     expect(source).not.toContain("jarvis_visible_tasks");
   });
 
-  it("G2-9. mutation paths still use tasks table", () => {
+  it("G2-9. mutation paths use tasks table appropriately after H1A", () => {
     const taskToolsSource = readSource("lib/jarvis/tools/task-tools.ts");
     const tasksActionsSource = readSource("app/tasks/actions.ts");
     const commandCenterActionsSource = readSource("app/command-center/actions.ts");
@@ -110,17 +110,18 @@ describe("Phase 1B2-G2 archived-goal task read filtering", () => {
     expect(taskToolsSource).toMatch(
       /export async function createTask[\s\S]*\.from\("tasks"\)/,
     );
-    expect(taskToolsSource).toMatch(
-      /export async function completeTask[\s\S]*\.from\("tasks"\)/,
-    );
+    expect(taskToolsSource).toContain("completeStandaloneTask");
+    expect(taskToolsSource).toContain("setJarvisGoalTaskCompletion");
     expect(tasksActionsSource).toMatch(
       /export async function createTask[\s\S]*\.from\("tasks"\)/,
     );
-    expect(tasksActionsSource).toMatch(
-      /export async function completeTask[\s\S]*\.from\("tasks"\)/,
+    expect(tasksActionsSource).toContain("completeTaskUnified");
+    expect(tasksActionsSource).not.toMatch(
+      /export async function completeTask[\s\S]*\.from\("tasks"\)[\s\S]*\.update\(\{/,
     );
-    expect(commandCenterActionsSource).toMatch(
-      /completeTaskFromDashboard[\s\S]*\.from\("tasks"\)/,
+    expect(commandCenterActionsSource).toContain("completeTask(supabase, userId");
+    expect(commandCenterActionsSource).not.toMatch(
+      /completeTaskFromDashboard[\s\S]*\.from\("tasks"\)[\s\S]*\.update\(\{/,
     );
   });
 

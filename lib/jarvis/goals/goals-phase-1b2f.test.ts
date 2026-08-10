@@ -347,7 +347,7 @@ describe("Jarvis goals phase 1B2F reordering", () => {
 
     expect(actionsSource).toMatch(/moveGoalLevel[\s\S]*revalidateGoalPages/);
     expect(actionsSource).toMatch(/moveGoalTask[\s\S]*revalidateGoalPages/);
-    expect(actionsSource).toContain('revalidatePath("/tasks")');
+    expect(actionsSource).toContain("revalidateGoalPages");
   });
 
   it("completed collapsed card hides reorder controls", () => {

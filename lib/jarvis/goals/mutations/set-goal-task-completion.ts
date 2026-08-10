@@ -3,9 +3,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Goals UI uses set_jarvis_goal_task_completion for locked-level enforcement.
- * Other app surfaces (Command Center, /tasks, Ask Jarvis) still use generic
- * task completion and do not yet enforce roadmap locking or goal reconciliation.
+ * Goals-aware task completion via set_jarvis_goal_task_completion.
+ * Generic surfaces dispatch goal-linked tasks here through task-tools.completeTask.
  */
 export type SetGoalTaskCompletionResult =
   | {

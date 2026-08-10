@@ -38,7 +38,11 @@ describe("completePriorityTask", () => {
       },
     } as never);
 
-    completeTaskMock.mockResolvedValue({ success: true, task: { id: TASK_ID } });
+    completeTaskMock.mockResolvedValue({
+      success: true,
+      task: { id: TASK_ID },
+      goalTaskCompleted: false,
+    });
 
     const first = await completePriorityTask(TASK_ID);
     const second = await completePriorityTask(TASK_ID);
@@ -51,6 +55,30 @@ describe("completePriorityTask", () => {
     });
     expect(revalidatePath).toHaveBeenCalledWith("/");
     expect(revalidatePath).toHaveBeenCalledWith("/tasks");
+  });
+
+  it("revalidates goal pages when a goal-linked task completes", async () => {
+    vi.mocked(createClient).mockResolvedValue({
+      auth: {
+        getClaims: vi.fn().mockResolvedValue({
+          data: { claims: { sub: USER_ID } },
+          error: null,
+        }),
+      },
+    } as never);
+
+    completeTaskMock.mockResolvedValue({
+      success: true,
+      task: { id: TASK_ID },
+      goalTaskCompleted: true,
+    });
+
+    const result = await completePriorityTask(TASK_ID);
+
+    expect(result).toEqual({ ok: true });
+    expect(revalidatePath).toHaveBeenCalledWith("/goals/short-term");
+    expect(revalidatePath).toHaveBeenCalledWith("/goals/three-month");
+    expect(revalidatePath).toHaveBeenCalledWith("/goals/long-term");
   });
 
   it("rejects invalid task ids without calling completeTask", async () => {

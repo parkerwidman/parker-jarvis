@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidateAfterTaskCompletion } from "@/lib/jarvis/goals/revalidate-goal-pages";
 import { ensureMelusiLifeArea } from "@/lib/jarvis/life-areas/ensure-melusi-life-area";
 import { getLifeAreaModule } from "@/lib/jarvis/life-areas/module-registry";
 import {
@@ -7,6 +8,7 @@ import {
   updateProjectStatus,
 } from "@/lib/jarvis/projects/project-tools";
 import { createClient } from "@/lib/supabase/server";
+import { completeTask } from "@/lib/jarvis/tools/task-tools";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -130,25 +132,15 @@ export async function completeMelusiTaskFromDashboard(formData: FormData) {
   }
 
   const supabase = await createClient();
-  await requireAuthenticatedUser(supabase);
+  const userId = await requireAuthenticatedUser(supabase);
 
-  const now = new Date().toISOString();
+  const result = await completeTask(supabase, userId, { taskId });
 
-  const { error } = await supabase
-    .from("tasks")
-    .update({
-      status: "done",
-      completed_at: now,
-      updated_at: now,
-    })
-    .eq("id", taskId);
-
-  if (error) {
-    redirect("/melusi?error=Could%20not%20complete%20task");
+  if (!result.success) {
+    redirect(`/melusi?error=${encodeURIComponent(result.error)}`);
   }
 
+  revalidateAfterTaskCompletion(result.goalTaskCompleted);
   revalidatePath("/melusi");
-  revalidatePath("/");
-  revalidatePath("/tasks");
   redirect("/melusi");
 }

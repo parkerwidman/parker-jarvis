@@ -199,7 +199,7 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
   it("revalidates goals routes and /tasks", () => {
     const actionsSource = readSource("app/goals/actions.ts");
 
-    expect(actionsSource).toContain('revalidatePath("/tasks")');
+    expect(actionsSource).toContain("revalidateGoalPages");
     expect(actionsSource).toMatch(
       /addGoalTask[\s\S]*revalidateGoalPages/,
     );
@@ -281,9 +281,10 @@ describe("Jarvis goals phase 1B2D task structural editing", () => {
     );
   });
 
-  it("documents pre-existing generic completion bypass unchanged", () => {
-    expect(readSource("lib/jarvis/goals/mutations/set-goal-task-completion.ts")).toContain(
-      "still use generic",
+  it("documents unified generic completion dispatch through task-tools", () => {
+    expect(readSource("lib/jarvis/tools/task-tools.ts")).toContain(
+      "setJarvisGoalTaskCompletion",
     );
+    expect(readSource("app/command-center/actions.ts")).toContain("completeTask(supabase");
   });
 });

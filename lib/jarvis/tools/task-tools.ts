@@ -1,3 +1,6 @@
+import "server-only";
+
+import { setJarvisGoalTaskCompletion } from "@/lib/jarvis/goals/mutations/set-goal-task-completion";
 import { ensureLifeAreaForModule } from "@/lib/jarvis/life-areas/ensure-life-area-for-module";
 import { isLifeAreaModuleKey } from "@/lib/jarvis/life-areas/module-registry";
 import {
@@ -34,7 +37,7 @@ export type CreateTaskResult =
   | { success: false; error: string };
 
 export type CompleteTaskResult =
-  | { success: true; task: TaskRecord }
+  | { success: true; task: TaskRecord; goalTaskCompleted: boolean }
   | { success: false; error: string };
 
 function parseDueDate(raw: string): string | null {
@@ -289,17 +292,39 @@ export async function createTask(
   return { success: true, task: data };
 }
 
-export async function completeTask(
+async function completeGoalLinkedTask(
   supabase: SupabaseClient,
   userId: string,
-  input: { taskId: string },
+  taskId: string,
 ): Promise<CompleteTaskResult> {
-  const taskId = input.taskId.trim();
+  const goalResult = await setJarvisGoalTaskCompletion(supabase, taskId, true);
 
-  if (!UUID_REGEX.test(taskId)) {
-    return { success: false, error: "Task ID must be a valid UUID." };
+  if (!goalResult.success) {
+    return { success: false, error: goalResult.error };
   }
 
+  const { data: task, error: fetchError } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .single();
+
+  if (fetchError || !task) {
+    return {
+      success: false,
+      error: "Task not found or could not be completed.",
+    };
+  }
+
+  return { success: true, task, goalTaskCompleted: true };
+}
+
+async function completeStandaloneTask(
+  supabase: SupabaseClient,
+  userId: string,
+  taskId: string,
+): Promise<CompleteTaskResult> {
   const now = new Date().toISOString();
 
   const { data, error } = await supabase
@@ -311,15 +336,66 @@ export async function completeTask(
     })
     .eq("id", taskId)
     .eq("user_id", userId)
+    .is("goal_id", null)
     .select(TASK_SELECT)
     .single();
 
-  if (error || !data) {
+  if (!error && data) {
+    return { success: true, task: data, goalTaskCompleted: false };
+  }
+
+  const { data: attachment, error: readError } = await supabase
+    .from("tasks")
+    .select("goal_id")
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (readError || !attachment) {
     return {
       success: false,
       error: "Task not found or could not be completed.",
     };
   }
 
-  return { success: true, task: data };
+  if (attachment.goal_id !== null) {
+    return completeGoalLinkedTask(supabase, userId, taskId);
+  }
+
+  return {
+    success: false,
+    error: "Task not found or could not be completed.",
+  };
+}
+
+export async function completeTask(
+  supabase: SupabaseClient,
+  userId: string,
+  input: { taskId: string },
+): Promise<CompleteTaskResult> {
+  const taskId = input.taskId.trim();
+
+  if (!UUID_REGEX.test(taskId)) {
+    return { success: false, error: "Task ID must be a valid UUID." };
+  }
+
+  const { data: attachment, error: readError } = await supabase
+    .from("tasks")
+    .select("goal_id")
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (readError || !attachment) {
+    return {
+      success: false,
+      error: "Task not found or could not be completed.",
+    };
+  }
+
+  if (attachment.goal_id !== null) {
+    return completeGoalLinkedTask(supabase, userId, taskId);
+  }
+
+  return completeStandaloneTask(supabase, userId, taskId);
 }

@@ -152,8 +152,9 @@ describe("Jarvis goals phase 1B2A task completion UI", () => {
     expect(actionsSource).toContain('revalidatePath("/")');
     expect(actionsSource).toContain("GOAL_PAGE_CONFIG");
     expect(mutationSource).toContain("set_jarvis_goal_task_completion");
-    expect(mutationSource).toContain("Command Center");
-    expect(mutationSource).toContain("/tasks");
+    expect(readSource("lib/jarvis/tools/task-tools.ts")).toContain(
+      "setJarvisGoalTaskCompletion",
+    );
   });
 
   it("does not add priority or archive controls in phase 1B2A completion UI", () => {

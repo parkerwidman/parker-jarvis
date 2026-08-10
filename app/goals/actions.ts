@@ -25,6 +25,7 @@ import {
   clearJarvisTodayPriorityGoal,
   setJarvisTodayPriorityGoal,
 } from "@/lib/jarvis/goals/mutations/set-today-priority-goal";
+import { revalidateGoalPages } from "@/lib/jarvis/goals/revalidate-goal-pages";
 import type { JarvisGoalType } from "@/lib/jarvis/goals/types";
 import { GOAL_PAGE_CONFIG } from "@/lib/jarvis/goals/types";
 import { createClient } from "@/lib/supabase/server";
@@ -44,14 +45,6 @@ async function requireAuthenticatedUser(
   }
 
   return typeof data.claims.sub === "string" ? data.claims.sub : null;
-}
-
-function revalidateGoalPages(): void {
-  for (const config of Object.values(GOAL_PAGE_CONFIG)) {
-    revalidatePath(config.route);
-  }
-  revalidatePath("/");
-  revalidatePath("/tasks");
 }
 
 async function publishJarvisGoal(
