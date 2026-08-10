@@ -3,10 +3,15 @@ import {
   isMeaningfulMorningBriefCalendarEvent,
 } from "@/lib/jarvis/briefings/morning-brief-calendar-policy";
 import {
+  buildMorningBriefGoalPlanningPromptSections,
+  type MorningBriefGoalSection,
+  type MorningBriefPlanningContext,
+} from "@/lib/jarvis/briefings/morning-brief-goal-planning";
+import {
   isMeaningfulMorningBriefDeadlineTask,
-  shouldIncludeTaskInMorningBriefSelection,
   taskMatchesCurrentFocus,
 } from "@/lib/jarvis/briefings/morning-brief-task-policy";
+import type { ActionableGoalTaskContext } from "@/lib/jarvis/goals/actionable-goal-tasks";
 
 export const BRIEFING_TRANSCRIPT_DEFAULT_OPEN = true;
 
@@ -25,7 +30,14 @@ export type MorningBriefTask = {
   lifeAreaName?: string | null;
   notes?: string | null;
   projectId?: string | null;
+  goalContext?: ActionableGoalTaskContext | null;
 };
+
+export type MorningBriefTopPrioritySource =
+  | "profile_focus_task"
+  | "today_priority_goal"
+  | "profile_focus"
+  | "meaningful_deadline";
 
 export type MorningBriefEmail = {
   sender: string;
@@ -53,8 +65,11 @@ export type MorningBriefEvent = {
 export type MorningBriefTopPriority = {
   phrase: string;
   reason: string;
-  source: "profile_focus" | "meaningful_deadline";
+  source: MorningBriefTopPrioritySource;
   dueDate: string | null;
+  recommendationTitle: string;
+  goalDomain?: "personal" | "melusi";
+  sourceTask?: MorningBriefTask;
 };
 
 export type MorningBriefSupportingItem = {
@@ -186,23 +201,47 @@ export function buildProfileFocusPermittedFirstAction(focusPhrase: string): stri
   return `Review where ${phrase} stands and decide the next concrete step.`;
 }
 
+export function buildTodayPriorityGoalReason(): string {
+  return "Parker selected this as today's priority goal, so that is the right place to start.";
+}
+
+export function buildTodayPriorityGoalPermittedFirstAction(goalTitle: string): string {
+  const phrase = goalTitle.trim();
+
+  return `Review progress on ${phrase} and work on the current level tasks.`;
+}
+
 export function selectMorningBriefTopPriority(input: {
-  tasks: MorningBriefTask[];
+  planningTasks: MorningBriefTask[];
+  todayPriorityGoal: MorningBriefGoalSection | null;
   events: MorningBriefEvent[];
   currentFocus: string | null;
   todayLocal: string;
   planningEndLocal: string;
 }): MorningBriefTopPriority | null {
-  const focusTask = input.tasks.find((task) =>
+  const focusTask = input.planningTasks.find((task) =>
     taskMatchesCurrentFocus(task.title, input.currentFocus),
   );
 
   if (focusTask) {
     return {
       phrase: focusTask.title,
+      recommendationTitle: focusTask.title,
       reason: buildProfileFocusPriorityReason(),
-      source: "profile_focus",
+      source: "profile_focus_task",
       dueDate: null,
+      sourceTask: focusTask,
+    };
+  }
+
+  if (input.todayPriorityGoal) {
+    return {
+      phrase: input.todayPriorityGoal.goalTitle,
+      recommendationTitle: input.todayPriorityGoal.goalTitle,
+      reason: buildTodayPriorityGoalReason(),
+      source: "today_priority_goal",
+      dueDate: null,
+      goalDomain: input.todayPriorityGoal.domain,
     };
   }
 
@@ -211,13 +250,14 @@ export function selectMorningBriefTopPriority(input: {
   if (normalizedFocus) {
     return {
       phrase: normalizedFocus,
+      recommendationTitle: normalizedFocus,
       reason: buildProfileFocusPriorityReason(),
       source: "profile_focus",
       dueDate: null,
     };
   }
 
-  const meaningfulDeadline = [...input.tasks]
+  const meaningfulDeadline = [...input.planningTasks]
     .filter((task) =>
       isMeaningfulMorningBriefDeadlineTask({
         title: task.title,
@@ -237,6 +277,7 @@ export function selectMorningBriefTopPriority(input: {
 
     return {
       phrase: meaningfulDeadline.title,
+      recommendationTitle: meaningfulDeadline.title,
       reason: meaningfulDeadline.overdue
         ? "It is overdue and marked high priority."
         : dueDate
@@ -244,6 +285,7 @@ export function selectMorningBriefTopPriority(input: {
           : "It is marked high priority and due today.",
       source: "meaningful_deadline",
       dueDate,
+      sourceTask: meaningfulDeadline,
     };
   }
 
@@ -251,7 +293,7 @@ export function selectMorningBriefTopPriority(input: {
 }
 
 export function selectMorningBriefSupportingItems(input: {
-  tasks: MorningBriefTask[];
+  planningTasks: MorningBriefTask[];
   events: MorningBriefEvent[];
   todayLocal: string;
   planningEndLocal: string;
@@ -291,7 +333,7 @@ export function selectMorningBriefSupportingItems(input: {
     });
   }
 
-  for (const task of [...input.tasks].sort(compareTasks)) {
+  for (const task of [...input.planningTasks].sort(compareTasks)) {
     if (items.length >= 2) {
       break;
     }
@@ -325,7 +367,7 @@ export function selectMorningBriefSupportingItems(input: {
 }
 
 export function detectBusyMorning(input: {
-  tasks: MorningBriefTask[];
+  planningTasks: MorningBriefTask[];
   events: MorningBriefEvent[];
   currentFocus: string | null;
   todayLocal: string;
@@ -338,7 +380,7 @@ export function detectBusyMorning(input: {
     signalCount += 1;
   }
 
-  const meaningfulTasks = input.tasks.filter((task) =>
+  const meaningfulTasks = input.planningTasks.filter((task) =>
     isMeaningfulMorningBriefDeadlineTask({
       title: task.title,
       priority: task.priority,
@@ -374,8 +416,16 @@ function buildPermittedFirstAction(input: {
   topPriority: MorningBriefTopPriority | null;
   supportingItems: MorningBriefSupportingItem[];
 }): string {
+  if (input.topPriority?.source === "profile_focus_task") {
+    return buildProfileFocusPermittedFirstAction(input.topPriority.phrase);
+  }
+
   if (input.topPriority?.source === "profile_focus") {
     return buildProfileFocusPermittedFirstAction(input.topPriority.phrase);
+  }
+
+  if (input.topPriority?.source === "today_priority_goal") {
+    return buildTodayPriorityGoalPermittedFirstAction(input.topPriority.phrase);
   }
 
   if (input.topPriority?.source === "meaningful_deadline") {
@@ -412,20 +462,34 @@ function hasMeaningfulCalendarCommitmentsToday(
 }
 
 export function buildMorningBriefPlan(input: {
-  tasks: MorningBriefTask[];
+  planningContext: MorningBriefPlanningContext;
   events: MorningBriefEvent[];
   currentFocus: string | null;
   todayLocal: string;
   planningEndLocal: string;
 }): MorningBriefPlan {
-  const topPriority = selectMorningBriefTopPriority(input);
+  const topPriority = selectMorningBriefTopPriority({
+    planningTasks: input.planningContext.planningTasks,
+    todayPriorityGoal: input.planningContext.todayPriorityGoal,
+    events: input.events,
+    currentFocus: input.currentFocus,
+    todayLocal: input.todayLocal,
+    planningEndLocal: input.planningEndLocal,
+  });
   const supportingItems = selectMorningBriefSupportingItems({
-    ...input,
+    planningTasks: input.planningContext.planningTasks,
+    events: input.events,
+    todayLocal: input.todayLocal,
+    planningEndLocal: input.planningEndLocal,
     topPriorityPhrase: topPriority?.phrase ?? null,
     currentFocus: input.currentFocus,
   });
   const isBusyMorning = detectBusyMorning({
-    ...input,
+    planningTasks: input.planningContext.planningTasks,
+    events: input.events,
+    currentFocus: input.currentFocus,
+    todayLocal: input.todayLocal,
+    planningEndLocal: input.planningEndLocal,
     topPriority,
   });
 
@@ -648,7 +712,7 @@ export function buildMorningBriefUserPrompt(input: {
   dateTimeSection: string;
   plan: MorningBriefPlan;
   preferredName: string | null;
-  tasks: MorningBriefTask[];
+  planningContext: MorningBriefPlanningContext;
   events: MorningBriefEvent[];
   calendarNote: string | null;
 }): string {
@@ -668,11 +732,20 @@ export function buildMorningBriefUserPrompt(input: {
       `\nPre-selected top priority:\n- phrase: ${input.plan.topPriority.phrase}\n- reason: ${input.plan.topPriority.reason}\n- source: ${input.plan.topPriority.source}${input.plan.topPriority.dueDate ? `\n- verified due date: ${input.plan.topPriority.dueDate}` : ""}`,
     );
 
-    if (input.plan.topPriority.source === "profile_focus") {
+    if (input.plan.topPriority.source === "profile_focus_task" ||
+        input.plan.topPriority.source === "profile_focus") {
       sections.push(
         `\nSelected-focus explanation (strict):
 - Say only that Parker selected this as the current focus and it is the right place to start.
 - Do not add downstream impact, consequences, dependencies, benefits, urgency, or why it matters beyond the explicit focus signal.`,
+      );
+    }
+
+    if (input.plan.topPriority.source === "today_priority_goal") {
+      sections.push(
+        `\nToday's priority goal explanation (strict):
+- Say only that Parker selected this as today's priority goal and it is the right place to start.
+- Do not add downstream impact, consequences, dependencies, benefits, urgency, or why it matters beyond the explicit priority signal.`,
       );
     }
 
@@ -699,23 +772,15 @@ export function buildMorningBriefUserPrompt(input: {
     sections.push("\nVerified meaningful schedule or deadline items: none.");
   }
 
-  const meaningfulTasks = input.tasks.filter((task) =>
-    shouldIncludeTaskInMorningBriefSelection(
-      {
-        title: task.title,
-        notes: task.notes,
-        lifeAreaName: task.lifeAreaName,
-        projectId: task.projectId,
-      },
-      null,
-    ),
+  const goalPlanningSections = buildMorningBriefGoalPlanningPromptSections(
+    input.planningContext,
   );
 
-  if (meaningfulTasks.length > 0) {
-    sections.push(
-      `\nEligible non-internal tasks:\n${JSON.stringify(meaningfulTasks, null, 2)}`,
-    );
+  if (goalPlanningSections.length > 0) {
+    sections.push(`\n${goalPlanningSections.join("\n")}`);
   }
+
+  sections.push("\nVERIFIED CALENDAR");
 
   const meaningfulCalendarEvents = getMeaningfulCalendarEvents(input.events)
     .filter((event) => isIncludedCalendarEvent(event))

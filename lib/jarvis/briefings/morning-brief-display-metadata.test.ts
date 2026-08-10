@@ -6,12 +6,24 @@ import {
   resolveBriefPriorityText,
   validateBriefPriorityTextPresence,
 } from "@/lib/jarvis/briefings/morning-brief-display-metadata";
+import { buildMorningBriefPlanningContext } from "@/lib/jarvis/briefings/morning-brief-goal-planning";
 import { buildMorningBriefPlan } from "@/lib/jarvis/briefings/morning-brief-structure";
+
+function buildEmptyPlanningContext(
+  tasks: Parameters<typeof buildMorningBriefPlanningContext>[0]["planningTasks"] = [],
+  currentFocus: string | null = null,
+) {
+  return buildMorningBriefPlanningContext({
+    planningTasks: tasks,
+    goals: [],
+    todayPriorityGoalId: null,
+  });
+}
 
 describe("morning brief display metadata", () => {
   it("carries canonical priorityText from the plan", () => {
     const plan = buildMorningBriefPlan({
-      tasks: [],
+      planningContext: buildEmptyPlanningContext([], "figure out retroactive withdrawal for last semester's classes"),
       events: [],
       currentFocus: "figure out retroactive withdrawal for last semester's classes",
       todayLocal: "2026-08-06",
@@ -81,7 +93,7 @@ describe("morning brief display metadata", () => {
 
   it("stores null priorityText when the plan has no meaningful priority", () => {
     const plan = buildMorningBriefPlan({
-      tasks: [],
+      planningContext: buildEmptyPlanningContext(),
       events: [],
       currentFocus: null,
       todayLocal: "2026-08-06",

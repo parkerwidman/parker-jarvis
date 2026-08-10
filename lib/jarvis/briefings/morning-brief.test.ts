@@ -4,6 +4,10 @@ import {
   transcriptSegmentsContainHtml,
 } from "@/lib/jarvis/briefings/format-brief-transcript";
 import {
+  buildMorningBriefPlanningContext,
+  type MorningBriefGoalRecord,
+} from "@/lib/jarvis/briefings/morning-brief-goal-planning";
+import {
   BRIEFING_TRANSCRIPT_DEFAULT_OPEN,
   MORNING_BRIEF_BUSY_WORD_MAX,
   MORNING_BRIEF_NORMAL_WORD_MAX,
@@ -29,15 +33,39 @@ import {
 const TODAY = "2026-08-06";
 const PLANNING_END = "2026-08-07";
 
+function buildPlanningContext(
+  tasks: MorningBriefTask[],
+  options?: {
+    todayPriorityGoalId?: string | null;
+    goals?: MorningBriefGoalRecord[];
+  },
+) {
+  return buildMorningBriefPlanningContext({
+    planningTasks: tasks,
+    goals: options?.goals ?? [],
+    todayPriorityGoalId: options?.todayPriorityGoalId ?? null,
+  });
+}
+
 function buildPlanInput(
   overrides: {
     tasks?: MorningBriefTask[];
     events?: MorningBriefEvent[];
     currentFocus?: string | null;
+    todayPriorityGoalId?: string | null;
+    goals?: MorningBriefGoalRecord[];
   } = {},
 ) {
+  const tasks = overrides.tasks ?? [];
+  const planningContext = buildPlanningContext(tasks, {
+    todayPriorityGoalId: overrides.todayPriorityGoalId ?? null,
+    goals: overrides.goals,
+  });
+
   return {
-    tasks: overrides.tasks ?? [],
+    planningContext,
+    planningTasks: planningContext.planningTasks,
+    todayPriorityGoal: planningContext.todayPriorityGoal,
     events: overrides.events ?? [],
     currentFocus: overrides.currentFocus ?? null,
     todayLocal: TODAY,
@@ -112,7 +140,7 @@ describe("morning brief structure", () => {
     );
 
     expect(topPriority?.phrase).toBe("Write blog post");
-    expect(topPriority?.source).toBe("profile_focus");
+    expect(topPriority?.source).toBe("profile_focus_task");
   });
 
   it("excludes internal setup chores and random due-date tasks from automatic priority", () => {
@@ -138,13 +166,13 @@ describe("morning brief structure", () => {
   });
 
   it("does not let emails become priorities or schedule items in the prompt", () => {
-    const plan = buildMorningBriefPlan(buildPlanInput());
+    const planInput = buildPlanInput();
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Thursday, August 6, 2026",
       dateTimeSection: "UTC: now",
-      plan,
+      plan: buildMorningBriefPlan(planInput),
       preferredName: "Parker",
-      tasks: [],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });
@@ -194,6 +222,18 @@ describe("morning brief structure", () => {
             dueToday: true,
           }),
         ],
+        currentFocus: "Reconnect Microsoft to Jarvis",
+      }),
+    );
+
+    expect(topPriority?.phrase).toBe("Reconnect Microsoft to Jarvis");
+    expect(topPriority?.source).toBe("profile_focus_task");
+  });
+
+  it("uses free-text current focus when there is no exact task match", () => {
+    const topPriority = selectMorningBriefTopPriority(
+      buildPlanInput({
+        tasks: [],
         currentFocus: "Reconnect Microsoft to Jarvis",
       }),
     );
@@ -314,14 +354,15 @@ describe("morning brief structure", () => {
   });
 
   it("omits empty categories from the generation prompt", () => {
-    const plan = buildMorningBriefPlan(buildPlanInput());
+    const planInput = buildPlanInput();
+    const plan = buildMorningBriefPlan(planInput);
 
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Thursday, August 6, 2026",
       dateTimeSection: "UTC: now",
       plan,
       preferredName: "Parker",
-      tasks: [],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });
@@ -358,17 +399,16 @@ describe("morning brief structure", () => {
 
   it("keeps selected-focus explanations grounded without unsupported consequences", () => {
     const focus = "Decide whether to drop any of next semester's classes";
-    const plan = buildMorningBriefPlan(
-      buildPlanInput({
-        currentFocus: focus,
-      }),
-    );
+    const planInput = buildPlanInput({
+      currentFocus: focus,
+    });
+    const plan = buildMorningBriefPlan(planInput);
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Thursday, August 6, 2026",
       dateTimeSection: "UTC: now",
       plan,
       preferredName: "Parker",
-      tasks: [],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });
@@ -390,17 +430,16 @@ describe("morning brief structure", () => {
   });
 
   it("still states verified due dates for deadline priorities", () => {
-    const plan = buildMorningBriefPlan(
-      buildPlanInput({
-        tasks: [buildTask({ title: "Finish proposal", priority: "high", dueToday: true })],
-      }),
-    );
+    const planInput = buildPlanInput({
+      tasks: [buildTask({ title: "Finish proposal", priority: "high", dueToday: true })],
+    });
+    const plan = buildMorningBriefPlan(planInput);
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Thursday, August 6, 2026",
       dateTimeSection: "UTC: now",
       plan,
       preferredName: "Parker",
-      tasks: [buildTask({ title: "Finish proposal", priority: "high", dueToday: true })],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });
@@ -420,17 +459,16 @@ describe("morning brief structure", () => {
   });
 
   it("includes canonical priority text in the generation prompt", () => {
-    const plan = buildMorningBriefPlan(
-      buildPlanInput({
-        currentFocus: "figure out retroactive withdrawal for last semester's classes",
-      }),
-    );
+    const planInput = buildPlanInput({
+      currentFocus: "figure out retroactive withdrawal for last semester's classes",
+    });
+    const plan = buildMorningBriefPlan(planInput);
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Thursday, August 6, 2026",
       dateTimeSection: "UTC: now",
       plan,
       preferredName: "Parker",
-      tasks: [],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });
@@ -443,17 +481,16 @@ describe("morning brief structure", () => {
   });
 
   it("forbids unsupported inference in the generation prompt", () => {
-    const plan = buildMorningBriefPlan(
-      buildPlanInput({
-        currentFocus: "Decide whether to drop any of next semester's classes",
-      }),
-    );
+    const planInput = buildPlanInput({
+      currentFocus: "Decide whether to drop any of next semester's classes",
+    });
+    const plan = buildMorningBriefPlan(planInput);
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Thursday, August 6, 2026",
       dateTimeSection: "UTC: now",
       plan,
       preferredName: "Parker",
-      tasks: [],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });
@@ -481,16 +518,15 @@ describe("morning brief structure", () => {
   });
 
   it("asks the model to blend priorities without report-style labels", () => {
+    const planInput = buildPlanInput({
+      tasks: [buildTask({ title: "Finish proposal", priority: "high", dueToday: true })],
+    });
     const prompt = buildMorningBriefUserPrompt({
       localDateLabel: "Wednesday, August 6, 2026",
       dateTimeSection: "UTC: now",
-      plan: buildMorningBriefPlan(
-        buildPlanInput({
-          tasks: [buildTask({ title: "Finish proposal", priority: "high", dueToday: true })],
-        }),
-      ),
+      plan: buildMorningBriefPlan(planInput),
       preferredName: "Parker",
-      tasks: [buildTask({ title: "Finish proposal", priority: "high", dueToday: true })],
+      planningContext: planInput.planningContext,
       events: [],
       calendarNote: null,
     });

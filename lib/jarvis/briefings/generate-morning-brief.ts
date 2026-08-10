@@ -12,7 +12,6 @@ import {
 import {
   loadMelusiPlanningSnapshot,
 } from "@/lib/jarvis/projects/load-melusi-planning-snapshot";
-import { type TaskRecord } from "@/lib/jarvis/tools/task-tools";
 import {
   buildMelusiExpenseBriefContext,
   extractMelusiExpenseSourceCounts,
@@ -61,6 +60,18 @@ import {
 } from "@/lib/jarvis/briefings/morning-brief-openai";
 import { generateMorningBriefAudio } from "@/lib/jarvis/briefings/generate-morning-brief-audio";
 import {
+  buildMorningBriefActionableIndex,
+  buildMorningBriefPlanningContext,
+  filterMorningBriefPlanningTasks,
+  type MorningBriefGoalRecord,
+  type MorningBriefPlanningContext,
+  type MorningBriefRawTaskRow,
+} from "@/lib/jarvis/briefings/morning-brief-goal-planning";
+import type {
+  ActionableGoalTaskContext,
+  PlanningGoalLevelRecord,
+} from "@/lib/jarvis/goals/actionable-goal-tasks";
+import {
   finalizeMorningBriefRecommendation,
   resolveMorningBriefRecommendationContextFromPriority,
 } from "@/lib/jarvis/briefings/morning-brief-recommendation";
@@ -77,11 +88,7 @@ type BriefingTask = MorningBriefTask;
 
 type BriefingEvent = MorningBriefEvent;
 
-type MorningBriefTaskRow = TaskRecord & {
-  life_area_id: string | null;
-  notes: string | null;
-  project_id: string | null;
-};
+type MorningBriefTaskRow = MorningBriefRawTaskRow;
 
 type SourceCounts = {
   tasks: number;
@@ -180,7 +187,7 @@ async function listMorningBriefTasks(
   const { data, error } = await supabase
     .from("jarvis_visible_tasks")
     .select(
-      "id, title, status, priority, due_at, completed_at, created_at, life_area_id, notes, project_id",
+      "id, title, status, priority, due_at, completed_at, created_at, life_area_id, notes, project_id, goal_id, goal_level_id, blocked_at, position",
     )
     .eq("user_id", userId)
     .neq("status", "done");
@@ -192,10 +199,70 @@ async function listMorningBriefTasks(
   return { success: true, tasks: (data ?? []) as MorningBriefTaskRow[] };
 }
 
+async function loadMorningBriefProfilePlanningFields(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("jarvis_profiles")
+    .select("today_priority_goal_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    return null;
+  }
+
+  return (data as { today_priority_goal_id: string | null } | null)
+    ?.today_priority_goal_id ?? null;
+}
+
+async function loadMorningBriefGoalRoadmap(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{
+  goals: MorningBriefGoalRecord[];
+  levels: PlanningGoalLevelRecord[];
+}> {
+  const { data: goalsData, error: goalsError } = await supabase
+    .from("jarvis_goals")
+    .select("id, title, goal_type, status, domain")
+    .eq("user_id", userId)
+    .eq("goal_type", "short_term")
+    .eq("status", "active");
+
+  if (goalsError) {
+    return { goals: [], levels: [] };
+  }
+
+  const goals = (goalsData ?? []) as MorningBriefGoalRecord[];
+
+  if (goals.length === 0) {
+    return { goals: [], levels: [] };
+  }
+
+  const goalIds = goals.map((goal) => goal.id);
+  const { data: levelsData, error: levelsError } = await supabase
+    .from("jarvis_goal_levels")
+    .select("id, name, position, goal_id")
+    .eq("user_id", userId)
+    .in("goal_id", goalIds);
+
+  if (levelsError) {
+    return { goals, levels: [] };
+  }
+
+  return {
+    goals,
+    levels: (levelsData ?? []) as PlanningGoalLevelRecord[],
+  };
+}
+
 export function prepareMorningBriefTasks(
   tasks: MorningBriefTaskRow[],
   lifeAreaNames: Map<string, string>,
   timeZone: string,
+  actionableIndex: Map<string, ActionableGoalTaskContext>,
   now = new Date(),
 ): BriefingTask[] {
   const todayLocal = getLocalDateString(timeZone, now);
@@ -227,6 +294,7 @@ export function prepareMorningBriefTasks(
           : null,
         notes: task.notes,
         projectId: task.project_id,
+        goalContext: actionableIndex.get(task.id) ?? null,
       };
     });
 }
@@ -360,7 +428,7 @@ export async function generateMorningBrief(
     currentStage = MORNING_BRIEF_STAGES.snapshotLoading;
     const snapshotStartedAt = Date.now();
 
-  const [tasksResult, melusiSnapshot, melusiExpenseSnapshotResult, financeSnapshotResult] =
+  const [tasksResult, melusiSnapshot, melusiExpenseSnapshotResult, financeSnapshotResult, todayPriorityGoalId, goalRoadmap] =
     await Promise.all([
       listMorningBriefTasks(supabase, userId),
       loadMelusiPlanningSnapshot(supabase, userId, { timeZone, now }),
@@ -372,6 +440,8 @@ export async function generateMorningBrief(
           now,
           ...(sinceTimestamp ? { since: sinceTimestamp } : {}),
         }),
+      loadMorningBriefProfilePlanningFields(supabase, userId),
+      loadMorningBriefGoalRoadmap(supabase, userId),
       ]);
 
     let melusiExpenseContext: MelusiExpenseBriefContext | null = null;
@@ -440,9 +510,38 @@ export async function generateMorningBrief(
       context.lifeAreas.map((lifeArea) => [lifeArea.id, lifeArea.name]),
     );
 
-    const unfinishedTasks = tasksResult.success
-      ? prepareMorningBriefTasks(tasksResult.tasks, lifeAreaNames, timeZone, now)
-      : [];
+    const rawTasks = tasksResult.success ? tasksResult.tasks : [];
+    const normalizedRawTasks = rawTasks.map((task) => ({
+      ...task,
+      goal_id: task.goal_id ?? null,
+      goal_level_id: task.goal_level_id ?? null,
+      blocked_at: task.blocked_at ?? null,
+      position: task.position ?? null,
+    }));
+    const actionableIndex = buildMorningBriefActionableIndex({
+      goals: goalRoadmap.goals,
+      levels: goalRoadmap.levels,
+      goalTasks: normalizedRawTasks.filter((task) => task.goal_id !== null),
+      todayPriorityGoalId,
+    });
+    const planningRawTasks = filterMorningBriefPlanningTasks(
+      normalizedRawTasks,
+      actionableIndex,
+    );
+    const planningTasks = prepareMorningBriefTasks(
+      planningRawTasks,
+      lifeAreaNames,
+      timeZone,
+      actionableIndex,
+      now,
+    );
+    const planningContext: MorningBriefPlanningContext = buildMorningBriefPlanningContext({
+      planningTasks,
+      goals: goalRoadmap.goals,
+      todayPriorityGoalId,
+    });
+
+    const unfinishedTasks = planningTasks;
 
     const activeGoals = context.goals.filter((goal) => goal.status === "active");
     const memories = context.memories;
@@ -521,7 +620,7 @@ export async function generateMorningBrief(
     });
 
     const briefPlan = buildMorningBriefPlan({
-      tasks: unfinishedTasks,
+      planningContext,
       events,
       currentFocus: context.profile?.current_focus ?? null,
       todayLocal: briefingDate,
@@ -533,7 +632,7 @@ export async function generateMorningBrief(
       dateTimeSection: formatDateTimeSection(timeZone, now),
       plan: briefPlan,
       preferredName: context.profile?.preferred_name ?? null,
-      tasks: unfinishedTasks,
+      planningContext,
       events,
       calendarNote,
     });

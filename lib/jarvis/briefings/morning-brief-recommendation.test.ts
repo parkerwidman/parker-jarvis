@@ -48,8 +48,11 @@ function buildTask(overrides: Partial<MorningBriefTask> = {}): MorningBriefTask 
 function buildPriority(
   overrides: Partial<MorningBriefTopPriority> = {},
 ): MorningBriefTopPriority {
+  const phrase = overrides.phrase ?? "Finish proposal";
+
   return {
-    phrase: "Finish proposal",
+    phrase,
+    recommendationTitle: overrides.recommendationTitle ?? phrase,
     reason: "It is marked high priority and due today.",
     source: "meaningful_deadline",
     dueDate: "2026-08-07",

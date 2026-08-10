@@ -128,6 +128,41 @@ function createMockSupabase(options: { tasks?: MorningBriefTaskRow[] } = {}) {
         };
       }
 
+      if (table === "jarvis_goals") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+              }),
+            }),
+          }),
+        };
+      }
+
+      if (table === "jarvis_goal_levels") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              in: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        };
+      }
+
+      if (table === "jarvis_profiles") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({
+                data: { today_priority_goal_id: null },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+
       return {
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue(afterFirstEq),
@@ -165,6 +200,10 @@ type MorningBriefTaskRow = {
   life_area_id: string | null;
   notes: string | null;
   project_id: string | null;
+  goal_id?: string | null;
+  goal_level_id?: string | null;
+  blocked_at?: string | null;
+  position?: number | null;
 };
 
 describe("generateMorningBrief OpenAI storage behavior", () => {
@@ -411,6 +450,10 @@ describe("generateMorningBrief OpenAI storage behavior", () => {
           life_area_id: "life-melusi",
           notes: null,
           project_id: null,
+          goal_id: null,
+          goal_level_id: null,
+          blocked_at: null,
+          position: null,
         },
       ],
     });

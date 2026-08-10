@@ -72,6 +72,10 @@ function findPrioritySourceTask(input: {
   }
 
   if (input.topPriority.source === "profile_focus") {
+    return null;
+  }
+
+  if (input.topPriority.source === "profile_focus_task") {
     return (
       input.tasks.find((task) =>
         taskMatchesCurrentFocus(task.title, input.currentFocus),
@@ -106,14 +110,41 @@ function resolveMorningBriefPrioritySource(input: {
   currentFocus: string | null;
   melusiProjectTaskIds: ReadonlySet<string>;
 }): {
-  task: MorningBriefTask;
+  task: MorningBriefTask | null;
   recommendedMode: MorningBriefRecommendedMode;
+  recommendationTitle: string;
 } | null {
-  const sourceTask = findPrioritySourceTask({
-    topPriority: input.topPriority,
-    tasks: input.tasks,
-    currentFocus: input.currentFocus,
-  });
+  if (input.topPriority.source === "today_priority_goal") {
+    if (!input.topPriority.goalDomain) {
+      return null;
+    }
+
+    const recommendationTitle = sanitizePriorityTitleForRecommendationReason(
+      input.topPriority.recommendationTitle,
+    );
+
+    if (!recommendationTitle) {
+      return null;
+    }
+
+    return {
+      task: null,
+      recommendedMode: input.topPriority.goalDomain,
+      recommendationTitle,
+    };
+  }
+
+  if (input.topPriority.source === "profile_focus") {
+    return null;
+  }
+
+  const sourceTask =
+    input.topPriority.sourceTask ??
+    findPrioritySourceTask({
+      topPriority: input.topPriority,
+      tasks: input.tasks,
+      currentFocus: input.currentFocus,
+    });
 
   if (!sourceTask) {
     return null;
@@ -124,9 +155,18 @@ function resolveMorningBriefPrioritySource(input: {
     melusiProjectTaskIds: input.melusiProjectTaskIds,
   });
 
+  const recommendationTitle = sanitizePriorityTitleForRecommendationReason(
+    sourceTask.title,
+  );
+
+  if (!recommendationTitle) {
+    return null;
+  }
+
   return {
     task: sourceTask,
     recommendedMode,
+    recommendationTitle,
   };
 }
 
@@ -215,7 +255,7 @@ export function resolveMorningBriefRecommendationContextFromPriority(input: {
   }
 
   const reason = buildMorningBriefRecommendationReason(
-    prioritySource.task.title,
+    prioritySource.recommendationTitle,
   );
 
   if (!reason) {
