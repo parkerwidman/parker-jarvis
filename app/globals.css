@@ -8682,6 +8682,89 @@ body[data-mode="personal"] {
   color: var(--cc2-accent);
 }
 
+.goals-settings {
+  margin-top: 1.125rem;
+  padding-top: 1.125rem;
+  border-top: 1px solid var(--cc2-border);
+}
+
+.goals-settings-heading {
+  margin: 0 0 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cc2-text-3);
+}
+
+.goals-settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.goals-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.goals-settings-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--cc2-text-2);
+}
+
+.goals-settings-domain-seg {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.goals-settings-select {
+  width: 100%;
+  max-width: 16rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--cc2-text-1);
+  font: inherit;
+  font-size: 0.8125rem;
+}
+
+.goals-settings-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--cc2-text-3);
+}
+
+.goals-settings-actions {
+  margin-top: 0.625rem;
+}
+
+.goals-settings-archive {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.goals-settings-archive-copy {
+  margin: 0 0 0.625rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--cc2-text-2);
+}
+
+.goals-settings-archive-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
 .goals-roadmap {
   width: 100%;
   margin: 0;

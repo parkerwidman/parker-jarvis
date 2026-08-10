@@ -7,17 +7,24 @@ import {
 import {
   domainLabel,
   type GoalView,
+  type JarvisGoalType,
 } from "@/lib/jarvis/goals/types";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { GoalSettingsPanel } from "./goal-settings-panel";
 import { LevelRoadmap } from "./level-roadmap";
 
 type GoalCardProps = {
   goal: GoalView;
+  currentGoalType?: JarvisGoalType;
   showTodayPriority: boolean;
 };
 
-export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
+export function GoalCard({
+  goal,
+  currentGoalType = "short_term",
+  showTodayPriority,
+}: GoalCardProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [priorityError, setPriorityError] = useState<string | null>(null);
@@ -157,6 +164,13 @@ export function GoalCard({ goal, showTodayPriority }: GoalCardProps) {
             goalId={goal.id}
             levels={goal.levels}
             goalStatus={goal.status}
+            isEditing={isEditing}
+          />
+          <GoalSettingsPanel
+            goalId={goal.id}
+            title={goal.title}
+            domain={goal.domain}
+            currentGoalType={currentGoalType}
             isEditing={isEditing}
           />
         </div>

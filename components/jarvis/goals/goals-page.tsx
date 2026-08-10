@@ -45,6 +45,7 @@ function GoalsPageInner({ data, goalType }: GoalsPageInnerProps) {
             <GoalCard
               key={goal.id}
               goal={goal}
+              currentGoalType={data.goalType}
               showTodayPriority={config.showTodayPriority}
             />
           ))}
@@ -55,6 +56,7 @@ function GoalsPageInner({ data, goalType }: GoalsPageInnerProps) {
                 <GoalCard
                   key={goal.id}
                   goal={goal}
+                  currentGoalType={data.goalType}
                   showTodayPriority={config.showTodayPriority}
                 />
               ))}

@@ -45,13 +45,14 @@ describe("Phase 1B2-G3A goal lifecycle backend", () => {
     expect(actionsSource).not.toContain("current_focus");
   });
 
-  it("G3A-3. no Goal Settings UI added", () => {
-    const cardSource = readSource("components/jarvis/goals/goal-card.tsx");
+  it("G3A-3. lifecycle UI uses server actions, not direct Supabase", () => {
+    const panelSource = readSource("components/jarvis/goals/goal-settings-panel.tsx");
 
-    expect(cardSource).not.toContain("archiveGoal");
-    expect(cardSource).not.toContain("updateGoalMetadata");
-    expect(cardSource).not.toContain("restoreGoal");
-    expect(cardSource).not.toContain("Goal settings");
+    expect(panelSource).toContain("updateGoalMetadata");
+    expect(panelSource).toContain("archiveGoal");
+    expect(panelSource).not.toContain("restoreGoal");
+    expect(panelSource).not.toContain(".rpc(");
+    expect(panelSource).not.toContain("createClient");
   });
 
   it("G3A-4. G1/G2 read paths unchanged", () => {

@@ -80,6 +80,9 @@ vi.mock("@/app/goals/actions", () => ({
   deleteGoalLevel: vi.fn(),
   moveGoalLevel: vi.fn(),
   moveGoalTask: vi.fn(),
+  updateGoalMetadata: vi.fn(),
+  archiveGoal: vi.fn(),
+  restoreGoal: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -91,6 +94,7 @@ describe("Jarvis goals edit mode UI", () => {
     const html = renderToStaticMarkup(
       createElement(GoalCard, {
         goal: sampleGoal(),
+        currentGoalType: "short_term",
         showTodayPriority: false,
       }),
     );
@@ -112,6 +116,7 @@ describe("Jarvis goals edit mode UI", () => {
     const html = renderToStaticMarkup(
       createElement(GoalCard, {
         goal: sampleGoal({ status: "completed", progressPercent: 100 }),
+        currentGoalType: "short_term",
         showTodayPriority: false,
       }),
     );
@@ -331,6 +336,14 @@ describe("Jarvis goals edit mode UI", () => {
     expect(taskRowSource).toContain('const isActiveGoal = goalStatus === "active"');
     expect(taskRowSource).toContain("const canMoveTasks = isActiveGoal");
     expect(taskRowSource).toContain("const canDelete = isActiveGoal && levelTaskCount > 1");
+  });
+
+  it("edit mode renders Goal Settings below roadmap via dedicated panel", () => {
+    const cardSource = readSource("components/jarvis/goals/goal-card.tsx");
+
+    expect(cardSource).toContain("<GoalSettingsPanel");
+    expect(cardSource).toContain("isEditing={isEditing}");
+    expect(cardSource).toMatch(/<LevelRoadmap[\s\S]*<GoalSettingsPanel/);
   });
 
   it("does not change server actions or RPCs for edit mode", () => {
