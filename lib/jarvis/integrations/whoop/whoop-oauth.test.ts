@@ -30,8 +30,13 @@ import {
 import {
   exchangeWhoopAuthorizationCode,
   fetchWhoopBasicProfile,
+  normalizeWhoopExpiresIn,
   refreshWhoopTokenPair,
 } from "@/lib/jarvis/integrations/whoop/whoop-oauth-client";
+import {
+  WHOOP_OAUTH_ERROR_CODES,
+  WhoopOAuthError,
+} from "@/lib/jarvis/integrations/whoop/whoop-oauth-errors";
 import {
   encryptWhoopAccessToken,
   encryptWhoopRefreshToken,
@@ -351,6 +356,48 @@ describe("WHOOP callback route", () => {
     expect(location.searchParams.get("status")).toBe("error");
     expect(location.search).not.toContain("denied");
   });
+
+  it("redirects with token_exchange_failed without provider diagnostics", async () => {
+    buildAuthenticatedClaims();
+    global.fetch = fetchMock;
+    fetchMock.mockReset();
+
+    const pending = {
+      state: "Ab12Cd34",
+      userId: USER_ID,
+      issuedAt: Date.now(),
+    };
+
+    cookiesGetMock.mockReturnValue({
+      value: encodeWhoopOAuthStateCookie(pending),
+    });
+
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: "invalid_grant",
+        error_description: "client_secret=super-secret authorization_code=abc123",
+      }),
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const response = await callbackGET(
+      new NextRequest(
+        `https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback?code=secret-auth-code&state=${pending.state}`,
+      ),
+    );
+
+    const location = readRedirectLocation(response);
+    expect(location.searchParams.get("status")).toBe("error");
+    expect(location.searchParams.get("error")).toBe("token_exchange_failed");
+    expect(location.search).not.toContain("invalid_grant");
+    expect(location.search).not.toContain("client_secret");
+    expect(location.search).not.toContain("secret-auth-code");
+
+    consoleErrorSpy.mockRestore();
+  });
 });
 
 describe("WHOOP OAuth client endpoints", () => {
@@ -582,5 +629,288 @@ describe("WHOOP OAuth live client helpers with fetch mock", () => {
       success: true,
       alreadyRevoked: false,
     });
+  });
+});
+
+describe("WHOOP token request diagnostics and parsing", () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    setWhoopEnv();
+    global.fetch = fetchMock;
+    fetchMock.mockReset();
+    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  function expectSafeDiagnosticLogged(expected: {
+    operation: "token_exchange" | "token_refresh";
+    httpStatus: number;
+    oauthErrorCode: string;
+  }): void {
+    const diagnosticCall = consoleErrorSpy.mock.calls.find(
+      ([label, payload]) =>
+        label === "[whoop-oauth]" &&
+        typeof payload === "object" &&
+        payload !== null &&
+        "operation" in payload,
+    );
+
+    expect(diagnosticCall?.[1]).toEqual({
+      integration: "whoop",
+      operation: expected.operation,
+      httpStatus: expected.httpStatus,
+      oauthErrorCode: expected.oauthErrorCode,
+    });
+  }
+
+  function expectNoSecretsLogged(): void {
+    for (const call of consoleErrorSpy.mock.calls) {
+      const serialized = JSON.stringify(call);
+      expect(serialized).not.toContain("error_description");
+      expect(serialized).not.toContain("client_secret");
+      expect(serialized).not.toContain("authorization_code");
+      expect(serialized).not.toContain("secret-auth-code");
+      expect(serialized).not.toContain("access-token-value");
+      expect(serialized).not.toContain("refresh-token-value");
+      expect(serialized).not.toContain("super-secret");
+      expect(serialized).not.toContain("raw provider");
+    }
+  }
+
+  it("logs safe diagnostic for HTTP 400 invalid_grant", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: "invalid_grant",
+        error_description: "secret details",
+      }),
+    });
+
+    await expect(
+      exchangeWhoopAuthorizationCode({
+        code: "secret-auth-code",
+        redirectUri:
+          "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+      }),
+    ).rejects.toMatchObject({
+      code: WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
+      providerHttpStatus: 400,
+      providerOAuthErrorCode: "invalid_grant",
+    });
+
+    expectSafeDiagnosticLogged({
+      operation: "token_exchange",
+      httpStatus: 400,
+      oauthErrorCode: "invalid_grant",
+    });
+    expectNoSecretsLogged();
+  });
+
+  it("logs safe diagnostic for HTTP 401 invalid_client", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        error: "invalid_client",
+        error_description: "client_secret mismatch",
+      }),
+    });
+
+    await expect(
+      exchangeWhoopAuthorizationCode({
+        code: "secret-auth-code",
+        redirectUri:
+          "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+      }),
+    ).rejects.toMatchObject({
+      providerHttpStatus: 401,
+      providerOAuthErrorCode: "invalid_client",
+    });
+
+    expectSafeDiagnosticLogged({
+      operation: "token_exchange",
+      httpStatus: 401,
+      oauthErrorCode: "invalid_client",
+    });
+    expectNoSecretsLogged();
+  });
+
+  it("maps unknown provider errors to unknown_oauth_error", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: "unexpected_provider_code",
+        error_description: "something else",
+      }),
+    });
+
+    await expect(
+      exchangeWhoopAuthorizationCode({
+        code: "secret-auth-code",
+        redirectUri:
+          "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+      }),
+    ).rejects.toMatchObject({
+      providerOAuthErrorCode: "unknown_oauth_error",
+    });
+
+    expectSafeDiagnosticLogged({
+      operation: "token_exchange",
+      httpStatus: 400,
+      oauthErrorCode: "unknown_oauth_error",
+    });
+    expectNoSecretsLogged();
+  });
+
+  it("preserves HTTP status for malformed non-JSON provider failures", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => {
+        throw new Error("invalid json");
+      },
+    });
+
+    await expect(
+      exchangeWhoopAuthorizationCode({
+        code: "secret-auth-code",
+        redirectUri:
+          "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+      }),
+    ).rejects.toMatchObject({
+      providerHttpStatus: 502,
+      providerOAuthErrorCode: "unknown_oauth_error",
+    });
+
+    expectSafeDiagnosticLogged({
+      operation: "token_exchange",
+      httpStatus: 502,
+      oauthErrorCode: "unknown_oauth_error",
+    });
+    expectNoSecretsLogged();
+  });
+
+  it("identifies refresh diagnostics separately from token exchange", async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "invalid_grant" }),
+    });
+
+    await expect(refreshWhoopTokenPair("refresh-token-value")).rejects.toMatchObject(
+      {
+        code: WHOOP_OAUTH_ERROR_CODES.tokenRefreshFailed,
+        providerHttpStatus: 400,
+        providerOAuthErrorCode: "invalid_grant",
+      },
+    );
+
+    expectSafeDiagnosticLogged({
+      operation: "token_refresh",
+      httpStatus: 400,
+      oauthErrorCode: "invalid_grant",
+    });
+    expectNoSecretsLogged();
+  });
+
+  it("accepts numeric expires_in", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: "access-token-value",
+        refresh_token: "refresh-token-value",
+        expires_in: 3600,
+      }),
+    });
+
+    const tokenPair = await exchangeWhoopAuthorizationCode({
+      code: "secret-auth-code",
+      redirectUri:
+        "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+    });
+
+    expect(tokenPair.expiresIn).toBe(3600);
+  });
+
+  it("accepts string expires_in and normalizes to number", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: "access-token-value",
+        refresh_token: "refresh-token-value",
+        expires_in: "3600",
+      }),
+    });
+
+    const tokenPair = await exchangeWhoopAuthorizationCode({
+      code: "secret-auth-code",
+      redirectUri:
+        "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+    });
+
+    expect(tokenPair.expiresIn).toBe(3600);
+    expect(typeof tokenPair.expiresIn).toBe("number");
+  });
+
+  it("rejects invalid expires_in values", async () => {
+    for (const expiresIn of ["", "abc", "0", "-1", "36.5", Number.NaN, null]) {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: "access-token-value",
+          refresh_token: "refresh-token-value",
+          expires_in: expiresIn,
+        }),
+      });
+
+      await expect(
+        exchangeWhoopAuthorizationCode({
+          code: "secret-auth-code",
+          redirectUri:
+            "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+        }),
+      ).rejects.toBeInstanceOf(WhoopOAuthError);
+    }
+  });
+
+  it("does not log successful token response fields", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        access_token: "access-token-value",
+        refresh_token: "refresh-token-value",
+        expires_in: 3600,
+      }),
+    });
+
+    await exchangeWhoopAuthorizationCode({
+      code: "secret-auth-code",
+      redirectUri:
+        "https://parker-jarvis-pw.vercel.app/api/integrations/whoop/callback",
+    });
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("WHOOP expires_in normalization helper", () => {
+  it("normalizes valid numeric and string values", () => {
+    expect(normalizeWhoopExpiresIn(3600)).toBe(3600);
+    expect(normalizeWhoopExpiresIn("3600")).toBe(3600);
+  });
+
+  it("rejects invalid values", () => {
+    expect(normalizeWhoopExpiresIn("")).toBeNull();
+    expect(normalizeWhoopExpiresIn("abc")).toBeNull();
+    expect(normalizeWhoopExpiresIn(0)).toBeNull();
+    expect(normalizeWhoopExpiresIn(-1)).toBeNull();
+    expect(normalizeWhoopExpiresIn("36.5")).toBeNull();
+    expect(normalizeWhoopExpiresIn(Number.POSITIVE_INFINITY)).toBeNull();
   });
 });

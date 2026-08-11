@@ -10,6 +10,11 @@ import {
   WHOOP_TOKEN_URL,
 } from "@/lib/jarvis/integrations/whoop/whoop-config";
 import {
+  logWhoopTokenRequestDiagnostic,
+  sanitizeWhoopOAuthProviderErrorCode,
+  type WhoopTokenRequestOperation,
+} from "@/lib/jarvis/integrations/whoop/whoop-oauth-diagnostics";
+import {
   WHOOP_OAUTH_ERROR_CODES,
   WhoopOAuthError,
 } from "@/lib/jarvis/integrations/whoop/whoop-oauth-errors";
@@ -29,24 +34,60 @@ export type WhoopBasicProfile = {
 type WhoopTokenResponse = {
   access_token?: string;
   refresh_token?: string;
-  expires_in?: number;
+  expires_in?: number | string;
   scope?: string;
   token_type?: string;
   error?: string;
   error_description?: string;
 };
 
+export function normalizeWhoopExpiresIn(value: unknown): number | null {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+
+    if (trimmed.length === 0 || !/^\d+$/.test(trimmed)) {
+      return null;
+    }
+
+    const parsed = Number(trimmed);
+
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  return null;
+}
+
+function tokenFailureCode(operation: WhoopTokenRequestOperation) {
+  return operation === "token_refresh"
+    ? WHOOP_OAUTH_ERROR_CODES.tokenRefreshFailed
+    : WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed;
+}
+
 function validateTokenResponse(
   response: WhoopTokenResponse,
   requireRefreshToken: boolean,
+  operation: WhoopTokenRequestOperation,
 ): WhoopTokenPair {
   const accessToken = response.access_token;
   const refreshToken = response.refresh_token;
-  const expiresIn = response.expires_in;
+  const expiresIn = normalizeWhoopExpiresIn(response.expires_in);
+  const failureCode = tokenFailureCode(operation);
 
   if (typeof accessToken !== "string" || accessToken.length === 0) {
     throw new WhoopOAuthError(
-      WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
+      failureCode,
       "WHOOP token response missing access token",
     );
   }
@@ -56,14 +97,14 @@ function validateTokenResponse(
     (typeof refreshToken !== "string" || refreshToken.length === 0)
   ) {
     throw new WhoopOAuthError(
-      WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
+      failureCode,
       "WHOOP token response missing refresh token",
     );
   }
 
-  if (typeof expiresIn !== "number" || !Number.isFinite(expiresIn) || expiresIn <= 0) {
+  if (expiresIn === null) {
     throw new WhoopOAuthError(
-      WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
+      failureCode,
       "WHOOP token response missing expiry",
     );
   }
@@ -78,9 +119,48 @@ function validateTokenResponse(
   };
 }
 
+async function readWhoopTokenResponsePayload(
+  response: Response,
+): Promise<WhoopTokenResponse | null> {
+  try {
+    return (await response.json()) as WhoopTokenResponse;
+  } catch {
+    return null;
+  }
+}
+
+function throwWhoopTokenProviderFailure(params: {
+  operation: WhoopTokenRequestOperation;
+  httpStatus: number;
+  providerError: unknown;
+}): never {
+  const oauthErrorCode = sanitizeWhoopOAuthProviderErrorCode(
+    params.providerError,
+  );
+
+  logWhoopTokenRequestDiagnostic({
+    integration: "whoop",
+    operation: params.operation,
+    httpStatus: params.httpStatus,
+    oauthErrorCode,
+  });
+
+  throw new WhoopOAuthError(
+    tokenFailureCode(params.operation),
+    params.operation === "token_refresh"
+      ? "WHOOP token refresh failed"
+      : "WHOOP token exchange failed",
+    {
+      providerHttpStatus: params.httpStatus,
+      providerOAuthErrorCode: oauthErrorCode,
+    },
+  );
+}
+
 async function postWhoopTokenRequest(
   body: URLSearchParams,
   requireRefreshToken: boolean,
+  operation: WhoopTokenRequestOperation,
 ): Promise<WhoopTokenPair> {
   let response: Response;
 
@@ -94,30 +174,29 @@ async function postWhoopTokenRequest(
     });
   } catch {
     throw new WhoopOAuthError(
-      WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
+      tokenFailureCode(operation),
       "WHOOP token request failed",
     );
   }
 
-  let payload: WhoopTokenResponse;
+  const payload = await readWhoopTokenResponsePayload(response);
 
-  try {
-    payload = (await response.json()) as WhoopTokenResponse;
-  } catch {
+  if (!response.ok) {
+    throwWhoopTokenProviderFailure({
+      operation,
+      httpStatus: response.status,
+      providerError: payload?.error,
+    });
+  }
+
+  if (!payload) {
     throw new WhoopOAuthError(
-      WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
+      tokenFailureCode(operation),
       "WHOOP token response was invalid",
     );
   }
 
-  if (!response.ok) {
-    throw new WhoopOAuthError(
-      WHOOP_OAUTH_ERROR_CODES.tokenExchangeFailed,
-      "WHOOP token exchange failed",
-    );
-  }
-
-  return validateTokenResponse(payload, requireRefreshToken);
+  return validateTokenResponse(payload, requireRefreshToken, operation);
 }
 
 export async function exchangeWhoopAuthorizationCode(params: {
@@ -134,7 +213,7 @@ export async function exchangeWhoopAuthorizationCode(params: {
     redirect_uri: params.redirectUri,
   });
 
-  return postWhoopTokenRequest(body, true);
+  return postWhoopTokenRequest(body, true, "token_exchange");
 }
 
 export async function refreshWhoopTokenPair(
@@ -150,7 +229,7 @@ export async function refreshWhoopTokenPair(
     scope: "offline",
   });
 
-  const tokenPair = await postWhoopTokenRequest(body, true);
+  const tokenPair = await postWhoopTokenRequest(body, true, "token_refresh");
 
   if (tokenPair.refreshToken.length === 0) {
     throw new WhoopOAuthError(

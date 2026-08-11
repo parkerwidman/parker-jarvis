@@ -21,13 +21,26 @@ export const WHOOP_OAUTH_ERROR_CODES = {
 export type WhoopOAuthErrorCode =
   (typeof WHOOP_OAUTH_ERROR_CODES)[keyof typeof WHOOP_OAUTH_ERROR_CODES];
 
+export type WhoopOAuthProviderDiagnostic = {
+  providerHttpStatus?: number;
+  providerOAuthErrorCode?: string;
+};
+
 export class WhoopOAuthError extends Error {
   readonly code: WhoopOAuthErrorCode;
+  readonly providerHttpStatus?: number;
+  readonly providerOAuthErrorCode?: string;
 
-  constructor(code: WhoopOAuthErrorCode, message?: string) {
+  constructor(
+    code: WhoopOAuthErrorCode,
+    message?: string,
+    diagnostic?: WhoopOAuthProviderDiagnostic,
+  ) {
     super(message ?? code);
     this.name = "WhoopOAuthError";
     this.code = code;
+    this.providerHttpStatus = diagnostic?.providerHttpStatus;
+    this.providerOAuthErrorCode = diagnostic?.providerOAuthErrorCode;
   }
 }
 
