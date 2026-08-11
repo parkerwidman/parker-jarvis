@@ -109,7 +109,7 @@ describe("WHOOP F1 foundation migration", () => {
     expect(cryptoSource).not.toContain("console.log");
   });
 
-  it("does not add OAuth/API/UI routes in F1", () => {
+  it("does not add OAuth/API/UI routes in F1 migration scope", () => {
     expect(readSource("lib/jarvis/life-areas/module-registry.ts")).toContain(
       'key: "fitness"',
     );
@@ -117,16 +117,8 @@ describe("WHOOP F1 foundation migration", () => {
       "implemented: false",
     );
 
-    const repoScanTargets = [
-      "app/api/integrations/whoop",
-      "app/fitness",
-      "lib/jarvis/integrations/whoop/whoop-client.ts",
-      "lib/jarvis/integrations/whoop/whoop-oauth",
-    ];
-
-    for (const target of repoScanTargets) {
-      expect(() => readSource(target)).toThrow();
-    }
+    expect(migration).not.toContain("whoop_upsert_oauth_connection");
+    expect(migration).not.toContain("whoop_claim_refresh");
   });
 
   it("SQL validation covers RLS, credentials isolation, and structure", () => {

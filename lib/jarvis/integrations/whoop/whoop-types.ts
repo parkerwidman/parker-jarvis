@@ -30,8 +30,17 @@ export type WhoopConnectionCredentialsRow = {
   encrypted_access_token: string;
   encrypted_refresh_token: string;
   encryption_version: number;
+  refresh_claim_id: string | null;
+  refresh_claimed_at: string | null;
+  token_version: number;
   created_at: string;
   updated_at: string;
+};
+
+/** Server-side join of safe metadata and credentials for token management. */
+export type WhoopRuntimeConnection = {
+  connection: WhoopConnectionRow;
+  credentials: WhoopConnectionCredentialsRow;
 };
 
 export type WhoopCycleRow = {
