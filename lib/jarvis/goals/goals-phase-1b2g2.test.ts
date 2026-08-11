@@ -73,12 +73,17 @@ describe("Phase 1B2-G2 archived-goal task read filtering", () => {
     );
   });
 
-  it("G2-5. Daily Plan continues through listTasks", () => {
-    const source = readSource("lib/jarvis/plans/generate-daily-plan.ts");
+  it("G2-5. Daily Plan lists from jarvis_visible_tasks", () => {
+    const source = readSource("lib/jarvis/plans/daily-plan-goal-planning.ts");
 
-    expect(source).toContain('from "@/lib/jarvis/tools/task-tools"');
-    expect(source).toContain("listTasks(supabase, userId)");
-    expect(source).not.toContain('.from("tasks")');
+    expect(source).toMatch(
+      /listDailyPlanTasks[\s\S]*\.from\("jarvis_visible_tasks"\)/,
+    );
+    expect(source).not.toMatch(/listDailyPlanTasks[\s\S]*\.from\("tasks"\)/);
+
+    const generator = readSource("lib/jarvis/plans/generate-daily-plan.ts");
+    expect(generator).not.toContain("listTasks(supabase, userId)");
+    expect(generator).not.toContain('.from("tasks")');
   });
 
   it("G2-6. Ask Jarvis list_tasks continues through listTasks", () => {

@@ -17,7 +17,19 @@ import {
   loadMelusiPlanningSnapshot,
   type MelusiPlanningSnapshot,
 } from "@/lib/jarvis/projects/load-melusi-planning-snapshot";
-import { listTasks, type TaskRecord } from "@/lib/jarvis/tools/task-tools";
+import {
+  buildDailyPlanActionableIndex,
+  buildDailyPlanGoalPlanningPromptSections,
+  buildDailyPlanPlanningContext,
+  buildDailyPlanPriorityInstructionSection,
+  buildDailyPlanTaskAllowlist,
+  filterDailyPlanPlanningTasks,
+  listDailyPlanTasks,
+  loadDailyPlanGoalRoadmap,
+  loadDailyPlanProfilePlanningFields,
+  prepareDailyPlanTasks,
+  type DailyPlanPlanningContext,
+} from "@/lib/jarvis/plans/daily-plan-goal-planning";
 
 const DEFAULT_TIMEZONE = "America/Chicago";
 const SAFE_ERROR_MESSAGE = "Jarvis could not generate the daily plan.";
@@ -84,16 +96,6 @@ export type PlanItem = {
 export type GenerateDailyPlanResult =
   | { success: true; planDate: string }
   | { success: false; error: string; planDate?: string };
-
-type PlanTask = {
-  id: string;
-  title: string;
-  priority: string;
-  due_at: string | null;
-  overdue: boolean;
-  dueToday: boolean;
-  projectName?: string;
-};
 
 type PlanCalendarEvent = {
   id: string;
@@ -340,33 +342,6 @@ function toIsoWithOffset(isoString: string, timeZone: string): string {
   return `${lookup.year}-${lookup.month}-${lookup.day}T${lookup.hour}:${lookup.minute}:${lookup.second}${offset}`;
 }
 
-function prepareTasks(
-  tasks: TaskRecord[],
-  timeZone: string,
-  planDate: string,
-  projectNameByTaskId: Record<string, string> = {},
-): PlanTask[] {
-  return tasks
-    .filter((task) => task.status !== "done")
-    .map((task) => {
-      const dueLocal = task.due_at
-        ? getLocalDateFromIso(task.due_at, timeZone)
-        : null;
-
-      const projectName = projectNameByTaskId[task.id];
-
-      return {
-        id: task.id,
-        title: task.title,
-        priority: task.priority,
-        due_at: task.due_at,
-        overdue: dueLocal !== null && dueLocal < planDate,
-        dueToday: dueLocal === planDate,
-        ...(projectName ? { projectName } : {}),
-      };
-    });
-}
-
 function prepareCalendarEvents(
   events: OutlookEvent[],
   planDate: string,
@@ -446,7 +421,12 @@ function truncateMorningBrief(content: string, maxLength = 2500): string {
   return `${trimmed.slice(0, maxLength).trimEnd()}…`;
 }
 
-function buildInstructions(context: JarvisContext, timeZone: string): string {
+function buildInstructions(
+  context: JarvisContext,
+  timeZone: string,
+  planningContext: DailyPlanPlanningContext,
+  profileCurrentFocus: string | null,
+): string {
   const profile = context.profile;
   const profileLines: string[] = [];
 
@@ -456,11 +436,15 @@ function buildInstructions(context: JarvisContext, timeZone: string): string {
   if (profile?.communication_style) {
     profileLines.push(`Communication style: ${profile.communication_style}`);
   }
-  if (profile?.current_focus) {
-    profileLines.push(`Current focus: ${profile.current_focus}`);
+  if (profileCurrentFocus) {
+    profileLines.push(`Current focus: ${profileCurrentFocus}`);
   }
 
   const lifeAreaNames = context.lifeAreas.map((area) => area.name).join(", ");
+  const prioritySection = buildDailyPlanPriorityInstructionSection(
+    planningContext,
+    profileCurrentFocus,
+  );
 
   return `You are Jarvis generating Parker's Daily Plan. This is advisory and read-only.
 
@@ -489,7 +473,9 @@ function buildInstructions(context: JarvisContext, timeZone: string): string {
 - Recorded decisions should not be contradicted without clearly explaining the conflict.
 - Old updates should not automatically override newer information.
 - Do not invent task durations. Use reasonable block lengths based on existing planning behavior.
-- Consider active goals and relevant memories.
+- Schedule only from the eligible actionable planning sections provided in the prompt.
+- Legacy active goals in context are background only. Do not schedule tasks that are absent from the eligible planning sections.
+- Consider relevant memories.
 - Include realistic breaks, meals, transition time, and buffer time.
 - Avoid planning every minute of the day.
 - Avoid unrealistic workloads.
@@ -516,6 +502,8 @@ Only when useful.
 
 Keep the summary concise and practical.
 
+${prioritySection}
+
 Timezone for this plan: ${timeZone}
 ${profileLines.length > 0 ? `\nProfile:\n${profileLines.join("\n")}` : ""}
 ${lifeAreaNames ? `\nActive life areas: ${lifeAreaNames}` : ""}`;
@@ -526,7 +514,7 @@ function buildGenerationPrompt(input: {
   dateTimeSection: string;
   goals: Goal[];
   memories: Memory[];
-  tasks: PlanTask[];
+  planningContext: DailyPlanPlanningContext;
   calendarEvents: PlanCalendarEvent[];
   morningBrief: MorningBriefContext | null;
   melusiSnapshot: MelusiPlanningSnapshot | null;
@@ -551,12 +539,16 @@ function buildGenerationPrompt(input: {
     sections.push("\nPermanent memories: none returned.");
   }
 
-  if (input.tasks.length > 0) {
+  const planningSections = buildDailyPlanGoalPlanningPromptSections(
+    input.planningContext,
+  );
+
+  if (planningSections.length > 0) {
     sections.push(
-      `\nUnfinished tasks (projectName is present for Melusi project-linked tasks):\n${JSON.stringify(input.tasks, null, 2)}`,
+      `\nEligible actionable planning work (use exact task ids for task-backed blocks):\n${planningSections.join("\n")}`,
     );
   } else {
-    sections.push("\nUnfinished tasks: none returned.");
+    sections.push("\nEligible actionable planning work: none returned.");
   }
 
   if (input.melusiSnapshot?.hasMeaningfulActivity) {
@@ -693,15 +685,37 @@ function sortPlanItems(items: PlanItem[]): PlanItem[] {
   );
 }
 
+export function filterSuggestedItemsByTaskAllowlist(
+  suggestedItems: PlanItem[],
+  taskAllowlist: Set<string>,
+): PlanItem[] {
+  return suggestedItems.filter((item) => {
+    if (item.source !== "task" || item.sourceId === null) {
+      return true;
+    }
+
+    return taskAllowlist.has(item.sourceId);
+  });
+}
+
 function validateSuggestedItems(
   suggestedItems: unknown[],
   fixedItems: PlanItem[],
+  taskAllowlist: Set<string>,
 ): PlanItem[] | null {
   const validated: PlanItem[] = [];
 
   for (const item of suggestedItems) {
     if (!isValidSuggestedPlanItem(item)) {
       return null;
+    }
+
+    if (
+      item.source === "task" &&
+      item.sourceId !== null &&
+      !taskAllowlist.has(item.sourceId)
+    ) {
+      continue;
     }
 
     validated.push(item);
@@ -891,19 +905,41 @@ export async function generateDailyPlan(
     return { success: false, error: SAFE_ERROR_MESSAGE, planDate };
   }
 
-  const [tasksResult, melusiSnapshot] = await Promise.all([
-    listTasks(supabase, userId),
-    loadMelusiPlanningSnapshot(supabase, userId, { timeZone, now }),
-  ]);
+  const [tasksResult, melusiSnapshot, profilePlanningFields, goalRoadmap] =
+    await Promise.all([
+      listDailyPlanTasks(supabase, userId),
+      loadMelusiPlanningSnapshot(supabase, userId, { timeZone, now }),
+      loadDailyPlanProfilePlanningFields(supabase, userId),
+      loadDailyPlanGoalRoadmap(supabase, userId),
+    ]);
 
-  const unfinishedTasks = tasksResult.success
-    ? prepareTasks(
-        tasksResult.tasks,
-        timeZone,
-        planDate,
-        melusiSnapshot.projectNameByTaskId,
-      )
+  const actionableGoalTaskIndex = buildDailyPlanActionableIndex({
+    goals: goalRoadmap.goals,
+    levels: goalRoadmap.levels,
+    goalTasks: tasksResult.success ? tasksResult.tasks : [],
+    todayPriorityGoalId: profilePlanningFields.todayPriorityGoalId,
+  });
+
+  const filteredPlanningTasks = tasksResult.success
+    ? filterDailyPlanPlanningTasks(tasksResult.tasks, actionableGoalTaskIndex)
     : [];
+
+  const planningTasks = prepareDailyPlanTasks(
+    filteredPlanningTasks,
+    timeZone,
+    planDate,
+    actionableGoalTaskIndex,
+    melusiSnapshot.projectNameByTaskId,
+  );
+
+  const planningContext = buildDailyPlanPlanningContext({
+    planningTasks,
+    goals: goalRoadmap.goals,
+    todayPriorityGoalId: profilePlanningFields.todayPriorityGoalId,
+    currentFocus: profilePlanningFields.currentFocus,
+  });
+
+  const taskAllowlist = buildDailyPlanTaskAllowlist(planningTasks);
 
   const activeGoals = context.goals.filter((goal) => goal.status === "active");
   const memories = context.memories;
@@ -957,13 +993,18 @@ export async function generateDailyPlan(
         }
       : null;
 
-  const instructions = buildInstructions(context, timeZone);
+  const instructions = buildInstructions(
+    context,
+    timeZone,
+    planningContext,
+    profilePlanningFields.currentFocus,
+  );
   const prompt = buildGenerationPrompt({
     localDateLabel,
     dateTimeSection: formatDateTimeSection(timeZone, now),
     goals: activeGoals,
     memories,
-    tasks: unfinishedTasks,
+    planningContext,
     calendarEvents,
     morningBrief,
     melusiSnapshot: melusiSnapshot.hasMeaningfulActivity ? melusiSnapshot : null,
@@ -1013,6 +1054,7 @@ export async function generateDailyPlan(
   const validatedSuggested = validateSuggestedItems(
     modelOutput.items,
     fixedItems,
+    taskAllowlist,
   );
 
   if (validatedSuggested === null) {
