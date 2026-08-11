@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAutomationClient } from "@/lib/supabase/automation";
+import { escapePostgrestQuotedFilterValue } from "@/lib/jarvis/integrations/whoop/whoop-sync-claim-filter";
 import { WHOOP_WEBHOOK_STALE_PENDING_MS } from "@/lib/jarvis/integrations/whoop/whoop-webhook-config";
 import { WHOOP_WEBHOOK_ERROR_CODES } from "@/lib/jarvis/integrations/whoop/whoop-webhook-errors";
 import type {
@@ -313,4 +314,36 @@ export function isWhoopWebhookEventStatus(
   value: string,
 ): value is WhoopWebhookEventStatus {
   return value === "pending" || value === "processed" || value === "failed";
+}
+
+function buildWhoopWebhookReplayOrFilter(staleBeforeIso: string): string {
+  const quotedStaleBefore = escapePostgrestQuotedFilterValue(staleBeforeIso);
+
+  return `status.eq.failed,and(status.eq.pending,updated_at.lt.${quotedStaleBefore})`;
+}
+
+export async function listWhoopWebhookEventsForReplay(params: {
+  userId: string;
+  limit: number;
+  now?: Date;
+}): Promise<WhoopWebhookEventRecord[]> {
+  const supabase = getAutomationClient();
+  const now = params.now ?? new Date();
+  const staleBeforeIso = new Date(
+    now.getTime() - WHOOP_WEBHOOK_STALE_PENDING_MS,
+  ).toISOString();
+
+  const { data, error } = await supabase
+    .from("whoop_webhook_events")
+    .select(WEBHOOK_EVENT_SELECT)
+    .eq("user_id", params.userId)
+    .or(buildWhoopWebhookReplayOrFilter(staleBeforeIso))
+    .order("received_at", { ascending: true })
+    .limit(params.limit);
+
+  if (error || !data) {
+    return [];
+  }
+
+  return data as WhoopWebhookEventRecord[];
 }

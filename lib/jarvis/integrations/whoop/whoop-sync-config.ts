@@ -8,6 +8,9 @@ import {
 /** Initial manual sync backfill window for paginated WHOOP collections. */
 export const WHOOP_SYNC_BACKFILL_DAYS = 90;
 
+/** Rolling window for daily automatic reconciliation. */
+export const WHOOP_RECONCILE_WINDOW_DAYS = 7;
+
 export const WHOOP_SYNC_PAGE_LIMIT = 25;
 
 /** Safety bound for paginated collection fetches (25 records/page). */
@@ -46,6 +49,21 @@ export function getWhoopSyncWindow(now = Date.now()): {
 } {
   const endDate = new Date(now);
   const startDate = new Date(now - WHOOP_SYNC_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
+
+  return {
+    start: startDate.toISOString(),
+    end: endDate.toISOString(),
+  };
+}
+
+export function getWhoopReconcileWindow(now = Date.now()): {
+  start: string;
+  end: string;
+} {
+  const endDate = new Date(now);
+  const startDate = new Date(
+    now - WHOOP_RECONCILE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  );
 
   return {
     start: startDate.toISOString(),

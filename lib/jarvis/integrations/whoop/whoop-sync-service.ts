@@ -26,6 +26,7 @@ import {
   WHOOP_SLEEPS_PATH,
   WHOOP_SYNC_BACKFILL_DAYS,
   WHOOP_WORKOUTS_PATH,
+  getWhoopReconcileWindow,
   getWhoopSyncWindow,
 } from "@/lib/jarvis/integrations/whoop/whoop-sync-config";
 import {
@@ -159,6 +160,108 @@ function syncFailureHttpStatus(code: WhoopSyncErrorCode): number {
   }
 }
 
+async function runWhoopCollectionSync(params: {
+  userId: string;
+  whoopUserId: number;
+  accessToken: string;
+  window: { start: string; end: string };
+  syncedAt: string;
+}): Promise<WhoopSyncSummary> {
+  const { start, end } = params.window;
+
+  const cycleRecords = await fetchWhoopPaginatedCollection({
+    accessToken: params.accessToken,
+    path: WHOOP_CYCLES_PATH,
+    start,
+    end,
+    parseRecord: parseCycleRecord,
+  });
+
+  const mappedCycles = cycleRecords.map((record) =>
+    mapWhoopCycleRecord({
+      userId: params.userId,
+      expectedWhoopUserId: params.whoopUserId,
+      record,
+    }),
+  );
+  await upsertWhoopCycles(mappedCycles);
+
+  const recoveryRecords = await fetchWhoopPaginatedCollection({
+    accessToken: params.accessToken,
+    path: WHOOP_RECOVERIES_PATH,
+    start,
+    end,
+    parseRecord: parseRecoveryRecord,
+  });
+
+  const mappedRecoveries = recoveryRecords.map((record) =>
+    mapWhoopRecoveryRecord({
+      userId: params.userId,
+      expectedWhoopUserId: params.whoopUserId,
+      record,
+    }),
+  );
+  await upsertWhoopRecoveries(mappedRecoveries);
+
+  const sleepRecords = await fetchWhoopPaginatedCollection({
+    accessToken: params.accessToken,
+    path: WHOOP_SLEEPS_PATH,
+    start,
+    end,
+    parseRecord: parseSleepRecord,
+  });
+
+  const mappedSleeps = sleepRecords.map((record) =>
+    mapWhoopSleepRecord({
+      userId: params.userId,
+      expectedWhoopUserId: params.whoopUserId,
+      record,
+    }),
+  );
+  await upsertWhoopSleeps(mappedSleeps);
+
+  const workoutRecords = await fetchWhoopPaginatedCollection({
+    accessToken: params.accessToken,
+    path: WHOOP_WORKOUTS_PATH,
+    start,
+    end,
+    parseRecord: parseWorkoutRecord,
+  });
+
+  const mappedWorkouts = workoutRecords.map((record) =>
+    mapWhoopWorkoutRecord({
+      userId: params.userId,
+      expectedWhoopUserId: params.whoopUserId,
+      record,
+    }),
+  );
+  await upsertWhoopWorkouts(mappedWorkouts);
+
+  const bodyMeasurement = parseWhoopBodyMeasurementRecord(
+    await fetchWhoopJson<unknown>({
+      accessToken: params.accessToken,
+      path: WHOOP_BODY_MEASUREMENT_PATH,
+    }),
+  );
+
+  await upsertWhoopBodyMeasurement(
+    mapWhoopBodyMeasurementRecord({
+      userId: params.userId,
+      record: bodyMeasurement,
+      syncedAt: params.syncedAt,
+    }),
+  );
+
+  return {
+    cycles: mappedCycles.length,
+    recoveries: mappedRecoveries.length,
+    sleeps: mappedSleeps.length,
+    workouts: mappedWorkouts.length,
+    bodyMeasurement: true,
+    syncedAt: params.syncedAt,
+  };
+}
+
 /**
  * Manual WHOOP sync orchestrator.
  *
@@ -166,8 +269,11 @@ function syncFailureHttpStatus(code: WhoopSyncErrorCode): number {
  * this invocation mid-sync, stale-claim recovery on whoop_connections is the
  * fallback that allows a later retry to proceed.
  */
-export async function syncWhoopFitnessData(userId: string): Promise<WhoopSyncResult> {
-  const claim = await claimWhoopSync(userId);
+export async function syncWhoopFitnessDataForWindow(params: {
+  userId: string;
+  window: { start: string; end: string };
+}): Promise<WhoopSyncResult> {
+  const claim = await claimWhoopSync(params.userId);
 
   if (!claim.claimed) {
     const error =
@@ -185,7 +291,7 @@ export async function syncWhoopFitnessData(userId: string): Promise<WhoopSyncRes
   let succeeded = false;
 
   try {
-    const tokenResult = await getValidWhoopAccessToken(userId);
+    const tokenResult = await getValidWhoopAccessToken(params.userId);
 
     if (!tokenResult.success) {
       const error =
@@ -193,107 +299,26 @@ export async function syncWhoopFitnessData(userId: string): Promise<WhoopSyncRes
           ? WHOOP_SYNC_ERROR_CODES.reconnectRequired
           : WHOOP_SYNC_ERROR_CODES.notConnected;
 
-      await markWhoopSyncFailure(userId, error);
+      await markWhoopSyncFailure(params.userId, error);
       return { ok: false, error, httpStatus: syncFailureHttpStatus(error) };
     }
 
-    const { start, end } = getWhoopSyncWindow();
     const syncedAt = new Date().toISOString();
-    const accessToken = tokenResult.accessToken;
-    const { whoopUserId } = claim;
-
-    const cycleRecords = await fetchWhoopPaginatedCollection({
-      accessToken,
-      path: WHOOP_CYCLES_PATH,
-      start,
-      end,
-      parseRecord: parseCycleRecord,
+    const summary = await runWhoopCollectionSync({
+      userId: params.userId,
+      whoopUserId: claim.whoopUserId,
+      accessToken: tokenResult.accessToken,
+      window: params.window,
+      syncedAt,
     });
 
-    const mappedCycles = cycleRecords.map((record) =>
-      mapWhoopCycleRecord({ userId, expectedWhoopUserId: whoopUserId, record }),
-    );
-    await upsertWhoopCycles(mappedCycles);
-
-    const recoveryRecords = await fetchWhoopPaginatedCollection({
-      accessToken,
-      path: WHOOP_RECOVERIES_PATH,
-      start,
-      end,
-      parseRecord: parseRecoveryRecord,
-    });
-
-    const mappedRecoveries = recoveryRecords.map((record) =>
-      mapWhoopRecoveryRecord({
-        userId,
-        expectedWhoopUserId: whoopUserId,
-        record,
-      }),
-    );
-    await upsertWhoopRecoveries(mappedRecoveries);
-
-    const sleepRecords = await fetchWhoopPaginatedCollection({
-      accessToken,
-      path: WHOOP_SLEEPS_PATH,
-      start,
-      end,
-      parseRecord: parseSleepRecord,
-    });
-
-    const mappedSleeps = sleepRecords.map((record) =>
-      mapWhoopSleepRecord({ userId, expectedWhoopUserId: whoopUserId, record }),
-    );
-    await upsertWhoopSleeps(mappedSleeps);
-
-    const workoutRecords = await fetchWhoopPaginatedCollection({
-      accessToken,
-      path: WHOOP_WORKOUTS_PATH,
-      start,
-      end,
-      parseRecord: parseWorkoutRecord,
-    });
-
-    const mappedWorkouts = workoutRecords.map((record) =>
-      mapWhoopWorkoutRecord({
-        userId,
-        expectedWhoopUserId: whoopUserId,
-        record,
-      }),
-    );
-    await upsertWhoopWorkouts(mappedWorkouts);
-
-    const bodyMeasurement = parseWhoopBodyMeasurementRecord(
-      await fetchWhoopJson<unknown>({
-        accessToken,
-        path: WHOOP_BODY_MEASUREMENT_PATH,
-      }),
-    );
-
-    await upsertWhoopBodyMeasurement(
-      mapWhoopBodyMeasurementRecord({
-        userId,
-        record: bodyMeasurement,
-        syncedAt,
-      }),
-    );
-
-    await markWhoopSyncSuccess(userId, syncedAt);
+    await markWhoopSyncSuccess(params.userId, syncedAt);
     succeeded = true;
 
-    return {
-      ok: true,
-      summary: {
-        cycles: mappedCycles.length,
-        recoveries: mappedRecoveries.length,
-        sleeps: mappedSleeps.length,
-        workouts: mappedWorkouts.length,
-        bodyMeasurement: true,
-        syncedAt,
-      },
-    };
+    return { ok: true, summary };
   } catch (error) {
     const code = mapSyncError(error);
-    await markWhoopSyncFailure(userId, code).catch(() => undefined);
+    await markWhoopSyncFailure(params.userId, code).catch(() => undefined);
 
     return {
       ok: false,
@@ -302,9 +327,29 @@ export async function syncWhoopFitnessData(userId: string): Promise<WhoopSyncRes
     };
   } finally {
     if (!succeeded) {
-      await releaseWhoopSyncClaim(userId).catch(() => undefined);
+      await releaseWhoopSyncClaim(params.userId).catch(() => undefined);
     }
   }
 }
 
-export { WHOOP_SYNC_BACKFILL_DAYS, getWhoopSyncWindow };
+export async function syncWhoopFitnessData(userId: string): Promise<WhoopSyncResult> {
+  return syncWhoopFitnessDataForWindow({
+    userId,
+    window: getWhoopSyncWindow(),
+  });
+}
+
+export async function reconcileWhoopFitnessData(
+  userId: string,
+): Promise<WhoopSyncResult> {
+  return syncWhoopFitnessDataForWindow({
+    userId,
+    window: getWhoopReconcileWindow(),
+  });
+}
+
+export {
+  WHOOP_SYNC_BACKFILL_DAYS,
+  getWhoopSyncWindow,
+  getWhoopReconcileWindow,
+};
