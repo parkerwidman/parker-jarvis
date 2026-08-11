@@ -11,6 +11,7 @@ type SidebarLink = {
 const PRIMARY_LINKS: SidebarLink[] = [
   { href: "/", label: "Command center" },
   { href: "/finance", label: "Finance" },
+  { href: "/fitness", label: "Fitness" },
   { href: "/tasks", label: "Tasks" },
 ];
 

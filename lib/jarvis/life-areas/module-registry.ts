@@ -40,10 +40,10 @@ const LIFE_AREA_MODULES: LifeAreaModuleConfig[] = [
     key: "fitness",
     displayName: "Fitness",
     lifeAreaName: "Fitness",
-    route: null,
+    route: "/fitness",
     purpose: "Training sessions, recovery, and consistency.",
     accent: "green",
-    implemented: false,
+    implemented: true,
   },
   {
     key: "diet",

@@ -5987,6 +5987,12 @@ body {
   gap: 0.75rem;
 }
 
+.jv-page-content--fitness {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 .finance-dash-layout {
   display: flex;
   flex-direction: column;

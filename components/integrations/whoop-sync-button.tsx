@@ -12,7 +12,15 @@ type WhoopSyncSummary = {
   syncedAt: string;
 };
 
-export function WhoopSyncButton() {
+type WhoopSyncButtonProps = {
+  label?: string;
+  showSummary?: boolean;
+};
+
+export function WhoopSyncButton({
+  label = "Sync WHOOP Data",
+  showSummary = true,
+}: WhoopSyncButtonProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,10 +64,10 @@ export function WhoopSyncButton() {
         disabled={pending}
         className="inline-flex items-center justify-center rounded-lg bg-[var(--accent)] px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
       >
-        {pending ? "Syncing WHOOP data..." : "Sync WHOOP Data"}
+        {pending ? "Syncing WHOOP data..." : label}
       </button>
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
-      {summary ? (
+      {showSummary && summary ? (
         <p className="text-sm text-[var(--foreground)]">
           Synced {summary.cycles} cycles, {summary.recoveries} recoveries,{" "}
           {summary.sleeps} sleeps, and {summary.workouts} workouts.
