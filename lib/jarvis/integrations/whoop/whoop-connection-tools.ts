@@ -62,6 +62,38 @@ export async function loadWhoopRuntimeConnectionByUserId(
   };
 }
 
+export async function loadConnectedWhoopConnectionByWhoopUserId(
+  whoopUserId: number,
+): Promise<{
+  connectionId: string;
+  userId: string;
+  whoopUserId: number;
+} | null> {
+  const supabase = getAutomationClient();
+
+  const { data, error } = await supabase
+    .from("whoop_connections")
+    .select("id, user_id, whoop_user_id, status")
+    .eq("whoop_user_id", whoopUserId)
+    .eq("status", "connected")
+    .maybeSingle();
+
+  if (
+    error ||
+    !data ||
+    typeof data.user_id !== "string" ||
+    typeof data.whoop_user_id !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    connectionId: data.id,
+    userId: data.user_id,
+    whoopUserId: data.whoop_user_id,
+  };
+}
+
 export async function persistWhoopOAuthConnection(params: {
   userId: string;
   whoopUserId: number;

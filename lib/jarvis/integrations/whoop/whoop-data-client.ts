@@ -31,7 +31,9 @@ function buildWhoopDataUrl(params: WhoopDataFetchParams): URL {
     url.searchParams.set("end", params.end);
   }
 
-  url.searchParams.set("limit", String(WHOOP_SYNC_PAGE_LIMIT));
+  if (params.start || params.end || params.nextToken !== undefined) {
+    url.searchParams.set("limit", String(WHOOP_SYNC_PAGE_LIMIT));
+  }
 
   if (params.nextToken) {
     url.searchParams.set("nextToken", params.nextToken);
@@ -171,6 +173,16 @@ export async function fetchWhoopJson<T>(params: WhoopDataFetchParams): Promise<T
   } catch {
     throw new WhoopSyncError(WHOOP_SYNC_ERROR_CODES.invalidPayload);
   }
+}
+
+export async function fetchWhoopResourceByPath<T>(params: {
+  accessToken: string;
+  path: string;
+}): Promise<T> {
+  return fetchWhoopJson<T>({
+    accessToken: params.accessToken,
+    path: params.path,
+  });
 }
 
 export async function fetchWhoopPaginatedCollection<T>(params: {

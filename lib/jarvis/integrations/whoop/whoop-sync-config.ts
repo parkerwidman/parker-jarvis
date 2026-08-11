@@ -1,5 +1,10 @@
 import "server-only";
 
+import {
+  WHOOP_SYNC_ERROR_CODES,
+  WhoopSyncError,
+} from "@/lib/jarvis/integrations/whoop/whoop-sync-errors";
+
 /** Initial manual sync backfill window for paginated WHOOP collections. */
 export const WHOOP_SYNC_BACKFILL_DAYS = 90;
 
@@ -18,6 +23,22 @@ export const WHOOP_RECOVERIES_PATH = "/v2/recovery";
 export const WHOOP_SLEEPS_PATH = "/v2/activity/sleep";
 export const WHOOP_WORKOUTS_PATH = "/v2/activity/workout";
 export const WHOOP_BODY_MEASUREMENT_PATH = "/v2/user/measurement/body";
+
+export function whoopSleepByIdPath(sleepId: string): string {
+  return `${WHOOP_SLEEPS_PATH}/${encodeURIComponent(sleepId)}`;
+}
+
+export function whoopWorkoutByIdPath(workoutId: string): string {
+  return `${WHOOP_WORKOUTS_PATH}/${encodeURIComponent(workoutId)}`;
+}
+
+export function whoopCycleRecoveryPath(cycleId: number): string {
+  if (!Number.isInteger(cycleId) || cycleId <= 0) {
+    throw new WhoopSyncError(WHOOP_SYNC_ERROR_CODES.invalidPayload);
+  }
+
+  return `${WHOOP_CYCLES_PATH}/${encodeURIComponent(String(cycleId))}/recovery`;
+}
 
 export function getWhoopSyncWindow(now = Date.now()): {
   start: string;
