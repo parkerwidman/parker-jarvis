@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { WhoopDisconnectButton } from "@/components/integrations/whoop-disconnect-button";
+import { WhoopSyncButton } from "@/components/integrations/whoop-sync-button";
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import {
   JarvisAlert,
@@ -12,13 +13,16 @@ import { JarvisPageHeader } from "@/components/jarvis/jarvis-page-header";
 import { toWhoopSafeConnectionSummary } from "@/lib/jarvis/integrations/whoop/whoop-connection-tools";
 import { createClient } from "@/lib/supabase/server";
 
-function formatConnectionDate(isoString: string): string {
+function formatDateTime(isoString: string): string {
   const date = new Date(isoString);
-  return date.toLocaleDateString("en-US", {
+  return date.toLocaleString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZone: "UTC",
+    timeZoneName: "short",
   });
 }
 
@@ -46,7 +50,7 @@ export default async function WhoopIntegrationPage({
   const { data: connection } = await supabase
     .from("whoop_connections")
     .select(
-      "id, status, whoop_user_id, connected_at, granted_scopes, last_error_code",
+      "id, status, whoop_user_id, connected_at, granted_scopes, last_error_code, last_successful_sync_at, sync_in_progress_at",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -93,8 +97,26 @@ export default async function WhoopIntegrationPage({
               <div>
                 <p className="text-sm text-[var(--navy-muted)]">Connected</p>
                 <p className="text-base text-[var(--foreground)]">
-                  {formatConnectionDate(summary.connectedAt)}
+                  {formatDateTime(summary.connectedAt)}
                 </p>
+              </div>
+            ) : null}
+
+            {connection?.last_successful_sync_at ? (
+              <div>
+                <p className="text-sm text-[var(--navy-muted)]">
+                  Last successful sync
+                </p>
+                <p className="text-base text-[var(--foreground)]">
+                  {formatDateTime(connection.last_successful_sync_at)}
+                </p>
+              </div>
+            ) : null}
+
+            {connection?.sync_in_progress_at ? (
+              <div>
+                <p className="text-sm text-[var(--navy-muted)]">Sync status</p>
+                <p className="text-base text-[var(--foreground)]">In progress</p>
               </div>
             ) : null}
 
@@ -127,7 +149,10 @@ export default async function WhoopIntegrationPage({
                   Connect WHOOP
                 </Link>
               ) : (
-                <WhoopDisconnectButton />
+                <>
+                  <WhoopSyncButton />
+                  <WhoopDisconnectButton />
+                </>
               )}
             </div>
           </div>

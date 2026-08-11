@@ -8,9 +8,15 @@ const DISCONNECT_BUTTON_PATH = resolve(
   "../../../components/integrations/whoop-disconnect-button.tsx",
 );
 
+const SYNC_BUTTON_PATH = resolve(
+  import.meta.dirname,
+  "../../../components/integrations/whoop-sync-button.tsx",
+);
+
 describe("/integrations/whoop page", () => {
   const pageSource = readFileSync(PAGE_PATH, "utf8");
   const disconnectSource = readFileSync(DISCONNECT_BUTTON_PATH, "utf8");
+  const syncSource = readFileSync(SYNC_BUTTON_PATH, "utf8");
 
   it("requires authentication", () => {
     expect(pageSource).toContain('redirect("/login")');
@@ -37,5 +43,15 @@ describe("/integrations/whoop page", () => {
     expect(disconnectSource).not.toContain("accessToken");
     expect(disconnectSource).not.toContain("refreshToken");
     expect(disconnectSource).not.toContain("WHOOP_CLIENT");
+  });
+
+  it("shows sync control only for connected users", () => {
+    expect(pageSource).toContain("WhoopSyncButton");
+    expect(pageSource).toContain("last_successful_sync_at");
+    expect(pageSource).toContain("WhoopDisconnectButton");
+    expect(syncSource).toContain("/api/integrations/whoop/sync");
+    expect(syncSource).toContain("Sync WHOOP Data");
+    expect(syncSource).not.toContain("accessToken");
+    expect(syncSource).not.toContain("raw_payload");
   });
 });

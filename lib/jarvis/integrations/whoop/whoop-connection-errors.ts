@@ -1,4 +1,6 @@
 /** Internal server-side connection error codes stored in whoop_connections.last_error_code. */
+import { toWhoopSyncSafeUserMessage } from "@/lib/jarvis/integrations/whoop/whoop-sync-errors";
+
 export const WHOOP_CONNECTION_INTERNAL_ERROR_CODES = {
   remoteRevokeLocalCleanupPending: "remote_revoke_local_cleanup_pending",
 } as const;
@@ -24,6 +26,12 @@ export function toWhoopSafeLastErrorMessage(
 
   if (isWhoopRemoteRevokeCleanupPending(lastErrorCode)) {
     return "WHOOP access was revoked, but Jarvis still needs to finish disconnect cleanup. Try disconnect again.";
+  }
+
+  if (lastErrorCode.startsWith("whoop_sync_")) {
+    return toWhoopSyncSafeUserMessage(
+      lastErrorCode as Parameters<typeof toWhoopSyncSafeUserMessage>[0],
+    );
   }
 
   if (
