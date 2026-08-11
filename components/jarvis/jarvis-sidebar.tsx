@@ -8,12 +8,10 @@ type SidebarLink = {
   label: string;
 };
 
-const PRIMARY_LINKS: SidebarLink[] = [
-  { href: "/", label: "Command center" },
-  { href: "/finance", label: "Finance" },
-  { href: "/fitness", label: "Fitness" },
-  { href: "/tasks", label: "Tasks" },
-];
+type SidebarSection = {
+  title: string;
+  links: SidebarLink[];
+};
 
 const GOALS_LINKS: SidebarLink[] = [
   { href: "/goals/short-term", label: "Short Term Goals" },
@@ -21,13 +19,40 @@ const GOALS_LINKS: SidebarLink[] = [
   { href: "/goals/long-term", label: "Long Term Goals" },
 ];
 
-const SECONDARY_LINKS: SidebarLink[] = [
-  { href: "/melusi", label: "Melusi" },
-  { href: "/assistant", label: "Assistant" },
-  { href: "/briefings", label: "Morning Brief" },
-  { href: "/plans", label: "Daily Plan" },
-  { href: "/approvals", label: "Approvals" },
-  { href: "/connections/microsoft", label: "Microsoft" },
+const NAV_SECTIONS: SidebarSection[] = [
+  {
+    title: "JARVIS",
+    links: [{ href: "/", label: "Command Center" }],
+  },
+  {
+    title: "LIFE",
+    links: [
+      { href: "/finance", label: "Finance" },
+      { href: "/fitness", label: "Fitness" },
+    ],
+  },
+  {
+    title: "GOALS",
+    links: GOALS_LINKS,
+  },
+  {
+    title: "MELUSI",
+    links: [{ href: "/melusi", label: "Melusi" }],
+  },
+  {
+    title: "ASSISTANT",
+    links: [
+      { href: "/tasks", label: "Tasks" },
+      { href: "/assistant", label: "Assistant" },
+      { href: "/briefings", label: "Morning Brief" },
+      { href: "/plans", label: "Daily Plan" },
+      { href: "/approvals", label: "Approvals" },
+    ],
+  },
+  {
+    title: "CONNECTIONS",
+    links: [{ href: "/connections/microsoft", label: "Microsoft" }],
+  },
 ];
 
 function isLinkActive(pathname: string, href: string): boolean {
@@ -59,24 +84,31 @@ function NavLink({ href, label }: SidebarLink) {
   );
 }
 
+function NavSection({
+  title,
+  links,
+  divided,
+}: SidebarSection & { divided: boolean }) {
+  return (
+    <div className={`cc2-nav-section${divided ? " cc2-nav-section--divided" : ""}`}>
+      <div className="cc2-nav-section-title">{title}</div>
+      {links.map((link) => (
+        <NavLink key={link.href} {...link} />
+      ))}
+    </div>
+  );
+}
+
 export function JarvisSidebar({ displayName, userEmail }: JarvisSidebarProps) {
   return (
     <aside className="cc2-sidebar" aria-label="Main navigation">
       <div className="cc2-logo">
         <div className="cc2-logo-mark" aria-hidden="true" />
-        <div className="cc2-logo-text">JARVIS</div>
       </div>
 
       <nav className="cc2-nav" aria-label="Jarvis navigation">
-        {PRIMARY_LINKS.map((link) => (
-          <NavLink key={link.href} {...link} />
-        ))}
-        {GOALS_LINKS.map((link) => (
-          <NavLink key={link.href} {...link} />
-        ))}
-        <div className="cc2-nav-divider" aria-hidden="true" />
-        {SECONDARY_LINKS.map((link) => (
-          <NavLink key={link.href} {...link} />
+        {NAV_SECTIONS.map((section, index) => (
+          <NavSection key={section.title} {...section} divided={index > 0} />
         ))}
       </nav>
 
