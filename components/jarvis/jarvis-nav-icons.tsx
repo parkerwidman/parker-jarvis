@@ -4,6 +4,8 @@ export type JarvisNavIconName =
   | "command"
   | "melusi"
   | "finance"
+  | "fitness"
+  | "goals"
   | "tasks"
   | "brief"
   | "plan"
@@ -35,6 +37,30 @@ const ICONS: Record<JarvisNavIconName, ReactNode> = {
       />
       <path d="M2 6.5V5.5a2 2 0 0 1 2-2h8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
       <circle cx="11.5" cy="9.5" r="1" fill="currentColor" />
+    </svg>
+  ),
+  fitness: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 8.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M2.5 8.5h11M8 8.5V12"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <circle cx="8" cy="8.5" r="1" fill="currentColor" />
+    </svg>
+  ),
+  goals: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="8" cy="8" r="0.75" fill="currentColor" />
     </svg>
   ),
   tasks: (
@@ -78,15 +104,20 @@ const ICONS: Record<JarvisNavIconName, ReactNode> = {
 };
 
 export function JarvisNavIcon({ name }: { name: JarvisNavIconName }) {
-  return <span className="app-nav-icon">{ICONS[name]}</span>;
+  return <span className="cc2-nav-icon">{ICONS[name]}</span>;
 }
 
 export function JarvisBrandIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.2" />
-      <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.2" />
-      <circle cx="9" cy="9" r="1" fill="currentColor" />
+    <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+      <path
+        d="M17 4.5 26.5 10.25v13.5L17 29.5 7.5 23.75v-13.5L17 4.5Z"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinejoin="round"
+      />
+      <circle cx="17" cy="17" r="5.25" stroke="currentColor" strokeWidth="1.2" />
+      <circle cx="17" cy="17" r="2" fill="currentColor" />
     </svg>
   );
 }

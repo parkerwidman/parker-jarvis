@@ -64,6 +64,22 @@ export type FitnessBodySnapshot = {
   maxHeartRate: number | null;
 };
 
+export type FitnessGlanceSnapshot = {
+  openTasks: number;
+  completedToday: number;
+  totalTracked: number;
+  meetingsToday: number;
+  activeGoals: number;
+};
+
+export type FitnessTrendDay = {
+  date: string;
+  dateLabel: string;
+  recoveryScore: number | null;
+  sleepPerformancePct: number | null;
+  strain: number | null;
+};
+
 export type FitnessTodaySnapshot = {
   timeZone: string;
   todayDate: string;
@@ -76,4 +92,7 @@ export type FitnessTodaySnapshot = {
   body: FitnessBodySnapshot | null;
   syncFreshnessLabel: string;
   lastSyncedLabel: string | null;
+  trends: FitnessTrendDay[];
+  glance: FitnessGlanceSnapshot;
+  displayName: string;
 };

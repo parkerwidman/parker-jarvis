@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { ReactNode } from "react";
-import { JarvisSidebar } from "./jarvis-sidebar";
+import { JarvisShellFrame } from "./jarvis-shell-frame";
 
 type JarvisAppShellProps = {
   children: ReactNode;
@@ -31,12 +31,13 @@ export async function JarvisAppShell({
     displayName = profile?.preferred_name?.trim() || "Parker";
   }
 
-  const mainClasses = ["app-main", mainClassName].filter(Boolean).join(" ");
-
   return (
-    <div className="app-shell cc2-app-shell">
-      <JarvisSidebar displayName={displayName} userEmail={userEmail} />
-      <div className={mainClasses}>{children}</div>
-    </div>
+    <JarvisShellFrame
+      displayName={displayName}
+      userEmail={userEmail}
+      mainClassName={mainClassName}
+    >
+      {children}
+    </JarvisShellFrame>
   );
 }

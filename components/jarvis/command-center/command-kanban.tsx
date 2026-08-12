@@ -4,7 +4,6 @@ import { completeTaskFromDashboard } from "@/app/command-center/actions";
 import { useCommandCenterMode } from "./command-center-mode-provider";
 import {
   itemMatchesMode,
-  modeLabel,
   modeTagLabel,
 } from "@/lib/jarvis/dashboard/command-center-mode";
 import type { CommandCenterKanbanTask } from "@/lib/jarvis/dashboard/load-command-center";
@@ -19,6 +18,32 @@ const COLUMNS = [
   { key: "done", label: "Done" },
 ] as const;
 
+function priorityLabel(priority: string): string | null {
+  switch (priority) {
+    case "high":
+      return "High priority";
+    case "medium":
+      return "Medium priority";
+    case "low":
+      return "Low priority";
+    default:
+      return null;
+  }
+}
+
+function InProgressEmptyState() {
+  return (
+    <div className="cc2-kcol-empty-state">
+      <div className="cc2-kcol-empty-orbit" aria-hidden="true">
+        <span className="cc2-kcol-empty-ring cc2-kcol-empty-ring--outer" />
+        <span className="cc2-kcol-empty-ring cc2-kcol-empty-ring--tilt" />
+        <span className="cc2-kcol-empty-planet" />
+      </div>
+      <p className="cc2-kcol-empty-title">Nothing in progress</p>
+    </div>
+  );
+}
+
 export function CommandKanban({ tasks }: CommandKanbanProps) {
   const { mode } = useCommandCenterMode();
 
@@ -27,10 +52,9 @@ export function CommandKanban({ tasks }: CommandKanbanProps) {
   );
 
   return (
-    <section aria-label="Task board">
+    <section className="cc2-tasks-panel" aria-label="Task board">
       <div className="cc2-kanban-title">
-        <span>Board</span>
-        <span className="cc2-kanban-mode-tag">Showing {modeLabel(mode)}</span>
+        <span className="cc2-kanban-title-label">Tasks</span>
       </div>
 
       <div className="cc2-kanban">
@@ -42,7 +66,7 @@ export function CommandKanban({ tasks }: CommandKanbanProps) {
           return (
             <div key={column.key} className="cc2-kcol">
               <div className="cc2-kcol-head">
-                {column.label}
+                <span>{column.label}</span>
                 <span className="cc2-kcol-count">{columnTasks.length}</span>
               </div>
 
@@ -52,7 +76,11 @@ export function CommandKanban({ tasks }: CommandKanbanProps) {
                 tabIndex={0}
               >
                 {columnTasks.length === 0 ? (
-                  <p className="cc2-kcol-empty">No tasks</p>
+                  column.key === "in_progress" ? (
+                    <InProgressEmptyState />
+                  ) : (
+                    <p className="cc2-kcol-empty">No tasks</p>
+                  )
                 ) : (
                   columnTasks.map((task) => (
                     <KanbanCard
@@ -79,24 +107,48 @@ function KanbanCard({
   mode: ReturnType<typeof useCommandCenterMode>["mode"];
 }) {
   const canComplete = task.status === "todo" || task.status === "in_progress";
+  const priority = priorityLabel(task.priority);
+  const isDone = task.status === "done";
 
   return (
-    <div className="cc2-kcard">
-      <div className="cc2-kcard-name">{task.title}</div>
-      {task.goalContext ? (
-        <div className="cc2-kcard-context">
-          {task.goalContext.goalTitle} → {task.goalContext.levelTitle}
-        </div>
-      ) : null}
-      <div className="cc2-kcard-foot">
-        <span className="cc2-kcard-tag">{modeTagLabel(mode)}</span>
-        {task.goalContext?.isTodayPriority ? (
-          <span className="cc2-kcard-priority" title="Today's priority goal">
-            ★
+    <div className={`cc2-kcard cc2-kcard--${task.status}`}>
+      <div className="cc2-kcard-top">
+        {isDone ? (
+          <span className="cc2-kcard-check cc2-kcard-check--done" aria-hidden="true">
+            ✓
           </span>
-        ) : null}
+        ) : (
+          <span className="cc2-kcard-check" aria-hidden="true" />
+        )}
+        <div className="cc2-kcard-body">
+          <div className="cc2-kcard-title-row">
+            <div
+              className="cc2-kcard-name"
+              title={
+                task.goalContext
+                  ? `${task.goalContext.goalTitle} → ${task.goalContext.levelTitle}`
+                  : undefined
+              }
+            >
+              {task.title}
+            </div>
+            {!isDone ? (
+              <span className={`cc2-kcard-tag cc2-kcard-tag--${mode}`}>
+                {modeTagLabel(mode)}
+              </span>
+            ) : null}
+          </div>
+          {!isDone && priority ? (
+            <div className={`cc2-kcard-priority cc2-kcard-priority--${task.priority}`}>
+              {priority}
+            </div>
+          ) : null}
+          {isDone && task.completedToday ? (
+            <div className="cc2-kcard-done-label">Completed today</div>
+          ) : null}
+        </div>
         {canComplete ? (
-          <form action={completeTaskFromDashboard}>
+          <form action={completeTaskFromDashboard} className="cc2-kcard-complete-form">
             <input type="hidden" name="taskId" value={task.id} />
             <button
               type="submit"
@@ -107,11 +159,7 @@ function KanbanCard({
               ✓
             </button>
           </form>
-        ) : (
-          <span className="cc2-kcard-done" aria-hidden="true">
-            ✓
-          </span>
-        )}
+        ) : null}
       </div>
     </div>
   );

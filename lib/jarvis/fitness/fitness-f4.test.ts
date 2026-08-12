@@ -33,6 +33,8 @@ describe("loadFitnessTodaySnapshot", () => {
     expect(loaderSource).toContain("selectSleepForToday");
     expect(loaderSource).toContain("selectCycleForToday");
     expect(loaderSource).toContain("selectWorkoutsForToday");
+    expect(loaderSource).toContain("buildFitnessTrendDays");
+    expect(loaderSource).toContain("loadFitnessGlance");
   });
 });
 
@@ -44,6 +46,9 @@ describe("/fitness page", () => {
   );
   const syncButtonSource = readSource(
     "components/integrations/whoop-sync-button.tsx",
+  );
+  const quickActionsSource = readSource(
+    "components/fitness/fitness-quick-actions.tsx",
   );
 
   it("requires authentication and loads the current user snapshot", () => {
@@ -58,10 +63,23 @@ describe("/fitness page", () => {
     expect(dashboardSource).toContain("/integrations/whoop");
   });
 
+  it("renders the redesigned dashboard sections when connected", () => {
+    const workoutsSource = readSource("components/fitness/fitness-workouts-card.tsx");
+
+    expect(dashboardSource).toContain("FitnessRecoveryStatus");
+    expect(dashboardSource).toContain("FitnessTrendsChart");
+    expect(dashboardSource).toContain("FitnessTodayAtAGlance");
+    expect(dashboardSource).toContain("FitnessFooterStrip");
+    expect(workoutsSource).toContain("No workouts recorded today.");
+  });
+
   it("reuses the existing WHOOP sync route and refreshes after success", () => {
     expect(syncControlsSource).toContain("WhoopSyncButton");
     expect(syncButtonSource).toContain("/api/integrations/whoop/sync");
     expect(syncButtonSource).toContain("router.refresh()");
+    expect(quickActionsSource).toContain("/api/integrations/whoop/sync");
+    expect(quickActionsSource).toContain('href: "/plans"');
+    expect(quickActionsSource).toContain('href: "/integrations/whoop"');
     expect(syncControlsSource).not.toContain("accessToken");
     expect(dashboardSource).not.toContain("raw_payload");
     expect(dashboardSource).not.toContain("WHOOP_CLIENT_SECRET");

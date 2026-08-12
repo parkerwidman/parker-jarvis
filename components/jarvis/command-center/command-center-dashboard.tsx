@@ -1,25 +1,22 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useMemo } from "react";
 import type { CommandCenterData } from "@/lib/jarvis/dashboard/load-command-center";
-import { AskJarvisBar } from "./ask-jarvis-bar";
 import { CalendarPulse } from "./calendar-pulse";
-import { CommandCenterModeProvider } from "./command-center-mode-provider";
+import { CommandCenterModeProvider, useCommandCenterMode } from "./command-center-mode-provider";
+import { CommandCenterStatusRail } from "./command-center-status-rail";
 import { CommandKanban } from "./command-kanban";
 import { GoalProgressPanel } from "./goal-progress-panel";
 import { InboxPulse } from "./inbox-pulse";
 import { ModeSwitcher } from "./mode-switcher";
 import { PriorityStrip } from "./priority-strip";
+import { TodayAtAGlance } from "./today-at-a-glance";
+import { itemMatchesMode } from "@/lib/jarvis/dashboard/command-center-mode";
 
 type CommandCenterDashboardProps = {
   data: CommandCenterData;
   displayName: string;
   greeting: string;
-};
-
-type ChatMessage = {
-  role: "user" | "assistant";
-  content: string;
 };
 
 export function CommandCenterDashboard({
@@ -43,122 +40,79 @@ function CommandCenterDashboardInner({
   displayName,
   greeting,
 }: CommandCenterDashboardProps) {
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  const [lastReply, setLastReply] = useState<string | null>(null);
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [followUpUsed, setFollowUpUsed] = useState<Set<string>>(new Set());
-  const [followUpThread, setFollowUpThread] = useState<ChatMessage[]>([]);
+  const { mode } = useCommandCenterMode();
 
-  const sendToJarvis = useCallback(
-    async (message: string, followUpKey?: string) => {
-      setChatLoading(true);
-      setChatError(null);
+  const todayEventCount = useMemo(() => {
+    return data.outlook.events.filter((event) => {
+      const eventDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: data.timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(event.start));
 
-      if (followUpKey) {
-        setFollowUpUsed((current) => new Set(current).add(followUpKey));
-      }
+      return eventDate === data.todayDate;
+    }).length;
+  }, [data.outlook.events, data.timezone, data.todayDate]);
 
-      try {
-        const requestBody: {
-          message: string;
-          agentKey: "main";
-          threadId?: string;
-        } = {
-          message,
-          agentKey: "main",
-        };
-
-        if (threadId) {
-          requestBody.threadId = threadId;
-        }
-
-        const response = await fetch("/api/assistant", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        });
-
-        const payload = (await response.json()) as {
-          reply?: string;
-          error?: string;
-          threadId?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Something went wrong. Please try again.");
-        }
-
-        if (typeof payload.threadId === "string") {
-          setThreadId(payload.threadId);
-        }
-
-        const reply = payload.reply ?? "";
-        setLastReply(reply);
-
-        if (followUpKey) {
-          setFollowUpThread((current) => [
-            ...current,
-            { role: "user", content: message },
-            { role: "assistant", content: reply },
-          ]);
-        }
-      } catch (error) {
-        setChatError(
-          error instanceof Error
-            ? error.message
-            : "Something went wrong. Please try again.",
-        );
-      } finally {
-        setChatLoading(false);
-      }
-    },
-    [threadId],
-  );
+  const openTaskCount = useMemo(() => {
+    return data.kanbanTasks.filter(
+      (task) =>
+        itemMatchesMode(task.lifeAreaName, mode) && task.status !== "done",
+    ).length;
+  }, [data.kanbanTasks, mode]);
 
   return (
-    <div className="cc2-main">
-      <header className="cc2-header">
+    <div className="cc2-main cc2-main--dashboard">
+      <header className="cc2-header cc2-header--dashboard">
         <div className="cc2-header-row">
           <div className="cc2-header-main">
             <h1 className="cc2-greeting">
-              {greeting}, {displayName}
+              {greeting},{" "}
+              <span className="cc2-greeting-name">{displayName}</span>
             </h1>
-            <p className="cc2-date">{data.todayDateLabel}</p>
+            <p className="cc2-tagline">
+              You&apos;ve got clarity. I&apos;ll handle the rest.
+            </p>
           </div>
           <ModeSwitcher />
         </div>
       </header>
 
-      <PriorityStrip
-        focusTask={data.focusTask}
-        headerStatus={data.headerStatus}
-      />
+      <div className="cc2-dashboard-grid">
+        <div className="cc2-dashboard-main">
+          <PriorityStrip
+            focusTask={data.focusTask}
+            headerStatus={data.headerStatus}
+          />
 
-      <CommandKanban tasks={data.kanbanTasks} />
+          <CommandKanban tasks={data.kanbanTasks} />
 
-      <GoalProgressPanel goals={data.goalItems} />
+          <div className="cc2-lower-band">
+            <div className="cc2-info-cluster">
+              <GoalProgressPanel goals={data.goalItems} />
+              <InboxPulse inbox={data.inbox} timeZone={data.timezone} />
+              <CalendarPulse
+                events={data.outlook.events}
+                connected={data.outlook.connected}
+                needsReconnect={data.outlook.needsReconnect}
+                timeZone={data.timezone}
+                todayDate={data.todayDate}
+              />
+            </div>
+            <TodayAtAGlance
+              data={data}
+              todayEventCount={todayEventCount}
+            />
+          </div>
+        </div>
 
-      <div className="cc2-pulse-title">Coming at you — inbox &amp; calendar</div>
-      <div className="cc2-pulse-grid">
-        <InboxPulse inbox={data.inbox} />
-        <CalendarPulse
-          events={data.outlook.events}
-          connected={data.outlook.connected}
-          needsReconnect={data.outlook.needsReconnect}
-          timeZone={data.timezone}
-          todayDate={data.todayDate}
+        <CommandCenterStatusRail
+          data={data}
+          openTaskCount={openTaskCount}
+          todayEventCount={todayEventCount}
         />
       </div>
-
-      <AskJarvisBar
-        onSubmit={sendToJarvis}
-        loading={chatLoading}
-        error={chatError}
-        lastReply={lastReply}
-        followUpUsed={followUpUsed}
-        followUpThread={followUpThread}
-      />
     </div>
   );
 }

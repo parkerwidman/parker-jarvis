@@ -38,6 +38,32 @@ export function approvalStatusBadgeClass(status: string): string {
   }
 }
 
+type JarvisPanelProps = {
+  children: ReactNode;
+  variant?: "default" | "primary" | "secondary" | "interactive" | "accent";
+  className?: string;
+  ariaLabel?: string;
+};
+
+export function JarvisPanel({
+  children,
+  variant = "default",
+  className = "",
+  ariaLabel,
+}: JarvisPanelProps) {
+  const variantClass =
+    variant === "default" ? "" : ` jarvis-panel--${variant}`;
+
+  return (
+    <section
+      className={`jarvis-panel${variantClass} ${className}`.trim()}
+      aria-label={ariaLabel}
+    >
+      {children}
+    </section>
+  );
+}
+
 type JarvisCardProps = {
   title?: string;
   children: ReactNode;

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import type { CommandCenterCalendarEvent } from "@/lib/jarvis/dashboard/load-command-center";
 
 type CalendarPulseProps = {
@@ -9,6 +11,20 @@ type CalendarPulseProps = {
   timeZone: string;
   todayDate: string;
 };
+
+function CalendarEmptyIllustration() {
+  return (
+    <div className="cc2-cal-empty-state">
+      <div className="cc2-cal-empty-orbit" aria-hidden="true">
+        <span className="cc2-cal-empty-ring cc2-cal-empty-ring--outer" />
+        <span className="cc2-cal-empty-ring cc2-cal-empty-ring--inner" />
+        <span className="cc2-cal-empty-core" />
+      </div>
+      <p className="cc2-cal-empty-title">No events scheduled today.</p>
+      <p className="cc2-cal-empty-sub">Your day is clear.</p>
+    </div>
+  );
+}
 
 function formatEventTime(
   event: CommandCenterCalendarEvent,
@@ -44,43 +60,50 @@ export function CalendarPulse({
   });
 
   let emptyMessage: string | null = null;
+  let showDesignedEmpty = false;
+
   if (needsReconnect) {
     emptyMessage = "Microsoft 365 needs to be reconnected to show calendar.";
   } else if (!connected) {
     emptyMessage = "Outlook is not connected. Connect Microsoft to see your calendar.";
   } else if (todayEvents.length === 0) {
-    emptyMessage = "No events scheduled for today.";
+    showDesignedEmpty = true;
   }
 
   return (
-    <div className="cc2-pulse-panel">
+    <div className="cc2-pulse-panel cc2-pulse-panel--calendar">
       <div className="cc2-pulse-head">
         <span className="cc2-pulse-head-title">Today&apos;s calendar</span>
       </div>
 
       <div
-        className="cc2-panel-scroll cc2-pulse-scroll"
+        className="cc2-panel-scroll cc2-pulse-scroll cc2-cal-scroll"
         aria-label="Today's calendar events"
         tabIndex={0}
       >
-        {emptyMessage ? (
+        {showDesignedEmpty ? (
+          <CalendarEmptyIllustration />
+        ) : emptyMessage ? (
           <p className="cc2-pulse-empty">{emptyMessage}</p>
         ) : (
-          todayEvents.map((event, index) => (
-            <div key={`${event.start}-${event.subject}-${index}`} className="cc2-cal-row">
-              <span className="cc2-cal-time">
-                {formatEventTime(event, timeZone)}
-              </span>
-              <div className="cc2-cal-body">
+          <div className="cc2-cal-list">
+            {todayEvents.map((event, index) => (
+              <div key={`${event.start}-${event.subject}-${index}`} className="cc2-cal-row">
+                <time className="cc2-cal-time">
+                  {formatEventTime(event, timeZone)}
+                </time>
                 <div className="cc2-cal-name">{event.subject}</div>
-                {event.locationName ? (
-                  <span className="cc2-cal-with">{event.locationName}</span>
-                ) : null}
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
+
+      {connected ? (
+        <Link href="/connections/microsoft" className="cc2-pulse-foot-link">
+          View full day
+        </Link>
+      ) : null}
     </div>
   );
 }

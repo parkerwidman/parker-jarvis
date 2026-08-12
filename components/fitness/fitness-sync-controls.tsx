@@ -14,18 +14,20 @@ export function FitnessSyncControls({
   lastSyncedLabel,
 }: FitnessSyncControlsProps) {
   return (
-    <div className="flex flex-col items-start gap-3 sm:items-end">
-      <WhoopSyncButton label="Sync WHOOP" showSummary={false} />
-      <div className="text-sm text-[var(--navy-muted)]">
+    <div className="fit-sync-controls">
+      <div className="fit-sync-btn">
+        <WhoopSyncButton label="Sync WHOOP" showSummary={false} />
+      </div>
+      <div className="fit-sync-meta">
         {syncInProgress ? (
-          <p className="text-[var(--foreground)]">Syncing WHOOP data...</p>
+          <p className="fit-sync-status">Syncing WHOOP data...</p>
         ) : null}
         <p>
           Last synced:{" "}
-          <span className="text-[var(--foreground)]">{syncFreshnessLabel}</span>
+          <span className="fit-sync-value">{syncFreshnessLabel}</span>
         </p>
         {lastSyncedLabel ? (
-          <p className="text-xs">{lastSyncedLabel}</p>
+          <p className="fit-sync-timestamp">{lastSyncedLabel}</p>
         ) : null}
       </div>
     </div>

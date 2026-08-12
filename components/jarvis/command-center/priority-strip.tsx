@@ -1,8 +1,11 @@
 "use client";
 
+import Link from "next/link";
+
 import { buildFocusPriorityFromTask } from "@/lib/jarvis/dashboard/focus-timer";
 import { useCommandCenterMode } from "./command-center-mode-provider";
 import { PriorityFocusControls } from "./priority-focus-controls";
+import { PriorityOrbital, resolvePriorityOrbitalVariant } from "./priority-orbital";
 import { usePersistentFocusTimer } from "./use-persistent-focus-timer";
 import {
   itemMatchesMode,
@@ -29,28 +32,49 @@ export function PriorityStrip({ focusTask, headerStatus }: PriorityStripProps) {
 
   const timer = usePersistentFocusTimer(currentPriority);
 
-  const eyebrow = `#1 ${modeLabel(mode).toLowerCase()} priority`;
   const defaultTitle =
     modeFocus?.title ??
     `No ${modeLabel(mode).toLowerCase()} priority right now`;
   const title =
     timer.phase === "idle" ? defaultTitle : (timer.displayTitle ?? defaultTitle);
 
+  const supportingCopy =
+    modeFocus?.goalContext
+      ? `${modeFocus.goalContext.goalTitle} → ${modeFocus.goalContext.levelTitle}`
+      : modeFocus?.selectionReason ??
+        (modeFocus ? undefined : headerStatus);
+
   return (
-    <div className="cc2-priority-strip" role="region" aria-label="Top priority">
-      <div className="cc2-priority-main">
-        <span className="cc2-priority-eyebrow">{eyebrow}</span>
-        <span className="cc2-priority-title">{title}</span>
-        {modeFocus?.goalContext ? (
-          <span className="cc2-priority-sub">
-            {modeFocus.goalContext.goalTitle} → {modeFocus.goalContext.levelTitle}
-          </span>
-        ) : !modeFocus && timer.phase === "idle" ? (
-          <span className="cc2-priority-sub">{headerStatus}</span>
+    <section
+      id="cc2-priority-hero"
+      className="cc2-priority-hero"
+      role="region"
+      aria-label="Top priority"
+    >
+      <PriorityOrbital variant={resolvePriorityOrbitalVariant(modeFocus?.title)} />
+
+      <div className="cc2-priority-hero-main">
+        <span className="cc2-priority-eyebrow">Top priority</span>
+        <h2 className="cc2-priority-title">{title}</h2>
+        {supportingCopy ? (
+          <p className="cc2-priority-sub">{supportingCopy}</p>
         ) : null}
       </div>
 
-      <PriorityFocusControls focusTask={modeFocus} timer={timer} />
-    </div>
+      <div className="cc2-priority-hero-actions">
+        <PriorityFocusControls
+          focusTask={modeFocus}
+          timer={timer}
+          completePlacement="compact"
+          trailingAction={
+            timer.phase === "idle" ? (
+              <Link href="/tasks" className="cc2-btn cc2-btn--ghost">
+                View details
+              </Link>
+            ) : null
+          }
+        />
+      </div>
+    </section>
   );
 }

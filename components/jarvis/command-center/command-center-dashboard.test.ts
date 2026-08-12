@@ -104,8 +104,10 @@ const SAMPLE_DATA = {
       id: "task-1",
       title: "Reply to leads",
       status: "todo",
+      priority: "high",
       lifeAreaName: "Melusi",
       goalContext: null,
+      completedToday: false,
     },
   ],
   melusiLifeAreaIds: [],
@@ -148,13 +150,14 @@ describe("CommandCenterDashboard morning brief removal", () => {
     expect(html).not.toContain("<audio");
   });
 
-  it("keeps greeting and date at the top", () => {
+  it("keeps greeting at the top without a visible date line", () => {
     const html = renderDashboard();
 
-    expect(html).toContain("Good morning, Parker");
-    expect(html).toContain("Friday, August 7, 2026");
+    expect(html).toContain("Good morning");
+    expect(html).toContain("Parker");
+    expect(html).not.toContain("cc2-date");
     expect(html.indexOf("cc2-greeting")).toBeLessThan(
-      html.indexOf("cc2-priority-strip"),
+      html.indexOf("cc2-priority-hero"),
     );
   });
 
@@ -162,12 +165,16 @@ describe("CommandCenterDashboard morning brief removal", () => {
     const html = renderDashboard();
     const headerEnd = html.indexOf("</header>");
     const modeSegStart = html.indexOf("cc2-mode-seg");
-    const priorityStart = html.indexOf("cc2-priority-strip");
+    const priorityStart = html.indexOf("cc2-priority-hero");
+    const gridStart = html.indexOf("cc2-dashboard-grid");
+    const railStart = html.indexOf("cc2-dashboard-rail");
 
     expect(headerEnd).toBeGreaterThan(-1);
     expect(modeSegStart).toBeGreaterThan(-1);
     expect(modeSegStart).toBeLessThan(headerEnd);
     expect(priorityStart).toBeGreaterThan(headerEnd);
+    expect(gridStart).toBeGreaterThan(headerEnd);
+    expect(railStart).toBeGreaterThan(gridStart);
     expect(html).not.toContain("cc2-listen-card");
   });
 
@@ -186,30 +193,28 @@ describe("CommandCenterDashboard morning brief removal", () => {
     expect(modeSwitcherSource).toContain("useCommandCenterMode");
   });
 
-  it("preserves board, goals, inbox, and calendar sections", () => {
+  it("preserves board, goals, inbox, calendar, and status rail sections", () => {
     const html = renderDashboard();
 
     expect(html).toContain("cc2-kanban");
     expect(html).toContain("Goal progress");
-    expect(html).toContain("Coming at you");
+    expect(html).toContain("cc2-lower-band");
     expect(html).toContain("Outlook inbox");
     expect(html).toContain("Today&#x27;s calendar");
+    expect(html).toContain("cc2-dashboard-rail");
+    expect(html).toContain("Quick Actions");
   });
 
-  it("keeps Ask Jarvis available independently via /api/assistant wiring", () => {
+  it("does not render the bottom Ask Jarvis composer on Command Center", () => {
     const dashboardSource = readFileSync(DASHBOARD_PATH, "utf8");
     const askSource = readFileSync(ASK_JARVIS_PATH, "utf8");
     const html = renderDashboard();
 
-    expect(dashboardSource).toContain('fetch("/api/assistant"');
-    expect(dashboardSource).toContain("AskJarvisBar");
+    expect(dashboardSource).not.toContain("AskJarvisBar");
     expect(askSource).toContain("Ask Jarvis");
-    expect(html).toContain('placeholder="Ask Jarvis…"');
-    expect(html).toContain("What&#x27;s overdue?");
-    expect(html).toContain("What can wait?");
-    expect(html).toContain("How&#x27;s Melusi trending?");
-    expect(html).toContain("What&#x27;s my week look like?");
-    expect(html).not.toContain("briefingDate");
+    expect(html).not.toContain('placeholder="Ask Jarvis…"');
+    expect(html).not.toContain("Ask Jarvis");
+    expect(html).not.toContain("What&#x27;s overdue?");
   });
 
   it("does not remove Morning Ritual briefing infrastructure", () => {

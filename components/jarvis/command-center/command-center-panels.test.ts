@@ -38,19 +38,28 @@ describe("Command Center compact panels", () => {
           id: TASK_ID,
           title: "Reply to leads",
           status: "todo",
+          priority: "high",
           lifeAreaName: "Melusi",
+          goalContext: null,
+          completedToday: false,
         },
         {
           id: "22222222-2222-4222-8222-222222222222",
           title: "Ship feature",
           status: "in_progress",
+          priority: "medium",
           lifeAreaName: "Melusi",
+          goalContext: null,
+          completedToday: false,
         },
         {
           id: "33333333-3333-4333-8333-333333333333",
           title: "Done task",
           status: "done",
+          priority: "low",
           lifeAreaName: "Melusi",
+          goalContext: null,
+          completedToday: true,
         },
       ]);
 
@@ -72,7 +81,8 @@ describe("Command Center compact panels", () => {
     it("shows empty states inside scroll regions with real counts", () => {
       const html = renderKanban([]);
 
-      expect(html.match(/No tasks/g)?.length).toBe(3);
+      expect(html.match(/No tasks/g)?.length).toBe(2);
+      expect(html).toContain("Nothing in progress");
       expect(html.match(/cc2-kcol-scroll/g)?.length).toBe(3);
       expect(html.match(/cc2-kcol-count">0/g)?.length).toBe(3);
     });
@@ -92,14 +102,17 @@ describe("Command Center compact panels", () => {
                 senderDisplay: "Alex Rivera",
                 subject: "Quarterly review notes",
                 isRead: false,
+                receivedAt: "2026-08-06T14:30:00.000Z",
               },
               {
                 senderDisplay: "Team Calendar",
                 subject: "Standup moved to 10am",
                 isRead: true,
+                receivedAt: "2026-08-06T13:00:00.000Z",
               },
             ],
           },
+          timeZone: "America/Chicago",
         }),
       );
 
@@ -124,6 +137,7 @@ describe("Command Center compact panels", () => {
               "Outlook is not connected. Connect Microsoft to see your inbox.",
             messages: [],
           },
+          timeZone: "America/Chicago",
         }),
       );
 
@@ -161,7 +175,6 @@ describe("Command Center compact panels", () => {
       expect(html).toContain("Today&#x27;s calendar");
       expect(html).toContain('aria-label="Today&#x27;s calendar events"');
       expect(html).toContain("Investor sync");
-      expect(html).toContain("Zoom");
       expect(html.indexOf("cc2-pulse-head")).toBeLessThan(
         html.indexOf("cc2-pulse-scroll"),
       );
@@ -192,7 +205,7 @@ describe("Command Center compact panels", () => {
         }),
       );
 
-      expect(empty).toContain("No events scheduled for today.");
+      expect(empty).toContain("No events scheduled today.");
     });
   });
 });

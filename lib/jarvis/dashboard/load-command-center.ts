@@ -232,6 +232,7 @@ export type CommandCenterInboxMessage = {
   senderDisplay: string;
   subject: string;
   isRead: boolean;
+  receivedAt: string | null;
 };
 
 export type CommandCenterInbox = {
@@ -246,8 +247,10 @@ export type CommandCenterKanbanTask = {
   id: string;
   title: string;
   status: string;
+  priority: string;
   lifeAreaName: string | null;
   goalContext: CommandCenterGoalContext | null;
+  completedToday: boolean;
 };
 
 export type CommandCenterGoalProgress = {
@@ -607,6 +610,7 @@ export async function loadCommandCenter(
         "Unknown sender",
       subject: message.subject?.trim() || "(No subject)",
       isRead: message.isRead,
+      receivedAt: message.receivedDateTime ?? null,
     }));
 
     inbox = {
@@ -657,11 +661,16 @@ export async function loadCommandCenter(
       id: task.id,
       title: task.title,
       status: task.status,
+      priority: task.priority,
       lifeAreaName:
         task.life_area_id !== null
           ? (lifeAreaNames.get(task.life_area_id) ?? null)
           : null,
       goalContext: actionableGoalTaskIndex.get(task.id) ?? null,
+      completedToday:
+        task.status === "done" &&
+        task.completed_at !== null &&
+        getLocalDateFromIso(task.completed_at, timezone) === todayDate,
     }));
 
   const goalItems: CommandCenterGoalProgress[] = goalRows.map((goal) => {

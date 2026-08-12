@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useState, useTransition } from "react";
+import {
+  useCallback,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { completePriorityTask } from "@/app/command-center/actions";
 import type { FocusTask } from "@/lib/jarvis/dashboard/build-command-center-view";
@@ -9,6 +14,8 @@ import { usePersistentFocusTimer } from "./use-persistent-focus-timer";
 type PriorityFocusControlsProps = {
   focusTask: FocusTask | null;
   timer: ReturnType<typeof usePersistentFocusTimer>;
+  completePlacement?: "inline" | "compact";
+  trailingAction?: ReactNode;
 };
 
 type CompleteState = "idle" | "loading" | "success" | "error";
@@ -23,6 +30,8 @@ function isEligibleTaskId(taskId: string | null): taskId is string {
 export function PriorityFocusControls({
   focusTask,
   timer,
+  completePlacement = "inline",
+  trailingAction = null,
 }: PriorityFocusControlsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -68,8 +77,28 @@ export function PriorityFocusControls({
     completableTitle &&
     completeState !== "success";
 
+  const completeControl =
+    showCompleteButton ? (
+      <CompleteTaskButton
+        title={completableTitle}
+        state={completeState}
+        error={completeError}
+        disabled={!canComplete}
+        onComplete={handleComplete}
+        compact={completePlacement === "compact"}
+      />
+    ) : completeState === "success" ? (
+      <span className="cc2-priority-complete-msg" role="status">
+        Task completed
+      </span>
+    ) : null;
+
   return (
     <div className="cc2-priority-controls">
+      {completePlacement === "compact" && timer.phase === "idle" ? (
+        <div className="cc2-priority-hero-tools">{completeControl}</div>
+      ) : null}
+
       {timer.phase === "idle" ? (
         <>
           {!timer.canStart ? (
@@ -80,27 +109,16 @@ export function PriorityFocusControls({
           <div className="cc2-priority-actions">
             <button
               type="button"
-              className="cc2-btn cc2-btn--primary"
+              className="cc2-btn cc2-btn--focus"
               onClick={timer.start}
               disabled={!timer.canStart}
               aria-label="Start 25-minute focus block"
             >
+              <span className="cc2-btn-play" aria-hidden="true">▶</span>
               Start 25-minute focus
             </button>
-            {showCompleteButton ? (
-              <CompleteTaskButton
-                title={completableTitle}
-                state={completeState}
-                error={completeError}
-                disabled={!canComplete}
-                onComplete={handleComplete}
-              />
-            ) : null}
-            {completeState === "success" ? (
-              <span className="cc2-priority-complete-msg" role="status">
-                Task completed
-              </span>
-            ) : null}
+            {trailingAction}
+            {completePlacement === "inline" ? completeControl : null}
           </div>
         </>
       ) : null}
@@ -142,15 +160,7 @@ export function PriorityFocusControls({
           >
             End focus
           </button>
-          {showCompleteButton ? (
-            <CompleteTaskButton
-              title={completableTitle}
-              state={completeState}
-              error={completeError}
-              disabled={!canComplete}
-              onComplete={handleComplete}
-            />
-          ) : null}
+          {completeControl}
         </div>
       ) : null}
 
@@ -188,15 +198,40 @@ function CompleteTaskButton({
   error,
   disabled,
   onComplete,
+  compact = false,
 }: {
   title: string;
   state: CompleteState;
   error: string | null;
   disabled: boolean;
   onComplete: () => void;
+  compact?: boolean;
 }) {
   const label =
     state === "loading" ? "Completing…" : state === "error" ? "Try again" : "Complete task";
+
+  if (compact) {
+    return (
+      <div className="cc2-priority-complete-wrap cc2-priority-complete-wrap--compact">
+        <button
+          type="button"
+          className="cc2-priority-complete-icon"
+          onClick={onComplete}
+          disabled={disabled || state === "loading"}
+          aria-label={`Complete task ${title}`}
+          aria-busy={state === "loading"}
+          title={label}
+        >
+          ✓
+        </button>
+        {state === "error" && error ? (
+          <span className="cc2-priority-error" role="alert">
+            {error}
+          </span>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="cc2-priority-complete-wrap">

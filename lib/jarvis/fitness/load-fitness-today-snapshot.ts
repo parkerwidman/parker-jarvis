@@ -15,6 +15,8 @@ import {
   kilogramsToPounds,
   kilojoulesToKilocalories,
 } from "@/lib/jarvis/fitness/fitness-display-utils";
+import { buildFitnessTrendDays } from "@/lib/jarvis/fitness/fitness-trend-selection";
+import { loadFitnessGlance } from "@/lib/jarvis/fitness/load-fitness-glance";
 import {
   selectBodySnapshot,
   selectCycleForToday,
@@ -245,7 +247,7 @@ export async function loadFitnessTodaySnapshot(
   ] = await Promise.all([
     supabase
       .from("jarvis_profiles")
-      .select("timezone")
+      .select("timezone, preferred_name")
       .eq("user_id", userId)
       .maybeSingle(),
     supabase
@@ -319,6 +321,18 @@ export async function loadFitnessTodaySnapshot(
     timeZone,
   });
 
+  const trends = buildFitnessTrendDays({
+    recoveries,
+    sleeps,
+    cycles,
+    todayDate,
+    timeZone,
+  });
+
+  const glance = await loadFitnessGlance(supabase, userId, timeZone, todayDate);
+  const displayName =
+    profileResult.data?.preferred_name?.trim() || "Parker";
+
   return {
     timeZone,
     todayDate,
@@ -338,5 +352,8 @@ export async function loadFitnessTodaySnapshot(
       connection.lastSuccessfulSyncAt,
       timeZone,
     ),
+    trends,
+    glance,
+    displayName,
   };
 }
