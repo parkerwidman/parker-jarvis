@@ -170,6 +170,7 @@ export const MAIN_JARVIS_AGENT: AgentConfig = {
     "microsoft",
     "main_personal_writes",
     "personal_finance",
+    "schedule",
     "melusi_expenses",
   ],
 };

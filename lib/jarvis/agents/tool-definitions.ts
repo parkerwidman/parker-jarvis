@@ -956,6 +956,107 @@ export const MELUSI_SOCIAL_TOOLS: OpenAI.Responses.Tool[] = [
   },
 ];
 
+export const SCHEDULE_TOOLS: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    name: "get_schedule_for_date",
+    description:
+      "Load the user's resolved Jarvis Schedule for one local calendar date. Use this when Parker asks about today's structure, tomorrow, a weekday, classes, workouts, routines, work blocks, reading, sleep, or what a specific day looks like in his persistent weekly Schedule. This reads Jarvis Schedule only, not Outlook calendar events. Omit date to use Parker's local today. Returns resolved blocks after recurring items and manual overrides. Never guess schedule blocks from memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: {
+          type: ["string", "null"],
+          description:
+            "Local calendar date in YYYY-MM-DD. Pass null to use Parker's local today.",
+        },
+      },
+      required: ["date"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "get_schedule_for_week",
+    description:
+      "Load the user's resolved Jarvis Schedule for the Monday-through-Sunday week containing a local date or week start. Use this when Parker asks about next week, this week, or a multi-day view of his persistent weekly Schedule. This reads Jarvis Schedule only, not Outlook calendar events. Returns blocks grouped by date with overrides applied. Never guess schedule blocks from memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: {
+          type: ["string", "null"],
+          description:
+            "Any local date in YYYY-MM-DD whose week should be loaded. Normalized to Monday. Pass null when weekStart is provided or to use Parker's local today.",
+        },
+        weekStart: {
+          type: ["string", "null"],
+          description:
+            "Explicit Monday week start in YYYY-MM-DD. Pass null to derive the week from date or local today.",
+        },
+      },
+      required: ["date", "weekStart"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "get_schedule_periods",
+    description:
+      "List the user's Jarvis Schedule periods with date ranges, timezone, database status, and whether each period applies on the reference date. Use this when Parker asks when a schedule begins or ends, what schedule he is on, or what comes after the current semester schedule. Returns actual stored periods only.",
+    parameters: {
+      type: "object",
+      properties: {
+        referenceDate: {
+          type: ["string", "null"],
+          description:
+            "Local reference date in YYYY-MM-DD. Pass null to use Parker's local today.",
+        },
+      },
+      required: ["referenceDate"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "find_schedule_open_windows",
+    description:
+      "Find open time windows relative to the user's Jarvis Schedule structure for one local date. Use when Parker asks where he has structural free time, open blocks, or room to fit work within his intended weekly Schedule. This does not check Outlook calendar events. For actual availability recommendations, also consult Outlook calendar when connected. Returns gaps between resolved schedule blocks after overrides.",
+    parameters: {
+      type: "object",
+      properties: {
+        date: {
+          type: ["string", "null"],
+          description:
+            "Local calendar date in YYYY-MM-DD. Pass null to use Parker's local today.",
+        },
+        earliestTime: {
+          type: ["string", "null"],
+          description:
+            "Earliest local search time such as 06:00 or 06:00:00. Pass null for the default morning boundary.",
+        },
+        latestTime: {
+          type: ["string", "null"],
+          description:
+            "Latest local search time such as 22:30 or 22:30:00. Pass null for the default evening boundary.",
+        },
+        minimumDurationMinutes: {
+          type: ["integer", "null"],
+          minimum: 0,
+          maximum: 1440,
+          description:
+            "Minimum open window length in minutes. Pass null for no minimum.",
+        },
+      },
+      required: ["date", "earliestTime", "latestTime", "minimumDurationMinutes"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
 const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {
   tasks: TASK_TOOLS,
   projects: PROJECT_TOOLS,
@@ -964,6 +1065,7 @@ const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {
   main_personal_writes: MAIN_PERSONAL_WRITE_TOOLS,
   action_requests: ACTION_REQUEST_TOOLS,
   personal_finance: PERSONAL_FINANCE_TOOLS,
+  schedule: SCHEDULE_TOOLS,
   melusi_social: MELUSI_SOCIAL_TOOLS,
   melusi_expenses: MELUSI_EXPENSE_TOOLS,
 };
@@ -991,6 +1093,7 @@ export function getToolsForAgent(agentKey: "main" | "melusi"): OpenAI.Responses.
         "microsoft",
         "main_personal_writes",
         "personal_finance",
+        "schedule",
         "melusi_expenses",
       ] as const
     : (["tasks", "projects", "melusi_social", "melusi_expenses"] as const);

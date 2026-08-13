@@ -45,6 +45,7 @@ export type ToolCapabilityGroup =
   | "main_personal_writes"
   | "action_requests"
   | "personal_finance"
+  | "schedule"
   | "melusi_social"
   | "melusi_expenses";
 

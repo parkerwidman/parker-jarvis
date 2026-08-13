@@ -45,6 +45,12 @@ import {
   getPersonalRecurringCharges,
   getPersonalSpending,
 } from "@/lib/jarvis/finance/personal-finance/personal-finance-tools";
+import {
+  findScheduleOpenWindowsTool,
+  getScheduleForDate,
+  getScheduleForWeek,
+  getSchedulePeriods,
+} from "@/lib/jarvis/schedule/schedule-tools";
 import { logAssistantError } from "./agent-diagnostics";
 
 function nullableString(value: unknown): string | null {
@@ -401,6 +407,34 @@ export async function executeJarvisTool(
           await getPersonalRecurringCharges(supabase, userId, {
             windowDays: args.windowDays,
             status: args.status,
+          }),
+        );
+      case "get_schedule_for_date":
+        return JSON.stringify(
+          await getScheduleForDate(supabase, userId, {
+            date: args.date,
+          }),
+        );
+      case "get_schedule_for_week":
+        return JSON.stringify(
+          await getScheduleForWeek(supabase, userId, {
+            date: args.date,
+            weekStart: args.weekStart,
+          }),
+        );
+      case "get_schedule_periods":
+        return JSON.stringify(
+          await getSchedulePeriods(supabase, userId, {
+            referenceDate: args.referenceDate,
+          }),
+        );
+      case "find_schedule_open_windows":
+        return JSON.stringify(
+          await findScheduleOpenWindowsTool(supabase, userId, {
+            date: args.date,
+            earliestTime: args.earliestTime,
+            latestTime: args.latestTime,
+            minimumDurationMinutes: args.minimumDurationMinutes,
           }),
         );
       default:
