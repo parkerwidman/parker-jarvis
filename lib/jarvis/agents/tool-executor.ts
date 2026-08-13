@@ -51,6 +51,15 @@ import {
   getScheduleForWeek,
   getSchedulePeriods,
 } from "@/lib/jarvis/schedule/schedule-tools";
+import {
+  cancelPendingScheduleActionTool,
+  confirmPendingScheduleActionTool,
+  proposeAddScheduleItem,
+  proposeMoveScheduleItem,
+  proposeRemoveScheduleItem,
+  proposeSkipScheduleOccurrence,
+  proposeUpdateScheduleItem,
+} from "@/lib/jarvis/schedule/schedule-action-tools";
 import { logAssistantError } from "./agent-diagnostics";
 
 function nullableString(value: unknown): string | null {
@@ -91,6 +100,35 @@ function resolveProjectToolArgs(
   }
 
   return { projectId, projectName };
+}
+
+function nullableNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  return typeof value === "number" ? value : undefined;
+}
+
+function nullableBoolean(value: unknown): boolean | undefined {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function requireInteractiveMainScheduleWrite(
+  executionContext: JarvisToolExecutionContext,
+): { allowed: true } | { allowed: false; errorCode: string } {
+  if (
+    executionContext.agentKey !== "main" ||
+    !executionContext.isInteractiveMainJarvisTurn
+  ) {
+    return { allowed: false, errorCode: "action_forbidden" };
+  }
+
+  return { allowed: true };
 }
 
 export async function executeJarvisTool(
@@ -437,6 +475,138 @@ export async function executeJarvisTool(
             minimumDurationMinutes: args.minimumDurationMinutes,
           }),
         );
+      case "propose_add_schedule_item": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await proposeAddScheduleItem(supabase, userId, {
+            kind: args.kind as "one_time" | "recurring",
+            scheduleId: String(args.scheduleId ?? ""),
+            title: String(args.title ?? ""),
+            category: String(args.category ?? ""),
+            occurrenceDate: String(args.occurrenceDate ?? ""),
+            dayOfWeek: nullableNumber(args.dayOfWeek),
+            effectiveStartDate: nullableString(args.effectiveStartDate) ?? undefined,
+            startTime: String(args.startTime ?? ""),
+            endTime: nullableString(args.endTime),
+            isOpenEnded: nullableBoolean(args.isOpenEnded),
+            notes: nullableString(args.notes),
+          }),
+        );
+      }
+      case "propose_update_schedule_item": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await proposeUpdateScheduleItem(supabase, userId, {
+            scheduleId: String(args.scheduleId ?? ""),
+            scheduleItemId: nullableString(args.scheduleItemId),
+            overrideId: nullableString(args.overrideId),
+            occurrenceKey: nullableString(args.occurrenceKey) ?? undefined,
+            source: nullableString(args.source) ?? undefined,
+            occurrenceDate: String(args.occurrenceDate ?? ""),
+            scope: args.scope as "this_date_only" | "this_and_future" | "entire_series",
+            title: String(args.title ?? ""),
+            category: String(args.category ?? ""),
+            dayOfWeek: nullableNumber(args.dayOfWeek),
+            startTime: String(args.startTime ?? ""),
+            endTime: nullableString(args.endTime),
+            isOpenEnded: nullableBoolean(args.isOpenEnded),
+            notes: nullableString(args.notes),
+            targetOccurrenceDate: nullableString(args.targetOccurrenceDate) ?? undefined,
+          }),
+        );
+      }
+      case "propose_move_schedule_item": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await proposeMoveScheduleItem(supabase, userId, {
+            scheduleId: String(args.scheduleId ?? ""),
+            scheduleItemId: String(args.scheduleItemId ?? ""),
+            overrideId: nullableString(args.overrideId),
+            source: nullableString(args.source) ?? undefined,
+            sourceDate: String(args.sourceDate ?? ""),
+            targetDate: String(args.targetDate ?? ""),
+            title: String(args.title ?? ""),
+            category: String(args.category ?? ""),
+            startTime: String(args.startTime ?? ""),
+            endTime: nullableString(args.endTime),
+            isOpenEnded: nullableBoolean(args.isOpenEnded),
+            notes: nullableString(args.notes),
+            scope: "this_date_only",
+          }),
+        );
+      }
+      case "propose_remove_schedule_item": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await proposeRemoveScheduleItem(supabase, userId, {
+            scheduleId: String(args.scheduleId ?? ""),
+            scheduleItemId: nullableString(args.scheduleItemId),
+            overrideId: nullableString(args.overrideId),
+            source: nullableString(args.source) ?? undefined,
+            occurrenceDate: String(args.occurrenceDate ?? ""),
+            scope: args.scope as "this_date_only" | "this_and_future" | "entire_series",
+            title: nullableString(args.title) ?? undefined,
+          }),
+        );
+      }
+      case "propose_skip_schedule_occurrence": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await proposeSkipScheduleOccurrence(supabase, userId, {
+            scheduleId: String(args.scheduleId ?? ""),
+            scheduleItemId: nullableString(args.scheduleItemId),
+            overrideId: nullableString(args.overrideId),
+            source: nullableString(args.source) ?? undefined,
+            occurrenceDate: String(args.occurrenceDate ?? ""),
+            title: nullableString(args.title) ?? undefined,
+            scope: "this_date_only",
+          }),
+        );
+      }
+      case "confirm_pending_schedule_action": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await confirmPendingScheduleActionTool(supabase, userId, {
+            pendingActionId: args.pendingActionId,
+          }),
+        );
+      }
+      case "cancel_pending_schedule_action": {
+        const allowed = requireInteractiveMainScheduleWrite(executionContext);
+        if (!allowed.allowed) {
+          return JSON.stringify({ success: false, errorCode: allowed.errorCode });
+        }
+
+        return JSON.stringify(
+          await cancelPendingScheduleActionTool(supabase, userId, {
+            pendingActionId: args.pendingActionId,
+          }),
+        );
+      }
       default:
         return JSON.stringify({
           success: false,

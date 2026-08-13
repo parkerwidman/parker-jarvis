@@ -114,6 +114,7 @@ export function buildAgentInstructions(
   context: JarvisContext,
   selectedRecordSection = "",
   melusiThreadType?: MelusiThreadType,
+  pendingScheduleSection = "",
 ): string {
   const baseInstructions =
     agentKey === "melusi"
@@ -130,6 +131,7 @@ export function buildAgentInstructions(
     buildDateTimeSection(context) +
     buildPersonalContextSection(context) +
     threadSection +
-    selectedRecordSection
+    selectedRecordSection +
+    pendingScheduleSection
   );
 }

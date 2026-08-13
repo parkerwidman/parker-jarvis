@@ -46,6 +46,12 @@ export function summarizeScheduleBlock(
   occurrence: ScheduleOccurrence,
 ): Record<string, unknown> {
   return {
+    scheduleId: occurrence.scheduleId,
+    scheduleItemId: occurrence.scheduleItemId,
+    overrideId: occurrence.overrideId,
+    occurrenceKey: occurrence.occurrenceKey,
+    occurrenceDate: occurrence.occurrenceDate,
+    dayOfWeek: occurrence.dayOfWeek,
     title: occurrence.title,
     category: occurrence.category,
     start: formatScheduleTime(occurrence.localStartTime),
@@ -53,6 +59,8 @@ export function summarizeScheduleBlock(
       occurrence.isOpenEnded || occurrence.localEndTime === null
         ? "onward"
         : formatScheduleTime(occurrence.localEndTime),
+    localStartTime: occurrence.localStartTime,
+    localEndTime: occurrence.localEndTime,
     source: occurrence.source,
     isOverridden: occurrence.isOverridden,
     isOpenEnded: occurrence.isOpenEnded,

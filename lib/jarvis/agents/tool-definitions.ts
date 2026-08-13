@@ -603,7 +603,7 @@ export const MAIN_PERSONAL_WRITE_TOOLS: OpenAI.Responses.Tool[] = [
     type: "function",
     name: "create_outlook_calendar_event",
     description:
-      "Creates an Outlook calendar event immediately, including invitations when attendees are explicitly requested. Use when Parker clearly asks to schedule, add, create, or put an event on his Outlook calendar. Resolve relative times to absolute datetimes before calling.",
+      "Creates an Outlook calendar event immediately for external calendar commitments: meetings, appointments, interviews, reservations, flights, calls with other people, invitations, and events Parker explicitly asks to put on his Outlook calendar. Includes invitations when attendees are explicitly requested. Do NOT use for personal Jarvis Schedule blocks such as work blocks, focus blocks, study blocks, gym/workout blocks, routines, reading, planning, or other intended life-structure time blocks — those use propose_* Jarvis Schedule tools instead. Resolve relative times to absolute datetimes before calling.",
     parameters: {
       type: "object",
       properties: {
@@ -956,7 +956,7 @@ export const MELUSI_SOCIAL_TOOLS: OpenAI.Responses.Tool[] = [
   },
 ];
 
-export const SCHEDULE_TOOLS: OpenAI.Responses.Tool[] = [
+export const SCHEDULE_READ_TOOLS: OpenAI.Responses.Tool[] = [
   {
     type: "function",
     name: "get_schedule_for_date",
@@ -1055,6 +1055,223 @@ export const SCHEDULE_TOOLS: OpenAI.Responses.Tool[] = [
     },
     strict: true,
   },
+];
+
+const SCHEDULE_SCOPE_ENUM = ["this_date_only", "this_and_future", "entire_series"] as const;
+
+export const SCHEDULE_WRITE_TOOLS: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    name: "propose_add_schedule_item",
+    description:
+      "Propose adding a personal time block to Parker's Jarvis Schedule — his intended weekly life structure. Use for work blocks, focus blocks, study blocks, gym/workout blocks, routines, reading, planning, recurring personal structure, and one-off personal blocks. This persists an exact pending action and does NOT mutate Schedule until Parker explicitly confirms in chat. Do NOT use for Outlook calendar events, meetings, appointments, or external commitments. Use after resolving the real current Schedule state. For one-time blocks use kind one_time. For recurring blocks use kind recurring.",
+    parameters: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["one_time", "recurring"] },
+        scheduleId: { type: "string" },
+        title: { type: "string" },
+        category: { type: "string" },
+        occurrenceDate: { type: "string" },
+        dayOfWeek: { type: ["integer", "null"], minimum: 0, maximum: 6 },
+        effectiveStartDate: { type: ["string", "null"] },
+        startTime: { type: "string" },
+        endTime: { type: ["string", "null"] },
+        isOpenEnded: { type: ["boolean", "null"] },
+        notes: { type: ["string", "null"] },
+      },
+      required: [
+        "kind",
+        "scheduleId",
+        "title",
+        "category",
+        "occurrenceDate",
+        "dayOfWeek",
+        "effectiveStartDate",
+        "startTime",
+        "endTime",
+        "isOpenEnded",
+        "notes",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "propose_update_schedule_item",
+    description:
+      "Propose updating an existing Jarvis Schedule personal time block (work, focus, study, gym, routine, reading, planning, etc.). This persists an exact pending action and does NOT mutate Schedule until Parker explicitly confirms in chat. Do NOT use for Outlook calendar events. Resolve the real block first using Schedule read tools.",
+    parameters: {
+      type: "object",
+      properties: {
+        scheduleId: { type: "string" },
+        scheduleItemId: { type: ["string", "null"] },
+        overrideId: { type: ["string", "null"] },
+        occurrenceKey: { type: ["string", "null"] },
+        source: { type: ["string", "null"], enum: ["recurring", "replaced", "added", null] },
+        occurrenceDate: { type: "string" },
+        scope: { type: "string", enum: [...SCHEDULE_SCOPE_ENUM] },
+        title: { type: "string" },
+        category: { type: "string" },
+        dayOfWeek: { type: ["integer", "null"], minimum: 0, maximum: 6 },
+        startTime: { type: "string" },
+        endTime: { type: ["string", "null"] },
+        isOpenEnded: { type: ["boolean", "null"] },
+        notes: { type: ["string", "null"] },
+        targetOccurrenceDate: { type: ["string", "null"] },
+      },
+      required: [
+        "scheduleId",
+        "scheduleItemId",
+        "overrideId",
+        "occurrenceKey",
+        "source",
+        "occurrenceDate",
+        "scope",
+        "title",
+        "category",
+        "dayOfWeek",
+        "startTime",
+        "endTime",
+        "isOpenEnded",
+        "notes",
+        "targetOccurrenceDate",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "propose_move_schedule_item",
+    description:
+      "Propose moving one Jarvis Schedule personal time block occurrence (work, focus, study, gym, routine, etc.) to another date/time. This persists an exact pending action and does NOT mutate Schedule until Parker explicitly confirms in chat. Do NOT use for Outlook calendar events.",
+    parameters: {
+      type: "object",
+      properties: {
+        scheduleId: { type: "string" },
+        scheduleItemId: { type: "string" },
+        overrideId: { type: ["string", "null"] },
+        source: { type: ["string", "null"], enum: ["recurring", "replaced", "added", null] },
+        sourceDate: { type: "string" },
+        targetDate: { type: "string" },
+        title: { type: "string" },
+        category: { type: "string" },
+        startTime: { type: "string" },
+        endTime: { type: ["string", "null"] },
+        isOpenEnded: { type: ["boolean", "null"] },
+        notes: { type: ["string", "null"] },
+      },
+      required: [
+        "scheduleId",
+        "scheduleItemId",
+        "overrideId",
+        "source",
+        "sourceDate",
+        "targetDate",
+        "title",
+        "category",
+        "startTime",
+        "endTime",
+        "isOpenEnded",
+        "notes",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "propose_remove_schedule_item",
+    description:
+      "Propose removing or ending Jarvis Schedule personal time blocks (work, focus, study, gym, routine, etc.) with explicit scope. This persists an exact pending action and does NOT mutate Schedule until Parker explicitly confirms in chat. Do NOT use for Outlook calendar events.",
+    parameters: {
+      type: "object",
+      properties: {
+        scheduleId: { type: "string" },
+        scheduleItemId: { type: ["string", "null"] },
+        overrideId: { type: ["string", "null"] },
+        source: { type: ["string", "null"], enum: ["recurring", "replaced", "added", null] },
+        occurrenceDate: { type: "string" },
+        scope: { type: "string", enum: [...SCHEDULE_SCOPE_ENUM] },
+        title: { type: ["string", "null"] },
+      },
+      required: [
+        "scheduleId",
+        "scheduleItemId",
+        "overrideId",
+        "source",
+        "occurrenceDate",
+        "scope",
+        "title",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "propose_skip_schedule_occurrence",
+    description:
+      "Propose skipping one recurring Jarvis Schedule personal time block occurrence on a specific date. This persists an exact pending action and does NOT mutate Schedule until Parker explicitly confirms in chat. Do NOT use for Outlook calendar events.",
+    parameters: {
+      type: "object",
+      properties: {
+        scheduleId: { type: "string" },
+        scheduleItemId: { type: ["string", "null"] },
+        overrideId: { type: ["string", "null"] },
+        source: { type: ["string", "null"], enum: ["recurring", "replaced", "added", null] },
+        occurrenceDate: { type: "string" },
+        title: { type: ["string", "null"] },
+      },
+      required: [
+        "scheduleId",
+        "scheduleItemId",
+        "overrideId",
+        "source",
+        "occurrenceDate",
+        "title",
+      ],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "confirm_pending_schedule_action",
+    description:
+      "Execute one exact stored pending Jarvis Schedule action after Parker explicitly confirms it in chat. Pass only the pendingActionId. Do not pass fresh mutation details.",
+    parameters: {
+      type: "object",
+      properties: {
+        pendingActionId: { type: "string" },
+      },
+      required: ["pendingActionId"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  {
+    type: "function",
+    name: "cancel_pending_schedule_action",
+    description:
+      "Cancel one stored pending Jarvis Schedule action without mutating Schedule when Parker explicitly rejects it.",
+    parameters: {
+      type: "object",
+      properties: {
+        pendingActionId: { type: "string" },
+      },
+      required: ["pendingActionId"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+];
+
+export const SCHEDULE_TOOLS: OpenAI.Responses.Tool[] = [
+  ...SCHEDULE_READ_TOOLS,
+  ...SCHEDULE_WRITE_TOOLS,
 ];
 
 const TOOL_GROUP_MAP: Record<ToolCapabilityGroup, OpenAI.Responses.Tool[]> = {

@@ -28,6 +28,9 @@ import {
   logToolCallDiagnostic,
 } from "./agent-diagnostics";
 import { buildAgentInstructions } from "./instruction-builder";
+import { buildPendingScheduleActionSection } from "@/lib/jarvis/schedule/build-pending-schedule-section";
+import { loadActiveMainPendingScheduleAction } from "@/lib/jarvis/schedule/pending-schedule-actions";
+import { detectScheduleConfirmationIntent } from "@/lib/jarvis/schedule/schedule-confirmation-intent";
 import {
   resolveMelusiThreadForMessage,
   validateThreadAgentConsistency,
@@ -122,6 +125,15 @@ export async function runAgentChat(
     jarvisContext,
     selectedRecordSection,
     melusiThreadType,
+    agentKey === "main"
+      ? buildPendingScheduleActionSection({
+          pendingAction: await loadActiveMainPendingScheduleAction(
+            supabase,
+            userId,
+          ),
+          confirmationIntent: detectScheduleConfirmationIntent(message),
+        })
+      : "",
   );
 
   let historyMessages: Array<{ role: "user" | "assistant"; content: string }> =

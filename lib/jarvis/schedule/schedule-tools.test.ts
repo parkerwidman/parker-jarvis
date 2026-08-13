@@ -296,12 +296,11 @@ describe("schedule tool registration", () => {
     );
   });
 
-  it("does not expose schedule write tools", () => {
+  it("keeps read tools separate from write proposal tools", () => {
     const mainToolNames = MAIN_JARVIS_TOOLS.map((tool) => tool.name);
 
-    expect(mainToolNames.some((name) => name.includes("schedule") && name.includes("propose"))).toBe(
-      false,
-    );
+    expect(mainToolNames).toContain("get_schedule_for_date");
+    expect(mainToolNames).toContain("propose_add_schedule_item");
     expect(mainToolNames).not.toContain("jarvis_schedule_add_recurring_item");
   });
 });
