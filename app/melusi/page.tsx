@@ -1,15 +1,7 @@
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { CommandCenterContextLayout } from "@/components/jarvis/command-center-context-layout";
-import { MelusiActiveProjectsSection } from "@/components/melusi/command-center/melusi-active-projects-section";
-import { MelusiNeedsAttentionSection } from "@/components/melusi/command-center/melusi-needs-attention-section";
-import {
-  MelusiBusinessPrioritySection,
-  MelusiCommandCenterHeader,
-  MelusiTasksSection,
-} from "@/components/melusi/command-center/melusi-priority-section";
-import { MelusiBusinessSnapshotStrip } from "@/components/melusi/command-center/melusi-snapshot-section";
+import { MelusiCommandCenterDashboard } from "@/components/melusi/command-center/melusi-command-center-dashboard";
 import { MelusiJarvisPanel } from "@/components/melusi/melusi-jarvis-panel";
-import { MelusiNav } from "@/components/melusi/melusi-nav";
 import { JarvisAlert, JarvisPageContent } from "@/components/jarvis/jarvis-ui";
 import { loadRecentThreadMessages } from "@/lib/jarvis/agents/agent-message-tools";
 import { findMelusiCommandThread } from "@/lib/jarvis/agents/agent-thread-tools";
@@ -98,13 +90,6 @@ export default async function MelusiPage({
   return (
     <JarvisAppShell mainClassName="app-main--command-center">
       <JarvisPageContent className="jv-page-content--melusi-command melusi-workspace">
-        <MelusiCommandCenterHeader
-          headerStatus={data.headerStatus}
-          businessContextLine={data.businessContextLine}
-        />
-
-        <MelusiNav />
-
         {created ? (
           <JarvisAlert variant="success">Project created.</JarvisAlert>
         ) : null}
@@ -114,34 +99,20 @@ export default async function MelusiPage({
         {error ? <JarvisAlert variant="error">{error}</JarvisAlert> : null}
 
         <CommandCenterContextLayout>
-          <div className="melusi-dash-layout">
-            <MelusiBusinessPrioritySection
-              priority={data.businessPriority}
-              timeZone={data.timezone}
-            />
-
-            <div className="melusi-operating-grid">
-              <MelusiTasksSection
-                taskGroups={data.taskGroups}
-                timeZone={data.timezone}
+          <MelusiCommandCenterDashboard
+            data={data}
+            jarvisPanel={
+              <MelusiJarvisPanel
+                userName={data.preferredName}
+                threadId={commandThread?.id ?? null}
+                initialMessages={commandMessages}
+                expandHref={expandHref}
+                socialConnected={socialConnected}
+                variant="compact"
+                compactStatusLine={jarvisStatusLine}
               />
-              <MelusiActiveProjectsSection projects={data.activeProjects} />
-            </div>
-
-            <MelusiBusinessSnapshotStrip items={data.snapshotItems} />
-
-            <MelusiNeedsAttentionSection items={data.attentionItems} />
-
-            <MelusiJarvisPanel
-              userName={data.preferredName}
-              threadId={commandThread?.id ?? null}
-              initialMessages={commandMessages}
-              expandHref={expandHref}
-              socialConnected={socialConnected}
-              variant="compact"
-              compactStatusLine={jarvisStatusLine}
-            />
-          </div>
+            }
+          />
         </CommandCenterContextLayout>
       </JarvisPageContent>
     </JarvisAppShell>

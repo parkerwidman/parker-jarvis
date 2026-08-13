@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { completeMelusiTaskFromDashboard } from "@/app/melusi/actions";
-import { CommandCenterPanel } from "@/components/jarvis/command-center/command-center-panel";
+import { MelusiHeroOrb } from "@/components/melusi/command-center/melusi-hero-orb";
+import {
+  MelusiTasksEmptyVisual,
+  MelusiTasksIcon,
+} from "@/components/melusi/melusi-icons";
+import { MelusiPanel } from "@/components/melusi/command-center/melusi-panel";
 import type {
   MelusiBusinessPriority,
   MelusiBusinessTask,
@@ -10,8 +15,14 @@ import { formatDueDate } from "@/lib/jarvis/dashboard/command-center-utils";
 
 function PriorityBadge({ priority }: { priority: string }) {
   return (
-    <span className={`cc-priority cc-priority--${priority}`}>{priority}</span>
+    <span className={`melusi-pill melusi-pill--priority melusi-pill--${priority}`}>
+      {priority}
+    </span>
   );
+}
+
+function ReasonBadge({ reason }: { reason: string }) {
+  return <span className="melusi-pill melusi-pill--reason">{reason}</span>;
 }
 
 function TaskItem({
@@ -22,25 +33,27 @@ function TaskItem({
   timeZone: string;
 }) {
   return (
-    <li className={`cc-dash-task melusi-dash-task${task.overdue ? " cc-dash-task--overdue" : ""}`}>
-      <form action={completeMelusiTaskFromDashboard} className="cc-dash-task-form">
+    <li
+      className={`melusi-dash-task${task.overdue ? " melusi-dash-task--overdue" : ""}`}
+    >
+      <form action={completeMelusiTaskFromDashboard} className="melusi-dash-task-form">
         <input type="hidden" name="taskId" value={task.id} />
         <button
           type="submit"
-          className="cc-dash-task-check"
+          className="melusi-dash-task-check"
           aria-label={`Complete ${task.title}`}
         />
       </form>
-      <div className="cc-dash-task-body">
-        <span className="cc-dash-task-title">{task.title}</span>
-        <div className="cc-dash-task-details">
+      <div className="melusi-dash-task-body">
+        <span className="melusi-dash-task-title">{task.title}</span>
+        <div className="melusi-dash-task-details">
           {task.projectName ? (
-            <span className="cc-dash-task-area">{task.projectName}</span>
+            <span className="melusi-dash-task-area">{task.projectName}</span>
           ) : null}
           <PriorityBadge priority={task.priority} />
           {task.dueAt ? (
             <span
-              className={`cc-dash-task-due${task.overdue ? " cc-dash-task-due--overdue" : ""}`}
+              className={`melusi-dash-task-due${task.overdue ? " melusi-dash-task-due--overdue" : ""}`}
             >
               Due {formatDueDate(task.dueAt, timeZone)}
               {task.overdue ? " · Overdue" : task.dueToday ? " · Today" : null}
@@ -66,9 +79,9 @@ function TaskGroup({
   }
 
   return (
-    <div className="cc-dash-task-group melusi-dash-task-group">
-      <h3 className="cc-dash-task-group-label">{label}</h3>
-      <ul className="cc-dash-task-list">
+    <div className="melusi-dash-task-group">
+      <h3 className="melusi-dash-task-group-label">{label}</h3>
+      <ul className="melusi-dash-task-list">
         {tasks.map((task) => (
           <TaskItem key={task.id} task={task} timeZone={timeZone} />
         ))}
@@ -77,25 +90,44 @@ function TaskGroup({
   );
 }
 
+function buildTopPriorityLine(priority: MelusiBusinessPriority): string {
+  if (!priority) {
+    return "No urgent business issues right now.";
+  }
+
+  if (priority.kind === "project-planning") {
+    return `Top priority: Assign next action for ${priority.projectName}`;
+  }
+
+  if (priority.overdue) {
+    return `Top priority: ${priority.title} (overdue)`;
+  }
+
+  return `Top priority: ${priority.title}`;
+}
+
 export function MelusiCommandCenterHeader({
-  headerStatus,
+  businessPriority,
   businessContextLine,
 }: {
-  headerStatus: string;
+  businessPriority: MelusiBusinessPriority;
   businessContextLine: string;
 }) {
   return (
     <header className="melusi-dash-header">
-      <div className="melusi-dash-header-main">
+      <div className="melusi-dash-header-title-row">
         <h1 className="melusi-dash-title">
           Melusi <span>Command Center</span>
         </h1>
-        <p className="melusi-dash-descriptor">
-          AI education business operating dashboard
-        </p>
-        <p className="melusi-dash-status">{headerStatus}</p>
-        <p className="melusi-dash-context">{businessContextLine}</p>
+        <span className="melusi-dash-header-signal" aria-hidden="true">
+          <span className="melusi-dash-header-signal-line" />
+        </span>
       </div>
+      <p className="melusi-dash-descriptor">
+        AI education business operating dashboard
+      </p>
+      <p className="melusi-dash-status">{buildTopPriorityLine(businessPriority)}</p>
+      <p className="melusi-dash-context">{businessContextLine}</p>
     </header>
   );
 }
@@ -108,12 +140,56 @@ export function MelusiBusinessPrioritySection({
   timeZone: string;
 }) {
   return (
-    <section
-      className="melusi-priority-hero"
-      aria-label="#1 Business Priority"
-    >
-      <div className="melusi-priority-top">
-        <h2 className="melusi-priority-label">#1 Business Priority</h2>
+    <section className="melusi-priority-hero melusi-glass-surface melusi-glass-surface--hero" aria-label="#1 Business Priority">
+      <MelusiHeroOrb />
+
+      <div className="melusi-priority-main">
+        <p className="melusi-priority-label">#1 Business Priority</p>
+
+        {!priority ? (
+          <p className="melusi-priority-empty">
+            No business priority is selected. Add or prioritize a Melusi task.
+          </p>
+        ) : priority.kind === "project-planning" ? (
+          <div className="melusi-priority-content">
+            <h2 className="melusi-priority-title">{priority.projectName}</h2>
+            <p className="melusi-priority-next">
+              <span>Next action:</span> {priority.nextAction}
+            </p>
+            <div className="melusi-priority-badges">
+              <ReasonBadge reason={priority.selectionReason} />
+            </div>
+          </div>
+        ) : (
+          <div className="melusi-priority-content">
+            <h2 className="melusi-priority-title">{priority.title}</h2>
+            {priority.projectName ? (
+              <p className="melusi-priority-project">{priority.projectName}</p>
+            ) : null}
+            <p className="melusi-priority-next">
+              <span>Next action:</span> {priority.nextAction}
+            </p>
+            <div className="melusi-priority-badges">
+              <PriorityBadge priority={priority.priority} />
+              <ReasonBadge reason={priority.selectionReason} />
+              {priority.dueAt ? (
+                <span
+                  className={`melusi-priority-due${priority.overdue ? " melusi-priority-due--overdue" : ""}`}
+                >
+                  Due {formatDueDate(priority.dueAt, timeZone)}
+                  {priority.overdue
+                    ? " · Overdue"
+                    : priority.dueToday
+                      ? " · Today"
+                      : null}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="melusi-priority-actions">
         {priority?.kind === "task" ? (
           <form action={completeMelusiTaskFromDashboard}>
             <input type="hidden" name="taskId" value={priority.id} />
@@ -127,47 +203,6 @@ export function MelusiBusinessPrioritySection({
           </form>
         ) : null}
       </div>
-
-      {!priority ? (
-        <p className="melusi-priority-empty">
-          No business priority is selected. Add or prioritize a Melusi task.
-        </p>
-      ) : priority.kind === "project-planning" ? (
-        <div className="melusi-priority-content">
-          <h3 className="melusi-priority-title">{priority.projectName}</h3>
-          <p className="melusi-priority-project">Planning issue · no next action</p>
-          <p className="melusi-priority-next">
-            <span>Next action:</span> {priority.nextAction}
-          </p>
-          <p className="melusi-priority-reason">{priority.selectionReason}</p>
-        </div>
-      ) : (
-        <div className="melusi-priority-content">
-          <h3 className="melusi-priority-title">{priority.title}</h3>
-          {priority.projectName ? (
-            <p className="melusi-priority-project">{priority.projectName}</p>
-          ) : null}
-          <p className="melusi-priority-next">
-            <span>Next action:</span> {priority.nextAction}
-          </p>
-          <div className="melusi-priority-meta">
-            <PriorityBadge priority={priority.priority} />
-            {priority.dueAt ? (
-              <span
-                className={`melusi-priority-due${priority.overdue ? " melusi-priority-due--overdue" : ""}`}
-              >
-                Due {formatDueDate(priority.dueAt, timeZone)}
-                {priority.overdue
-                  ? " · Overdue"
-                  : priority.dueToday
-                    ? " · Today"
-                    : null}
-              </span>
-            ) : null}
-            <span className="melusi-priority-reason">{priority.selectionReason}</span>
-          </div>
-        </div>
-      )}
     </section>
   );
 }
@@ -182,23 +217,30 @@ export function MelusiTasksSection({
   const visibleCount = taskGroups.next.length + taskGroups.later.length;
 
   return (
-    <CommandCenterPanel
+    <MelusiPanel
       title="Today's Melusi Tasks"
+      icon={<MelusiTasksIcon />}
       href="/tasks"
       hrefLabel="All tasks"
       className="melusi-tasks-panel"
     >
       {visibleCount === 0 ? (
-        <p className="cc-empty cc-empty--compact">
-          No active Melusi tasks. Create the next action for an active project.
-        </p>
+        <div className="melusi-empty-state melusi-empty-state--tasks">
+          <span className="melusi-empty-state-visual" aria-hidden="true">
+            <MelusiTasksEmptyVisual />
+          </span>
+          <p className="melusi-empty-state-title">No active Melusi tasks.</p>
+          <p className="melusi-empty-state-copy">
+            Create the next action for an active project.
+          </p>
+        </div>
       ) : (
         <>
           <TaskGroup label="Next" tasks={taskGroups.next} timeZone={timeZone} />
           <TaskGroup label="Later" tasks={taskGroups.later} timeZone={timeZone} />
 
           {taskGroups.additionalOverdueCount > 0 ? (
-            <p className="cc-dash-overdue-summary">
+            <p className="melusi-dash-overdue-summary">
               {taskGroups.additionalOverdueCount} additional overdue task
               {taskGroups.additionalOverdueCount === 1 ? "" : "s"}.{" "}
               <Link href="/tasks">Review tasks</Link>
@@ -206,6 +248,6 @@ export function MelusiTasksSection({
           ) : null}
         </>
       )}
-    </CommandCenterPanel>
+    </MelusiPanel>
   );
 }

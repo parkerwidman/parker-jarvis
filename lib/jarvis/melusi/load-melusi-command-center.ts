@@ -1,14 +1,19 @@
 import "server-only";
 
 import { loadLifeAreaDashboard } from "@/lib/jarvis/life-areas/load-life-area-dashboard";
+import { buildMelusiBusinessHealth } from "@/lib/jarvis/melusi/build-melusi-business-health";
+import { buildMelusiContentPipeline } from "@/lib/jarvis/melusi/build-melusi-content-pipeline";
 import {
   buildMelusiCommandCenterView,
   type MelusiActiveProject,
   type MelusiAttentionItem,
   type MelusiBusinessPriority,
+  type MelusiKpiItem,
   type MelusiSnapshotItem,
   type MelusiTaskGroups,
 } from "@/lib/jarvis/melusi/build-melusi-command-center-view";
+import type { MelusiBusinessHealth } from "@/lib/jarvis/melusi/build-melusi-business-health";
+import type { MelusiContentPipeline } from "@/lib/jarvis/melusi/build-melusi-content-pipeline";
 import type { SocialCommandCenterSummary } from "@/lib/jarvis/integrations/metricool/metricool-social-types";
 import {
   formatLocalDateLabel,
@@ -63,10 +68,18 @@ export type MelusiCommandCenterData = {
   businessPriority: MelusiBusinessPriority;
   taskGroups: MelusiTaskGroups;
   snapshotItems: MelusiSnapshotItem[];
+  kpiItems: MelusiKpiItem[];
   activeProjects: MelusiActiveProject[];
   attentionItems: MelusiAttentionItem[];
   headerStatus: string;
   businessContextLine: string;
+  businessHealth: MelusiBusinessHealth;
+  contentPipeline: MelusiContentPipeline;
+  activeProjectCount: number;
+  openTaskCount: number;
+  socialStatus: string;
+  socialConnected: boolean;
+  pendingApprovalCount: number;
 };
 
 export async function loadMelusiCommandCenter(
@@ -163,12 +176,35 @@ export async function loadMelusiCommandCenter(
     socialStatus: socialInput?.status ?? "disconnected",
   });
 
+  const socialConnected = socialInput?.connected ?? false;
+  const socialStatus = socialInput?.status ?? "disconnected";
+  const socialSummary = socialInput?.summary ?? null;
+
+  const businessHealth = buildMelusiBusinessHealth({
+    attentionItems: view.attentionItems,
+    businessPriority: view.businessPriority,
+    activeProjectCount: view.activeProjectCount,
+    openTaskCount: view.openTaskCount,
+    socialStatus,
+    socialConnected,
+  });
+
+  const contentPipeline = buildMelusiContentPipeline({
+    activeProjectCount: view.activeProjectCount,
+    openTaskCount: view.openTaskCount,
+    socialConnected,
+    socialSummary,
+  });
+
   return {
     preferredName,
     timezone,
     todayDate: todayLocal,
     todayDateLabel: formatLocalDateLabel(timezone),
     businessContextLine: "B2C: AI Foundations · B2B: AI Foundations for Real Estate",
+    businessHealth,
+    contentPipeline,
+    pendingApprovalCount: approvals.length,
     ...view,
   };
 }

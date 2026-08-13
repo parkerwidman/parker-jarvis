@@ -39,6 +39,7 @@ export function MelusiNav() {
               key={link.href}
               href={link.href}
               className="melusi-nav-link melusi-nav-link--soon"
+              aria-disabled="true"
             >
               {link.label}
               <span className="melusi-nav-tag">Soon</span>

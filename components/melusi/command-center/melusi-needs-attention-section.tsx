@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { CommandCenterPanel } from "@/components/jarvis/command-center/command-center-panel";
+import { MelusiPanel } from "@/components/melusi/command-center/melusi-panel";
+import { MelusiWarningIcon } from "@/components/melusi/melusi-icons";
 import type { MelusiAttentionItem } from "@/lib/jarvis/melusi/build-melusi-command-center-view";
 
 const SEVERITY_LABELS: Record<MelusiAttentionItem["severity"], string> = {
@@ -16,33 +17,38 @@ export function MelusiNeedsAttentionSection({
 }) {
   if (items.length === 0) {
     return (
-      <p className="melusi-attention-bar" role="status">
+      <p className="melusi-attention-bar melusi-attention-bar--calm" role="status">
         Nothing urgent requires your attention.
       </p>
     );
   }
 
   return (
-    <CommandCenterPanel title="Needs Attention" className="melusi-attention-panel">
-      <ul className="cc-dash-attention melusi-attention">
+    <MelusiPanel title="Needs Attention" className="melusi-attention-panel melusi-glass-surface">
+      <ul className="melusi-attention-cards">
         {items.map((item) => (
           <li
             key={item.id}
-            className={`cc-dash-attention-item cc-dash-attention-item--${item.severity === "opportunity" ? "informational" : item.severity} melusi-attention-item--${item.severity}`}
+            className={`melusi-attention-card melusi-attention-card--${item.severity === "opportunity" ? "informational" : item.severity}`}
           >
-            <span className="cc-dash-attention-severity">
-              {SEVERITY_LABELS[item.severity]}
-            </span>
+            <div className="melusi-attention-card-head">
+              <span className="melusi-attention-card-icon" aria-hidden="true">
+                <MelusiWarningIcon />
+              </span>
+              <span className="melusi-attention-card-label">
+                {SEVERITY_LABELS[item.severity]}
+              </span>
+            </div>
             {item.href ? (
-              <Link href={item.href} className="cc-dash-attention-link">
+              <Link href={item.href} className="melusi-attention-card-message">
                 {item.message}
               </Link>
             ) : (
-              <span className="cc-dash-attention-message">{item.message}</span>
+              <p className="melusi-attention-card-message">{item.message}</p>
             )}
           </li>
         ))}
       </ul>
-    </CommandCenterPanel>
+    </MelusiPanel>
   );
 }

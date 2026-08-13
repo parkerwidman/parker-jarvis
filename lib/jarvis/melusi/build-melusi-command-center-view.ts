@@ -94,6 +94,14 @@ export type MelusiSnapshotItem = {
   tone?: "neutral" | "warning" | "urgent";
 };
 
+export type MelusiKpiItem = {
+  id: string;
+  label: string;
+  value: string;
+  href?: string;
+  tone?: "neutral" | "warning" | "urgent";
+};
+
 export type MelusiActiveProject = {
   id: string;
   name: string;
@@ -733,6 +741,71 @@ function buildBusinessSnapshot(input: {
   return items.slice(0, 5);
 }
 
+export function buildMelusiKpiStrip(input: {
+  activeProjectCount: number;
+  openTaskCount: number;
+  overdueTaskCount: number;
+  socialSummary: SocialCommandCenterSummary | null;
+  socialConnected: boolean;
+  socialStatus: string;
+  latestUpdateAt: string | null;
+  timeZone: string;
+}): MelusiKpiItem[] {
+  let socialValue = "Not connected";
+  let socialTone: MelusiKpiItem["tone"] = "neutral";
+  let socialHref = "/melusi/social";
+
+  if (input.socialConnected && input.socialSummary) {
+    const reelPace = input.socialSummary.cadenceReelPace;
+
+    if (reelPace === "behind") {
+      socialValue = "Behind Reel target";
+      socialTone = "warning";
+    } else if (reelPace === "on_pace") {
+      socialValue = "Reel cadence on track";
+    } else if (reelPace === "ahead") {
+      socialValue = "Ahead of Reel target";
+    } else {
+      socialValue = "Connected";
+    }
+  } else if (input.socialStatus === "reconnect_required") {
+    socialValue = "Reconnect required";
+    socialTone = "warning";
+  }
+
+  const latestUpdateValue = input.latestUpdateAt
+    ? formatRelativeUpdateDate(input.latestUpdateAt, input.timeZone)
+    : "No updates yet";
+
+  return [
+    {
+      id: "kpi-active-projects",
+      label: "Active projects",
+      value: String(input.activeProjectCount),
+      href: "/melusi#active-projects",
+    },
+    {
+      id: "kpi-open-tasks",
+      label: "Open tasks",
+      value: String(input.openTaskCount),
+      href: "/tasks",
+      tone: input.overdueTaskCount > 0 ? "warning" : "neutral",
+    },
+    {
+      id: "kpi-social",
+      label: "Social",
+      value: socialValue,
+      href: socialHref,
+      tone: socialTone,
+    },
+    {
+      id: "kpi-latest-update",
+      label: "Latest update",
+      value: latestUpdateValue,
+    },
+  ];
+}
+
 function buildAttentionItems(input: {
   unfinishedTasks: MelusiTaskRecord[];
   todayLocal: string;
@@ -974,9 +1047,15 @@ export function buildMelusiCommandCenterView(input: {
   businessPriority: MelusiBusinessPriority;
   taskGroups: MelusiTaskGroups;
   snapshotItems: MelusiSnapshotItem[];
+  kpiItems: MelusiKpiItem[];
   activeProjects: MelusiActiveProject[];
   attentionItems: MelusiAttentionItem[];
   headerStatus: string;
+  activeProjectCount: number;
+  openTaskCount: number;
+  overdueTaskCount: number;
+  socialStatus: string;
+  socialConnected: boolean;
 } {
   const activeProjects = input.projects.filter(
     (project) => project.status === "active",
@@ -1009,6 +1088,17 @@ export function buildMelusiCommandCenterView(input: {
     input.projectUpdates.length > 0 ? input.projectUpdates[0].created_at : null;
 
   const snapshotItems = buildBusinessSnapshot({
+    activeProjectCount: input.activeProjectCount,
+    openTaskCount: input.openTaskCount,
+    overdueTaskCount: input.overdueTaskCount,
+    socialSummary: input.socialSummary,
+    socialConnected: input.socialConnected,
+    socialStatus: input.socialStatus,
+    latestUpdateAt,
+    timeZone: input.timeZone,
+  });
+
+  const kpiItems = buildMelusiKpiStrip({
     activeProjectCount: input.activeProjectCount,
     openTaskCount: input.openTaskCount,
     overdueTaskCount: input.overdueTaskCount,
@@ -1054,8 +1144,14 @@ export function buildMelusiCommandCenterView(input: {
     businessPriority,
     taskGroups,
     snapshotItems,
+    kpiItems,
     activeProjects: activeProjectSummaries,
     attentionItems,
     headerStatus,
+    activeProjectCount: input.activeProjectCount,
+    openTaskCount: input.openTaskCount,
+    overdueTaskCount: input.overdueTaskCount,
+    socialStatus: input.socialStatus,
+    socialConnected: input.socialConnected,
   };
 }
