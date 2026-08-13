@@ -196,8 +196,8 @@ describe("Jarvis goals phase 1B2E level structural editing", () => {
 
     const cardHtml = renderToStaticMarkup(
       createElement(GoalCard, {
-        goal: sampleGoal({ isTodayPriority: true }),
-        showTodayPriority: true,
+        goal: sampleGoal({ isCurrentPriority: true, isTodayPriority: true }),
+        showCurrentPriority: true,
       }),
     );
 

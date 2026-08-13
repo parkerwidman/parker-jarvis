@@ -20,11 +20,14 @@ function sampleGoal(overrides: Partial<GoalView> = {}): GoalView {
     id: GOAL_ID,
     title: "Launch beta",
     description: "Ship the first beta release.",
+    notes: null,
+    targetDate: null,
     domain: "personal",
     status: "active",
     sortOrder: 0,
     completedAt: null,
     progressPercent: 50,
+    isCurrentPriority: false,
     isTodayPriority: false,
     levels: [
       {
@@ -65,24 +68,27 @@ function sampleData(
 ): GoalsPageData {
   return {
     goalType,
+    domain: "personal",
+    priorityGoalId: null,
     todayPriorityGoalId: null,
+    counts: { all: 1, active: 1, completed: 0, priority: 0 },
     goals: [sampleGoal()],
     ...overrides,
   };
 }
 
 describe("Jarvis goals phase 1A UI", () => {
-  it("P. exposes today's priority styling only on short-term config", () => {
-    expect(GOAL_PAGE_CONFIG.short_term.showTodayPriority).toBe(true);
-    expect(GOAL_PAGE_CONFIG.three_month.showTodayPriority).toBe(false);
-    expect(GOAL_PAGE_CONFIG.long_term.showTodayPriority).toBe(false);
+  it("P. exposes current priority styling on every horizon config", () => {
+    expect(GOAL_PAGE_CONFIG.short_term.showCurrentPriority).toBe(true);
+    expect(GOAL_PAGE_CONFIG.three_month.showCurrentPriority).toBe(true);
+    expect(GOAL_PAGE_CONFIG.long_term.showCurrentPriority).toBe(true);
   });
 
-  it("O/Q. renders today's priority badge and collapsed completed goals by default", () => {
+  it("O/Q. renders current priority badge and collapsed completed goals by default", () => {
     const priorityHtml = renderToStaticMarkup(
       createElement(GoalCard, {
-        goal: sampleGoal({ isTodayPriority: true }),
-        showTodayPriority: true,
+        goal: sampleGoal({ isCurrentPriority: true, isTodayPriority: true }),
+        showCurrentPriority: true,
       }),
     );
     const completedHtml = renderToStaticMarkup(
@@ -138,25 +144,32 @@ describe("Jarvis goals phase 1A UI", () => {
     expect(noTasksHtml).not.toContain("goals-roadmap-tasks-label");
   });
 
-  it("R. renders a polished empty state for the selected domain", () => {
+  it("R. renders a polished empty state for the active workspace", () => {
     const html = renderToStaticMarkup(
       createElement(GoalsPage, {
-        data: { goalType: "short_term", todayPriorityGoalId: null, goals: [] },
+        data: {
+          goalType: "short_term",
+          domain: "melusi",
+          priorityGoalId: null,
+          todayPriorityGoalId: null,
+          goals: [],
+          counts: { all: 0, active: 0, completed: 0, priority: 0 },
+        },
         goalType: "short_term",
       }),
     );
 
     expect(html).toContain("No Melusi short term goals yet.");
-    expect(html).toContain("goals-empty");
+    expect(html).toContain("gd2-empty-state");
   });
 
   it("S. does not include the removed board preview section", () => {
     const componentSources = [
-      "components/jarvis/goals/goals-page.tsx",
-      "components/jarvis/goals/goal-card.tsx",
+      "components/jarvis/goals/goals-dashboard.tsx",
+      "components/jarvis/goals/goal-compact-card.tsx",
+      "components/jarvis/goals/goal-detail-panel.tsx",
       "components/jarvis/goals/level-roadmap.tsx",
       "components/jarvis/goals/goal-task-row.tsx",
-      "components/jarvis/goals/goals-domain-toggle.tsx",
       "app/goals/short-term/page.tsx",
       "app/goals/three-month/page.tsx",
       "app/goals/long-term/page.tsx",
@@ -303,6 +316,14 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
+vi.mock("@/components/jarvis/command-center/mode-switcher", () => ({
+  ModeSwitcher: () => null,
+}));
+
+vi.mock("@/lib/jarvis/shell/read-jarvis-workspace", () => ({
+  readJarvisWorkspaceFromCookies: vi.fn().mockResolvedValue("personal"),
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: createClientMock,
 }));
@@ -340,7 +361,12 @@ describe("Jarvis goals routes", () => {
   ] as const)("loads the %s page with the matching goal type", async (Page, goalType) => {
     loadGoalsMock.mockResolvedValueOnce(sampleData(goalType));
     await Page();
-    expect(loadGoalsMock).toHaveBeenCalledWith(expect.anything(), "user-1", goalType);
+    expect(loadGoalsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      "user-1",
+      goalType,
+      "personal",
+    );
   });
 });
 

@@ -10,6 +10,10 @@ vi.mock("@/app/command-center/actions", () => ({
   completeTaskFromDashboard: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+}));
+
 const TASK_ID = "11111111-1111-4111-8111-111111111111";
 
 function renderKanban(
@@ -18,7 +22,7 @@ function renderKanban(
   return renderToStaticMarkup(
     createElement(
       CommandCenterModeProvider,
-      null,
+      { initialWorkspace: "melusi" },
       createElement(CommandKanban, { tasks }),
     ),
   );

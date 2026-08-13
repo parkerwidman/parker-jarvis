@@ -6,11 +6,12 @@ import {
   type RawGoalLevel,
   type RawGoalTask,
 } from "./goal-roadmap";
-import type { JarvisGoalStatus, JarvisGoalType } from "./types";
+import type { JarvisGoalDomain, JarvisGoalStatus, JarvisGoalType } from "./types";
 
 export type ActionableGoalTaskContext = {
   goalId: string;
   goalTitle: string;
+  goalDomain: JarvisGoalDomain;
   levelId: string;
   levelTitle: string;
   isTodayPriority: boolean;
@@ -21,6 +22,7 @@ export type PlanningGoalRecord = {
   title: string;
   goal_type: JarvisGoalType | string;
   status: JarvisGoalStatus | string;
+  domain: JarvisGoalDomain | string;
 };
 
 export type PlanningGoalLevelRecord = {
@@ -38,6 +40,7 @@ export type PlanningGoalTaskRecord = {
   goal_level_id: string | null;
   blocked_at: string | null;
   position?: number | null;
+  due_at?: string | null;
 };
 
 export function isStandalonePlanningTask(task: { goal_id: string | null }): boolean {
@@ -86,6 +89,7 @@ function toRawGoalTask(task: PlanningGoalTaskRecord): RawGoalTask {
     blocked_at: task.blocked_at,
     blocked_reason: null,
     goal_level_id: task.goal_level_id,
+    due_at: task.due_at ?? null,
   };
 }
 
@@ -109,7 +113,7 @@ export function buildActionableGoalTaskIndex(input: {
   goals: PlanningGoalRecord[];
   levels: PlanningGoalLevelRecord[];
   goalTasks: PlanningGoalTaskRecord[];
-  todayPriorityGoalId: string | null;
+  priorityGoalIds: Set<string>;
 }): Map<string, ActionableGoalTaskContext> {
   const index = new Map<string, ActionableGoalTaskContext>();
   const levelsByGoalId = groupLevelsByGoalId(input.levels);
@@ -157,9 +161,10 @@ export function buildActionableGoalTaskIndex(input: {
       index.set(task.id, {
         goalId: goal.id,
         goalTitle: goal.title,
+        goalDomain: goal.domain as JarvisGoalDomain,
         levelId: currentLevel.id,
         levelTitle: currentLevel.name,
-        isTodayPriority: input.todayPriorityGoalId === goal.id,
+        isTodayPriority: input.priorityGoalIds?.has(goal.id) ?? false,
       });
     }
   }

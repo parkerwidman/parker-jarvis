@@ -4,7 +4,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { GoalBuilder } from "@/components/jarvis/goals/goal-builder";
-import { GoalsDomainProvider } from "@/components/jarvis/goals/goals-domain-provider";
 import type { JarvisGoalType } from "@/lib/jarvis/goals/types";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -22,11 +21,11 @@ vi.mock("next/navigation", () => ({
 
 function renderGoalBuilder(goalType: JarvisGoalType = "short_term"): string {
   return renderToStaticMarkup(
-    createElement(
-      GoalsDomainProvider,
-      null,
-      createElement(GoalBuilder, { goalType }),
-    ),
+    createElement(GoalBuilder, {
+      goalType,
+      workspaceDomain: "personal",
+      defaultOpen: true,
+    }),
   );
 }
 

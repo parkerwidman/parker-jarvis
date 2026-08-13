@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { readJarvisWorkspaceFromCookies } from "@/lib/jarvis/shell/read-jarvis-workspace";
 import type { ReactNode } from "react";
 import { JarvisShellFrame } from "./jarvis-shell-frame";
 
@@ -31,11 +32,14 @@ export async function JarvisAppShell({
     displayName = profile?.preferred_name?.trim() || "Parker";
   }
 
+  const initialWorkspace = await readJarvisWorkspaceFromCookies();
+
   return (
     <JarvisShellFrame
       displayName={displayName}
       userEmail={userEmail}
       mainClassName={mainClassName}
+      initialWorkspace={initialWorkspace}
     >
       {children}
     </JarvisShellFrame>

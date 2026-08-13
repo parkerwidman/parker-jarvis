@@ -2,6 +2,7 @@ import { GoalsPage } from "@/components/jarvis/goals/goals-page";
 import { JarvisAppShell } from "@/components/jarvis/jarvis-app-shell";
 import { JarvisPageContent } from "@/components/jarvis/jarvis-ui";
 import { loadGoals } from "@/lib/jarvis/goals/load-goals";
+import { readJarvisWorkspaceFromCookies } from "@/lib/jarvis/shell/read-jarvis-workspace";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
@@ -20,7 +21,8 @@ export default async function LongTermGoalsPage() {
     redirect("/login");
   }
 
-  const data = await loadGoals(supabase, userId, "long_term");
+  const domain = await readJarvisWorkspaceFromCookies();
+  const data = await loadGoals(supabase, userId, "long_term", domain);
 
   return (
     <JarvisAppShell mainClassName="cc2-shell cc2-shell--goals">

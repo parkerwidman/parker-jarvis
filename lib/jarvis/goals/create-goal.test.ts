@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildGoalLevelsPayload,
-  computeGapPositions,
   createJarvisGoalWithRoadmap,
   validateGoalBuilderInput,
   type GoalBuilderInput,
@@ -105,25 +104,24 @@ describe("validateGoalBuilderInput", () => {
     ).toBe(true);
   });
 
-  it("I. assigns gap-based positions in the RPC payload order", () => {
+  it("I. builds structured RPC level/task payload from validated input", () => {
     const validated = validateGoalBuilderInput(validInput());
     expect(validated.ok).toBe(true);
     if (!validated.ok) {
       return;
     }
 
-    expect(computeGapPositions(validated.value.levels.length)).toEqual([10, 20]);
-    expect(computeGapPositions(validated.value.levels[0]?.tasks.length ?? 0)).toEqual([
-      10, 20,
-    ]);
     expect(buildGoalLevelsPayload(validated.value.levels)).toEqual([
       {
         name: "File the withdrawal",
-        tasks: ["Submit retroactive withdrawal form", "Gather supporting documents"],
+        tasks: [
+          { title: "Submit retroactive withdrawal form", due_at: null },
+          { title: "Gather supporting documents", due_at: null },
+        ],
       },
       {
         name: "Apply",
-        tasks: ["Submit Tippie application"],
+        tasks: [{ title: "Submit Tippie application", due_at: null }],
       },
     ]);
   });
@@ -211,11 +209,14 @@ describe("createJarvisGoalWithRoadmap", () => {
         p_levels: [
           {
             name: "File the withdrawal",
-            tasks: ["Submit retroactive withdrawal form", "Gather supporting documents"],
+            tasks: [
+              { title: "Submit retroactive withdrawal form", due_at: null },
+              { title: "Gather supporting documents", due_at: null },
+            ],
           },
           {
             name: "Apply",
-            tasks: ["Submit Tippie application"],
+            tasks: [{ title: "Submit Tippie application", due_at: null }],
           },
         ],
       }),

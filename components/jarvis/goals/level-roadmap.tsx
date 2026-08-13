@@ -17,11 +17,23 @@ type LevelRoadmapProps = {
   levels: GoalLevelView[];
   goalStatus: JarvisGoalStatus;
   isEditing?: boolean;
+  variant?: "default" | "timeline";
 };
 
 type LevelEditorMode = "none" | "editName" | "deleteConfirm";
 
-function levelStateLabel(state: GoalLevelView["state"]): string {
+function levelStateLabel(state: GoalLevelView["state"], variant: "default" | "timeline"): string {
+  if (variant === "timeline") {
+    switch (state) {
+      case "complete":
+        return "COMPLETE";
+      case "current":
+        return "CURRENT";
+      default:
+        return "PENDING";
+    }
+  }
+
   switch (state) {
     case "complete":
       return "Complete";
@@ -37,6 +49,7 @@ export function LevelRoadmap({
   levels,
   goalStatus,
   isEditing = false,
+  variant = "default",
 }: LevelRoadmapProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -183,7 +196,10 @@ export function LevelRoadmap({
 
   return (
     <>
-      <ol className="goals-roadmap" aria-label="Goal roadmap">
+      <ol
+        className={variant === "timeline" ? "gd2-timeline" : "goals-roadmap"}
+        aria-label="Goal roadmap"
+      >
         {levels.map((level, index) => {
           const isLevelEditing = levelEditorId === level.id;
           const levelEditorOpen = isLevelEditing && levelEditorMode !== "none";
@@ -194,17 +210,36 @@ export function LevelRoadmap({
           return (
             <li
               key={level.id}
-              className={`goals-roadmap-level goals-roadmap-level--${level.state}${
-                index === levels.length - 1 ? " goals-roadmap-level--last" : ""
-              }`}
+              className={
+                variant === "timeline"
+                  ? `gd2-timeline-level gd2-timeline-level--${level.state}${
+                      index === levels.length - 1 ? " gd2-timeline-level--last" : ""
+                    }`
+                  : `goals-roadmap-level goals-roadmap-level--${level.state}${
+                      index === levels.length - 1 ? " goals-roadmap-level--last" : ""
+                    }`
+              }
             >
-              <div className="goals-roadmap-marker" aria-hidden="true">
-                <span className="goals-roadmap-dot" />
+              <div
+                className={variant === "timeline" ? "gd2-timeline-marker" : "goals-roadmap-marker"}
+                aria-hidden="true"
+              >
+                <span className={variant === "timeline" ? "gd2-timeline-dot" : "goals-roadmap-dot"} />
                 {index < levels.length - 1 ? (
-                  <span className="goals-roadmap-connector" />
+                  <span
+                    className={
+                      variant === "timeline"
+                        ? "gd2-timeline-connector"
+                        : "goals-roadmap-connector"
+                    }
+                  />
                 ) : null}
               </div>
-              <div className="goals-roadmap-content">
+              <div
+                className={
+                  variant === "timeline" ? "gd2-timeline-content" : "goals-roadmap-content"
+                }
+              >
                 <div className="goals-roadmap-head">
                   {isLevelEditing && levelEditorMode === "editName" ? (
                     <div className="goals-task-editor goals-level-editor">
@@ -236,14 +271,28 @@ export function LevelRoadmap({
                       </div>
                     </div>
                   ) : (
-                    <h3 className="goals-roadmap-level-name">{level.name}</h3>
+                    <h3
+                      className={
+                        variant === "timeline"
+                          ? "gd2-timeline-level-name"
+                          : "goals-roadmap-level-name"
+                      }
+                    >
+                      {level.name}
+                    </h3>
                   )}
-                  <span className="goals-roadmap-state">{levelStateLabel(level.state)}</span>
+                  <span
+                    className={
+                      variant === "timeline" ? "gd2-timeline-state" : "goals-roadmap-state"
+                    }
+                  >
+                    {levelStateLabel(level.state, variant)}
+                  </span>
                 </div>
                 {level.tasks.length > 0 ? (
                   <>
                     <p className="goals-roadmap-tasks-label">Tasks</p>
-                    <ul className="goals-task-list">
+                    <ul className={variant === "timeline" ? "gd2-task-list" : "goals-task-list"}>
                       {level.tasks.map((task, taskIndex) => (
                         <GoalTaskRow
                           key={task.id}
@@ -254,6 +303,7 @@ export function LevelRoadmap({
                           taskIndex={taskIndex}
                           levelStructuralPending={levelEditorOpen || levelMovePending}
                           isEditing={isEditing}
+                          variant={variant}
                         />
                       ))}
                     </ul>

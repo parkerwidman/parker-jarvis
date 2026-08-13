@@ -18,11 +18,14 @@ function sampleGoal(overrides: Partial<GoalView> = {}): GoalView {
     id: "11111111-1111-4111-8111-111111111111",
     title: "Launch beta",
     description: "Ship the first beta release.",
+    notes: null,
+    targetDate: null,
     domain: "personal",
     status: "active",
     sortOrder: 0,
     completedAt: null,
     progressPercent: 0,
+    isCurrentPriority: false,
     isTodayPriority: false,
     levels: [
       {
@@ -73,7 +76,10 @@ function sampleGoal(overrides: Partial<GoalView> = {}): GoalView {
 function sampleData(goalType: GoalsPageData["goalType"]): GoalsPageData {
   return {
     goalType,
+    domain: "personal",
+    priorityGoalId: null,
     todayPriorityGoalId: null,
+    counts: { all: 1, active: 1, completed: 0, priority: 0 },
     goals: [sampleGoal()],
   };
 }
@@ -89,6 +95,10 @@ vi.mock("@/app/goals/actions", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
+}));
+
+vi.mock("@/components/jarvis/command-center/mode-switcher", () => ({
+  ModeSwitcher: () => null,
 }));
 
 describe("Jarvis goals phase 1B2A task completion UI", () => {
@@ -147,8 +157,9 @@ describe("Jarvis goals phase 1B2A task completion UI", () => {
     );
 
     expect(taskRowSource).toContain("setGoalTaskCompletion(task.id, !task.isDone)");
-    expect(actionsSource).toContain("setGoalTaskCompletion(");
-    expect(actionsSource).not.toMatch(/setGoalTaskCompletion\([\s\S]*goalType/);
+    expect(actionsSource).toMatch(
+      /export async function setGoalTaskCompletion\(\s*taskId: string,\s*completed: boolean/,
+    );
     expect(actionsSource).toContain('revalidatePath("/")');
     expect(actionsSource).toContain("GOAL_PAGE_CONFIG");
     expect(mutationSource).toContain("set_jarvis_goal_task_completion");
@@ -172,7 +183,7 @@ describe("Jarvis goals phase 1B2A task completion UI", () => {
         }),
       );
 
-      expect(html).toContain("goals-builder");
+      expect(html).toContain("gd2-builder");
       expect(html).toContain(GOAL_PAGE_CONFIG[goalType].title);
     }
   });

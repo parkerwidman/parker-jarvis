@@ -1,7 +1,7 @@
 "use client";
 
 import { modeLabel } from "@/lib/jarvis/dashboard/command-center-mode";
-import { useCommandCenterMode } from "./command-center-mode-provider";
+import { useJarvisWorkspace } from "@/components/jarvis/jarvis-workspace-provider";
 
 function NotificationIcon() {
   return (
@@ -37,7 +37,7 @@ function SettingsIcon() {
 }
 
 export function ModeSwitcher() {
-  const { mode, setMode } = useCommandCenterMode();
+  const { workspace: mode, setWorkspace: setMode } = useJarvisWorkspace();
 
   return (
     <div className="cc2-header-utilities">

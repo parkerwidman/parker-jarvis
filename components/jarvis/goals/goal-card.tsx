@@ -17,14 +17,18 @@ import { LevelRoadmap } from "./level-roadmap";
 type GoalCardProps = {
   goal: GoalView;
   currentGoalType?: JarvisGoalType;
-  showTodayPriority: boolean;
+  showCurrentPriority?: boolean;
+  /** @deprecated Use showCurrentPriority */
+  showTodayPriority?: boolean;
 };
 
 export function GoalCard({
   goal,
   currentGoalType = "short_term",
+  showCurrentPriority,
   showTodayPriority,
 }: GoalCardProps) {
+  const showPriority = showCurrentPriority ?? showTodayPriority ?? false;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [priorityError, setPriorityError] = useState<string | null>(null);
@@ -33,10 +37,10 @@ export function GoalCard({
   const [isEditing, setIsEditing] = useState(false);
   const showGoalBody = !isCompleted || expanded;
   const showEditToggle = showGoalBody;
-  const showPriorityBadge = showTodayPriority && goal.isTodayPriority;
+  const showPriorityBadge = showPriority && goal.isCurrentPriority;
   const showHeaderSurface = !isCompleted || expanded;
-  const canSetPriority = showTodayPriority && !isCompleted && !goal.isTodayPriority;
-  const canClearPriority = showTodayPriority && !isCompleted && goal.isTodayPriority;
+  const canSetPriority = showPriority && !isCompleted && !goal.isCurrentPriority;
+  const canClearPriority = showPriority && !isCompleted && goal.isCurrentPriority;
 
   function handleSetPriority() {
     setPriorityError(null);
@@ -57,7 +61,7 @@ export function GoalCard({
     setPriorityError(null);
 
     startTransition(async () => {
-      const result = await clearTodayPriorityGoal();
+      const result = await clearTodayPriorityGoal(goal.domain, currentGoalType);
 
       if (!result.ok) {
         setPriorityError(result.error);
@@ -95,7 +99,7 @@ export function GoalCard({
               </div>
             </div>
             {showPriorityBadge ? (
-              <p className="goals-priority-badge">★ TODAY&apos;S PRIORITY</p>
+              <p className="goals-priority-badge">★ CURRENT PRIORITY</p>
             ) : null}
             {goal.description && (!isCompleted || expanded) ? (
               <p className="goals-card-description">{goal.description}</p>
@@ -140,7 +144,7 @@ export function GoalCard({
               disabled={isPending}
               onClick={handleSetPriority}
             >
-              Set as Today&apos;s Priority
+              Set as Current Priority
             </button>
           ) : null}
           {canClearPriority ? (
@@ -169,6 +173,9 @@ export function GoalCard({
           <GoalSettingsPanel
             goalId={goal.id}
             title={goal.title}
+            description={goal.description}
+            notes={goal.notes}
+            targetDate={goal.targetDate}
             domain={goal.domain}
             currentGoalType={currentGoalType}
             isEditing={isEditing}

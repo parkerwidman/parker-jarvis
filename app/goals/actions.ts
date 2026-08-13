@@ -22,11 +22,12 @@ import {
   type UpdateJarvisGoalMetadataInput,
 } from "@/lib/jarvis/goals/mutations/update-goal-metadata";
 import {
-  clearJarvisTodayPriorityGoal,
-  setJarvisTodayPriorityGoal,
+  clearJarvisGoalPriority,
+  setJarvisGoalPriority,
 } from "@/lib/jarvis/goals/mutations/set-today-priority-goal";
+import { setJarvisGoalTaskDueAt } from "@/lib/jarvis/goals/mutations/set-goal-task-due-at";
 import { revalidateGoalPages } from "@/lib/jarvis/goals/revalidate-goal-pages";
-import type { JarvisGoalType } from "@/lib/jarvis/goals/types";
+import type { JarvisGoalDomain, JarvisGoalType } from "@/lib/jarvis/goals/types";
 import { GOAL_PAGE_CONFIG } from "@/lib/jarvis/goals/types";
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
@@ -140,6 +141,33 @@ export async function setGoalTaskNotes(
   return { ok: true, taskId: result.taskId };
 }
 
+export type SetGoalTaskDueAtActionResult =
+  | { ok: true; taskId: string; dueAt: string | null }
+  | { ok: false; error: string };
+
+export async function setGoalTaskDueAt(
+  taskId: unknown,
+  dueAt: unknown,
+  clearDueAt = false,
+): Promise<SetGoalTaskDueAtActionResult> {
+  const supabase = await createClient();
+  const userId = await requireAuthenticatedUser(supabase);
+
+  if (!userId) {
+    return { ok: false, error: "You must be signed in to update this task." };
+  }
+
+  const result = await setJarvisGoalTaskDueAt(supabase, userId, taskId, dueAt, clearDueAt);
+
+  if (!result.success) {
+    return { ok: false, error: result.error };
+  }
+
+  revalidateGoalPages();
+
+  return { ok: true, taskId: result.taskId, dueAt: result.dueAt };
+}
+
 export type SetGoalTaskBlockStateActionResult =
   | { ok: true; taskId: string }
   | { ok: false; error: string };
@@ -187,7 +215,7 @@ export async function setTodayPriorityGoal(
     return { ok: false, error: "You must be signed in to update Today's Priority." };
   }
 
-  const result = await setJarvisTodayPriorityGoal(supabase, userId, goalId);
+  const result = await setJarvisGoalPriority(supabase, userId, goalId);
 
   if (!result.success) {
     return { ok: false, error: result.error };
@@ -202,15 +230,18 @@ export type ClearTodayPriorityGoalActionResult =
   | { ok: true }
   | { ok: false; error: string };
 
-export async function clearTodayPriorityGoal(): Promise<ClearTodayPriorityGoalActionResult> {
+export async function clearTodayPriorityGoal(
+  domain: unknown,
+  goalType: unknown,
+): Promise<ClearTodayPriorityGoalActionResult> {
   const supabase = await createClient();
   const userId = await requireAuthenticatedUser(supabase);
 
   if (!userId) {
-    return { ok: false, error: "You must be signed in to update Today's Priority." };
+    return { ok: false, error: "You must be signed in to update Current Priority." };
   }
 
-  const result = await clearJarvisTodayPriorityGoal(supabase, userId);
+  const result = await clearJarvisGoalPriority(supabase, userId, domain, goalType);
 
   if (!result.success) {
     return { ok: false, error: result.error };
@@ -228,6 +259,7 @@ export type AddGoalTaskActionResult =
 export async function addGoalTask(
   levelId: unknown,
   title: unknown,
+  dueAt?: unknown,
 ): Promise<AddGoalTaskActionResult> {
   const supabase = await createClient();
   const userId = await requireAuthenticatedUser(supabase);
@@ -236,7 +268,7 @@ export async function addGoalTask(
     return { ok: false, error: "You must be signed in to add a task." };
   }
 
-  const result = await addJarvisGoalTask(supabase, levelId, title);
+  const result = await addJarvisGoalTask(supabase, levelId, title, dueAt);
 
   if (!result.success) {
     return { ok: false, error: result.error };

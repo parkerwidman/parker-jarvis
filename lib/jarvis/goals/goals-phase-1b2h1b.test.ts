@@ -36,6 +36,7 @@ function goal(
     title: overrides.title ?? overrides.id,
     goal_type: overrides.goal_type ?? "short_term",
     status: overrides.status ?? "active",
+    domain: overrides.domain ?? "personal",
     ...overrides,
   };
 }
@@ -72,13 +73,13 @@ function buildIndex(
   goals: PlanningGoalRecord[],
   levels: PlanningGoalLevelRecord[],
   goalTasks: PlanningGoalTaskRecord[],
-  todayPriorityGoalId: string | null = null,
+  priorityGoalIds: Set<string> = new Set(),
 ) {
   return buildActionableGoalTaskIndex({
     goals,
     levels,
     goalTasks,
-    todayPriorityGoalId,
+    priorityGoalIds,
   });
 }
 
@@ -301,7 +302,7 @@ describe("actionable goal tasks — today priority context", () => {
       [goal({ id: GOAL_SHORT, title: "Priority Goal" })],
       [level(LEVEL_ONE, 1, GOAL_SHORT, "Current Level")],
       [task({ id: "priority-task" })],
-      GOAL_SHORT,
+      new Set([GOAL_SHORT]),
     );
 
     expect(getActionableGoalTaskContext("priority-task", index)).toMatchObject({
@@ -314,7 +315,7 @@ describe("actionable goal tasks — today priority context", () => {
       [goal({ id: GOAL_SHORT })],
       [level(LEVEL_ONE, 1)],
       [task({ id: "plain-task" })],
-      "missing-goal-id",
+      new Set(["missing-goal-id"]),
     );
 
     expect(
@@ -345,6 +346,7 @@ describe("actionable goal tasks — context shape", () => {
     expect(getActionableGoalTaskContext("goal-task", index)).toEqual({
       goalId: GOAL_SHORT,
       goalTitle: "Get off academic probation",
+      goalDomain: "personal",
       levelId: LEVEL_ONE,
       levelTitle: "Advisor process",
       isTodayPriority: false,

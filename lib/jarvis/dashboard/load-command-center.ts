@@ -5,6 +5,7 @@ import {
   filterUnfinishedPlanningTasks,
   isKanbanUnfinishedCandidate,
 } from "@/lib/jarvis/goals/actionable-goal-tasks";
+import { loadJarvisGoalPriorities } from "@/lib/jarvis/goals/load-goals";
 import {
   buildCommandCenterView,
   type AttentionItem,
@@ -116,6 +117,7 @@ type JarvisGoalPlanningRow = {
   title: string;
   goal_type: string;
   status: string;
+  domain: string;
 };
 
 type JarvisGoalLevelPlanningRow = {
@@ -173,6 +175,7 @@ export type CommandCenterPlan = {
 export type CommandCenterGoalContext = {
   goalId: string;
   goalTitle: string;
+  goalDomain: string;
   levelId: string;
   levelTitle: string;
   isTodayPriority: boolean;
@@ -347,7 +350,6 @@ export async function loadCommandCenter(
   const todayDateLabel = formatLocalDateLabel(timezone, now);
   const preferredName = profile?.preferred_name?.trim() || null;
   const currentFocus = profile?.current_focus?.trim() || null;
-  const todayPriorityGoalId = profile?.today_priority_goal_id ?? null;
 
   const briefingSelect =
     "id, briefing_date, status, content, safe_error_message, source_counts, audio_status, audio_generated_at";
@@ -361,6 +363,7 @@ export async function loadCommandCenter(
     goalsResult,
     jarvisGoalsResult,
     jarvisGoalLevelsResult,
+    jarvisGoalPrioritiesResult,
     lifeAreasResult,
     pendingCountResult,
   ] = await Promise.all([
@@ -408,14 +411,14 @@ export async function loadCommandCenter(
       .order("updated_at", { ascending: false }),
     supabase
       .from("jarvis_goals")
-      .select("id, title, goal_type, status")
+      .select("id, title, goal_type, status, domain")
       .eq("user_id", userId)
-      .eq("goal_type", "short_term")
       .eq("status", "active"),
     supabase
       .from("jarvis_goal_levels")
       .select("id, name, position, goal_id")
       .eq("user_id", userId),
+    loadJarvisGoalPriorities(supabase, userId),
     supabase
       .from("life_areas")
       .select("id, name, active, created_at")
@@ -440,6 +443,8 @@ export async function loadCommandCenter(
   const jarvisGoalRows = (jarvisGoalsResult.data ?? []) as JarvisGoalPlanningRow[];
   const jarvisGoalLevelRows = (jarvisGoalLevelsResult.data ??
     []) as JarvisGoalLevelPlanningRow[];
+  const jarvisGoalPriorityMap = jarvisGoalPrioritiesResult as Map<string, string>;
+  const priorityGoalIds = new Set(jarvisGoalPriorityMap.values());
   const lifeAreas = (lifeAreasResult.data ?? []) as LifeArea[];
   const lifeAreaNames = new Map(lifeAreas.map((area) => [area.id, area.name]));
 
@@ -450,7 +455,7 @@ export async function loadCommandCenter(
       jarvisGoalRows.some((goal) => goal.id === level.goal_id),
     ),
     goalTasks: goalLinkedTasks,
-    todayPriorityGoalId,
+    priorityGoalIds,
   });
 
   const toDashboardTask = (task: TaskRow): DashboardTaskRecord => ({

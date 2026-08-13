@@ -17,11 +17,14 @@ function sampleGoal(overrides: Partial<GoalView> = {}): GoalView {
     id: "11111111-1111-4111-8111-111111111111",
     title: "Launch beta",
     description: "Ship the first beta release.",
+    notes: null,
+    targetDate: null,
     domain: "personal",
     status: "active",
     sortOrder: 0,
     completedAt: null,
     progressPercent: 0,
+    isCurrentPriority: false,
     isTodayPriority: false,
     levels: [
       {
@@ -52,7 +55,10 @@ function sampleGoal(overrides: Partial<GoalView> = {}): GoalView {
 function sampleData(goalType: GoalsPageData["goalType"]): GoalsPageData {
   return {
     goalType,
+    domain: "personal",
+    priorityGoalId: null,
     todayPriorityGoalId: null,
+    counts: { all: 1, active: 1, completed: 0, priority: 0 },
     goals: [sampleGoal()],
   };
 }
@@ -68,6 +74,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
+vi.mock("@/components/jarvis/command-center/mode-switcher", () => ({
+  ModeSwitcher: () => null,
+}));
+
 describe("Jarvis goals phase 1B1 builder UI", () => {
   it("W. renders the shared builder on each goals page", () => {
     for (const goalType of ["short_term", "three_month", "long_term"] as const) {
@@ -78,8 +88,8 @@ describe("Jarvis goals phase 1B1 builder UI", () => {
         }),
       );
 
-      expect(html).toContain("goals-builder");
-      expect(html).toContain("Publish goal");
+      expect(html).toContain("gd2-builder");
+      expect(html).toContain("Add Goal");
       expect(html).toContain(GOAL_PAGE_CONFIG[goalType].title);
     }
   });
@@ -94,13 +104,13 @@ describe("Jarvis goals phase 1B1 builder UI", () => {
       );
 
       if (goalType === "short_term") {
-        expect(html).toContain("Add a short term goal");
+        expect(html).toContain("Add Goal");
       }
       if (goalType === "three_month") {
-        expect(html).toContain("Add a 3 month goal");
+        expect(html).toContain("Add Goal");
       }
       if (goalType === "long_term") {
-        expect(html).toContain("Add a long term goal");
+        expect(html).toContain("Add Goal");
       }
     }
 
@@ -110,6 +120,7 @@ describe("Jarvis goals phase 1B1 builder UI", () => {
         goalType: "short_term",
       }),
     );
+    expect(html).toContain("gd2-filter-bar");
     expect(html).not.toContain("goal type");
     expect(html).not.toContain("Goal type");
   });

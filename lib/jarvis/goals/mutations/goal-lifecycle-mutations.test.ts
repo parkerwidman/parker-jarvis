@@ -51,6 +51,7 @@ describe("updateJarvisGoalMetadata", () => {
     expect(supabase.rpc).toHaveBeenCalledWith("update_jarvis_goal_metadata", {
       p_goal_id: GOAL_ID,
       p_title: "Renamed",
+      p_clear_target_date: false,
     });
   });
 

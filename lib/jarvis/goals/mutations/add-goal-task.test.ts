@@ -86,6 +86,7 @@ describe("addJarvisGoalTask", () => {
     expect(mock.rpc).toHaveBeenCalledWith("add_jarvis_goal_task", {
       p_level_id: LEVEL_ID,
       p_title: "New task",
+      p_due_at: null,
     });
   });
 
@@ -103,6 +104,7 @@ describe("addJarvisGoalTask", () => {
     expect(mock.rpc).toHaveBeenCalledWith("add_jarvis_goal_task", {
       p_level_id: LEVEL_ID,
       p_title: "Task",
+      p_due_at: null,
     });
   });
 

@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { BriefingPlayer } from "./briefing-player";
 import { CommandCenterModeProvider } from "./command-center-mode-provider";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+}));
 
 const TRANSCRIPT = "Good morning Parker. Your top priority is Melusi outreach.";
 
@@ -13,7 +17,7 @@ function renderPlayer(
   return renderToStaticMarkup(
     createElement(
       CommandCenterModeProvider,
-      null,
+      { initialWorkspace: "melusi" },
       createElement(BriefingPlayer, {
         transcript: TRANSCRIPT,
         priorityText: "Melusi outreach",

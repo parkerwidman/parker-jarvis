@@ -6,9 +6,8 @@ import {
   publishThreeMonthGoal,
   type PublishGoalResult,
 } from "@/app/goals/actions";
-import type { GoalBuilderInput } from "@/lib/jarvis/goals/create-goal";
+import type { GoalBuilderInput, GoalBuilderTaskInput } from "@/lib/jarvis/goals/create-goal";
 import {
-  domainLabel,
   GOAL_PAGE_CONFIG,
   type JarvisGoalDomain,
   type JarvisGoalType,
@@ -24,11 +23,11 @@ import {
   useTransition,
   type FormEvent,
 } from "react";
-import { useGoalsDomain } from "./goals-domain-provider";
 
 type BuilderTask = {
   key: string;
   title: string;
+  dueDate: string;
 };
 
 type BuilderLevel = {
@@ -39,6 +38,8 @@ type BuilderLevel = {
 
 type GoalBuilderProps = {
   goalType: JarvisGoalType;
+  workspaceDomain: JarvisGoalDomain;
+  defaultOpen?: boolean;
 };
 
 const PUBLISH_ACTIONS: Record<
@@ -53,8 +54,8 @@ const PUBLISH_ACTIONS: Record<
 const INITIAL_BUILDER_LEVEL_KEY = "initial-level";
 const INITIAL_BUILDER_TASK_KEY = "initial-task";
 
-function createTask(key: string, title = ""): BuilderTask {
-  return { key, title };
+function createTask(key: string, title = "", dueDate = ""): BuilderTask {
+  return { key, title, dueDate };
 }
 
 function createLevel(
@@ -68,12 +69,16 @@ function createLevel(
 function createInitialDraft(domain: JarvisGoalDomain): {
   title: string;
   description: string;
+  notes: string;
+  targetDate: string;
   domain: JarvisGoalDomain;
   levels: BuilderLevel[];
 } {
   return {
     title: "",
     description: "",
+    notes: "",
+    targetDate: "",
     domain,
     levels: [createLevel(INITIAL_BUILDER_LEVEL_KEY)],
   };
@@ -90,14 +95,18 @@ function builderHeading(goalType: JarvisGoalType): string {
   }
 }
 
-export function GoalBuilder({ goalType }: GoalBuilderProps) {
+export function GoalBuilder({
+  goalType,
+  workspaceDomain,
+  defaultOpen = false,
+}: GoalBuilderProps) {
   const formId = useId();
   const router = useRouter();
-  const { domain: pageDomain } = useGoalsDomain();
   const nextKeyRef = useRef(0);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [draft, setDraft] = useState(() => createInitialDraft(pageDomain));
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [draft, setDraft] = useState(() => createInitialDraft(workspaceDomain));
 
   const nextBuilderKey = useCallback((prefix: string) => {
     nextKeyRef.current += 1;
@@ -116,8 +125,8 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
   }, [nextBuilderKey]);
 
   useEffect(() => {
-    setDraft((current) => ({ ...current, domain: pageDomain }));
-  }, [pageDomain]);
+    setDraft((current) => ({ ...current, domain: workspaceDomain }));
+  }, [workspaceDomain]);
 
   const config = GOAL_PAGE_CONFIG[goalType];
   const publish = PUBLISH_ACTIONS[goalType];
@@ -139,10 +148,15 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
       const payload: GoalBuilderInput = {
         title: draft.title,
         description: draft.description,
-        domain: draft.domain,
+        notes: draft.notes,
+        targetDate: draft.targetDate || null,
+        domain: workspaceDomain,
         levels: draft.levels.map((level) => ({
           name: level.name,
-          tasks: level.tasks.map((task) => task.title),
+          tasks: level.tasks.map((task): GoalBuilderTaskInput => ({
+            title: task.title,
+            dueAt: task.dueDate || null,
+          })),
         })),
       };
 
@@ -154,35 +168,39 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
           return;
         }
 
-        setDraft(resetDraft(draft.domain));
+        setDraft(resetDraft(workspaceDomain));
+        setIsOpen(false);
         router.refresh();
       });
     },
-    [draft, publish, resetDraft, router],
-  );
-
-  const domainButtons = useMemo(
-    () =>
-      (["personal", "melusi"] as const).map((value) => ({
-        value,
-        label: domainLabel(value),
-        active: draft.domain === value,
-      })),
-    [draft.domain],
+    [draft, publish, resetDraft, router, workspaceDomain],
   );
 
   return (
-    <section className="goals-builder" aria-labelledby={`${formId}-heading`}>
-      <div className="goals-builder-head">
-        <h2 className="goals-builder-title" id={`${formId}-heading`}>
-          {builderHeading(goalType)}
-        </h2>
-        <p className="goals-builder-subtitle">
-          Build the roadmap for a new {config.title.toLowerCase()} entry.
-        </p>
-      </div>
+    <section className="gd2-builder" aria-labelledby={`${formId}-heading`}>
+      <button
+        type="button"
+        className="gd2-builder-toggle"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((value) => !value)}
+      >
+        <span className="gd2-builder-toggle-icon">{isOpen ? "−" : "+"}</span>
+        <span>Add Goal</span>
+      </button>
 
-      <form className="goals-builder-form" onSubmit={handleSubmit}>
+      {isOpen ? (
+        <>
+          <div className="goals-builder-head">
+            <h2 className="goals-builder-title" id={`${formId}-heading`}>
+              {builderHeading(goalType)}
+            </h2>
+            <p className="goals-builder-subtitle">
+              Build the roadmap for a new {config.title.toLowerCase()} entry in{" "}
+              {workspaceDomain === "personal" ? "Personal" : "Melusi"}.
+            </p>
+          </div>
+
+          <form className="goals-builder-form" onSubmit={handleSubmit}>
         <div className="goals-builder-field">
           <label className="goals-builder-label" htmlFor={`${formId}-title`}>
             Goal title
@@ -224,25 +242,43 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
         </div>
 
         <div className="goals-builder-field">
-          <span className="goals-builder-label">Domain</span>
-          <div className="goals-builder-domain" role="group" aria-label="Goal domain">
-            {domainButtons.map(({ value, label, active }) => (
-              <button
-                key={value}
-                type="button"
-                className={`goals-builder-domain-btn goals-builder-domain-btn--${value}${
-                  active ? " goals-builder-domain-btn--active" : ""
-                }`}
-                aria-pressed={active}
-                disabled={isPending}
-                onClick={() =>
-                  updateDraft((current) => ({ ...current, domain: value }))
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <label className="goals-builder-label" htmlFor={`${formId}-notes`}>
+            Notes <span className="goals-builder-optional">optional</span>
+          </label>
+          <textarea
+            id={`${formId}-notes`}
+            className="goals-builder-textarea"
+            value={draft.notes}
+            onChange={(event) =>
+              updateDraft((current) => ({
+                ...current,
+                notes: event.target.value,
+              }))
+            }
+            placeholder="Additional notes for this goal."
+            maxLength={2000}
+            rows={2}
+            disabled={isPending}
+          />
+        </div>
+
+        <div className="goals-builder-field">
+          <label className="goals-builder-label" htmlFor={`${formId}-target-date`}>
+            Target date <span className="goals-builder-optional">optional</span>
+          </label>
+          <input
+            id={`${formId}-target-date`}
+            type="date"
+            className="goals-builder-input"
+            value={draft.targetDate}
+            onChange={(event) =>
+              updateDraft((current) => ({
+                ...current,
+                targetDate: event.target.value,
+              }))
+            }
+            disabled={isPending}
+          />
         </div>
 
         <div className="goals-builder-levels">
@@ -343,6 +379,33 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
                           disabled={isPending}
                           autoComplete="off"
                         />
+                        <input
+                          type="date"
+                          className="goals-builder-input goals-builder-input--due-date"
+                          value={task.dueDate}
+                          onChange={(event) =>
+                            updateDraft((current) => ({
+                              ...current,
+                              levels: current.levels.map((entry) =>
+                                entry.key === level.key
+                                  ? {
+                                      ...entry,
+                                      tasks: entry.tasks.map((taskEntry) =>
+                                        taskEntry.key === task.key
+                                          ? {
+                                              ...taskEntry,
+                                              dueDate: event.target.value,
+                                            }
+                                          : taskEntry,
+                                      ),
+                                    }
+                                  : entry,
+                              ),
+                            }))
+                          }
+                          disabled={isPending}
+                          aria-label={`Task ${taskIndex + 1} due date`}
+                        />
                         {canRemoveTask ? (
                           <button
                             type="button"
@@ -428,6 +491,8 @@ export function GoalBuilder({ goalType }: GoalBuilderProps) {
           </p>
         ) : null}
       </form>
+        </>
+      ) : null}
     </section>
   );
 }

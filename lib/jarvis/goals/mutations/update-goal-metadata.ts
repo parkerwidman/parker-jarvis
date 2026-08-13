@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseGoalTargetDateInput } from "../goal-dates";
 import type { JarvisGoalDomain, JarvisGoalType } from "../types";
 import {
   parseAuthenticatedUserId,
@@ -9,6 +10,10 @@ import {
 
 export type UpdateJarvisGoalMetadataInput = {
   title?: string;
+  description?: string | null;
+  notes?: string | null;
+  targetDate?: string | null;
+  clearTargetDate?: boolean;
   domain?: JarvisGoalDomain;
   goalType?: JarvisGoalType;
 };
@@ -18,6 +23,9 @@ export type UpdateJarvisGoalMetadataResult =
       success: true;
       goalId: string;
       title: string;
+      description: string | null;
+      notes: string | null;
+      targetDate: string | null;
       domain: JarvisGoalDomain;
       goalType: JarvisGoalType;
       status: string;
@@ -29,6 +37,9 @@ type UpdateGoalMetadataRpcResult = {
   code?: string;
   goal_id?: string;
   title?: string;
+  description?: string | null;
+  notes?: string | null;
+  target_date?: string | null;
   domain?: string;
   goal_type?: string;
   status?: string;
@@ -42,6 +53,8 @@ const RPC_ERROR_MESSAGES: Record<string, string> = {
   goal_archived: "Archived goals cannot be edited. Restore the goal first.",
   goal_not_editable: "This goal cannot be edited.",
   invalid_title: "Goal title must be between 1 and 200 characters.",
+  invalid_description: "Description must be 2000 characters or fewer.",
+  invalid_notes: "Notes must be 2000 characters or fewer.",
   invalid_domain: "Choose Personal or Melusi.",
   invalid_goal_type: "Invalid goal horizon.",
 };
@@ -66,10 +79,21 @@ export function validateUpdateJarvisGoalMetadataInput(
   input: UpdateJarvisGoalMetadataInput,
 ): { ok: true } | { ok: false; error: string } {
   const hasTitle = input.title !== undefined;
+  const hasDescription = input.description !== undefined;
+  const hasNotes = input.notes !== undefined;
+  const hasTargetDate =
+    input.targetDate !== undefined || input.clearTargetDate === true;
   const hasDomain = input.domain !== undefined;
   const hasGoalType = input.goalType !== undefined;
 
-  if (!hasTitle && !hasDomain && !hasGoalType) {
+  if (
+    !hasTitle &&
+    !hasDescription &&
+    !hasNotes &&
+    !hasTargetDate &&
+    !hasDomain &&
+    !hasGoalType
+  ) {
     return { ok: false, error: RPC_ERROR_MESSAGES.no_changes };
   }
 
@@ -78,6 +102,30 @@ export function validateUpdateJarvisGoalMetadataInput(
 
     if (trimmed.length < 1 || trimmed.length > 200) {
       return { ok: false, error: RPC_ERROR_MESSAGES.invalid_title };
+    }
+  }
+
+  if (hasDescription) {
+    const trimmed = input.description?.trim() ?? "";
+    const normalized = trimmed.length > 0 ? trimmed : null;
+
+    if (normalized !== null && normalized.length > 2000) {
+      return { ok: false, error: RPC_ERROR_MESSAGES.invalid_description };
+    }
+  }
+
+  if (hasNotes) {
+    const trimmed = input.notes?.trim() ?? "";
+    const normalized = trimmed.length > 0 ? trimmed : null;
+
+    if (normalized !== null && normalized.length > 2000) {
+      return { ok: false, error: RPC_ERROR_MESSAGES.invalid_notes };
+    }
+  }
+
+  if (input.targetDate !== undefined && input.targetDate !== null) {
+    if (parseGoalTargetDateInput(input.targetDate) === null) {
+      return { ok: false, error: "Target date must use YYYY-MM-DD format." };
     }
   }
 
@@ -119,14 +167,38 @@ export async function updateJarvisGoalMetadata(
   const rpcArgs: {
     p_goal_id: string;
     p_title?: string;
+    p_description?: string | null;
+    p_notes?: string | null;
+    p_target_date?: string | null;
+    p_clear_target_date: boolean;
     p_domain?: string;
     p_goal_type?: string;
   } = {
     p_goal_id: parsedGoalId,
+    // Always send a parameter unique to the D4.1 metadata RPC so PostgREST
+    // does not resolve the legacy 4-arg overload when both exist.
+    p_clear_target_date: input.clearTargetDate === true,
   };
 
   if (input.title !== undefined) {
     rpcArgs.p_title = input.title.trim();
+  }
+
+  if (input.description !== undefined) {
+    const trimmed = input.description?.trim() ?? "";
+    // Empty string means "clear" — SQL treats NULL as "field omitted".
+    rpcArgs.p_description = trimmed.length > 0 ? trimmed : "";
+  }
+
+  if (input.notes !== undefined) {
+    const trimmed = input.notes?.trim() ?? "";
+    rpcArgs.p_notes = trimmed.length > 0 ? trimmed : "";
+  }
+
+  if (input.targetDate !== undefined && !input.clearTargetDate) {
+    rpcArgs.p_target_date = input.targetDate
+      ? parseGoalTargetDateInput(input.targetDate)
+      : null;
   }
 
   if (input.domain !== undefined) {
@@ -140,6 +212,12 @@ export async function updateJarvisGoalMetadata(
   const { data, error } = await supabase.rpc("update_jarvis_goal_metadata", rpcArgs);
 
   if (error) {
+    console.error("[updateJarvisGoalMetadata] rpc failed", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
     return { success: false, error: "Could not update goal. Try again." };
   }
 
@@ -164,6 +242,9 @@ export async function updateJarvisGoalMetadata(
     success: true,
     goalId: result.goal_id,
     title: result.title,
+    description: result.description ?? null,
+    notes: result.notes ?? null,
+    targetDate: result.target_date ?? null,
     domain: result.domain,
     goalType: result.goal_type,
     status: result.status,

@@ -1,173 +1,153 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { JarvisGoalDomain, JarvisGoalType } from "../types";
 import {
   parseAuthenticatedUserId,
   parseGoalTaskId,
 } from "./goal-task-mutation-shared";
 
-export type SetTodayPriorityGoalResult =
-  | { success: true; goalId: string }
+export type SetGoalPriorityResult =
+  | { success: true; goalId: string; domain: JarvisGoalDomain; goalType: JarvisGoalType }
   | { success: false; error: string };
 
-export type ClearTodayPriorityGoalResult =
+export type ClearGoalPriorityResult =
   | { success: true }
   | { success: false; error: string };
 
-type PriorityGoalRow = {
-  id: string;
-  goal_type: string;
-  status: string;
+type SetGoalPriorityRpcResult = {
+  success: boolean;
+  code?: string;
+  goal_id?: string;
+  domain?: string;
+  goal_type?: string;
 };
 
-type PriorityProfileRow = {
-  today_priority_goal_id: string | null;
+type ClearGoalPriorityRpcResult = {
+  success: boolean;
+  code?: string;
 };
 
-function goalPriorityError(status: string, goalType: string): string | null {
-  if (goalType !== "short_term") {
-    return "Only Short Term goals can be Today's Priority.";
-  }
+const RPC_ERROR_MESSAGES: Record<string, string> = {
+  unauthenticated: "You must be signed in to update Current Priority.",
+  invalid_goal: "Invalid goal.",
+  goal_not_found: "Goal not found.",
+  goal_archived: "Archived goals cannot be Current Priority.",
+  goal_completed: "Completed goals cannot be Current Priority.",
+  goal_not_active: "Only active goals can be Current Priority.",
+  invalid_domain: "Invalid workspace.",
+  invalid_goal_type: "Invalid goal horizon.",
+};
 
-  if (status === "archived") {
-    return "Archived goals cannot be Today's Priority.";
-  }
-
-  if (status === "completed") {
-    return "Completed goals cannot be Today's Priority.";
-  }
-
-  if (status !== "active") {
-    return "Only active goals can be Today's Priority.";
-  }
-
-  return null;
+function isJarvisGoalDomain(value: string): value is JarvisGoalDomain {
+  return value === "personal" || value === "melusi";
 }
 
-export async function setJarvisTodayPriorityGoal(
+function isJarvisGoalType(value: string): value is JarvisGoalType {
+  return value === "short_term" || value === "three_month" || value === "long_term";
+}
+
+function rpcErrorMessage(code: string | undefined): string {
+  if (code && RPC_ERROR_MESSAGES[code]) {
+    return RPC_ERROR_MESSAGES[code];
+  }
+
+  return "Could not update Current Priority. Try again.";
+}
+
+export async function setJarvisGoalPriority(
   supabase: SupabaseClient,
   userId: unknown,
   goalId: unknown,
-): Promise<SetTodayPriorityGoalResult> {
+): Promise<SetGoalPriorityResult> {
   const parsedUserId = parseAuthenticatedUserId(userId);
 
   if (!parsedUserId) {
-    return { success: false, error: "You must be signed in to update Today's Priority." };
+    return { success: false, error: RPC_ERROR_MESSAGES.unauthenticated };
   }
 
   const parsedGoalId = parseGoalTaskId(goalId);
 
   if (!parsedGoalId) {
-    return { success: false, error: "Invalid goal." };
+    return { success: false, error: RPC_ERROR_MESSAGES.invalid_goal };
   }
 
-  const { data: goal, error: goalError } = await supabase
-    .from("jarvis_goals")
-    .select("id, goal_type, status")
-    .eq("id", parsedGoalId)
-    .eq("user_id", parsedUserId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("set_jarvis_goal_priority", {
+    p_goal_id: parsedGoalId,
+  });
 
-  if (goalError) {
-    return { success: false, error: "Could not update Today's Priority. Try again." };
+  if (error) {
+    return { success: false, error: "Could not update Current Priority. Try again." };
   }
 
-  if (!goal) {
-    return { success: false, error: "Goal not found." };
+  const result = data as SetGoalPriorityRpcResult | null;
+
+  if (
+    !result?.success ||
+    !result.goal_id ||
+    !result.domain ||
+    !result.goal_type ||
+    !isJarvisGoalDomain(result.domain) ||
+    !isJarvisGoalType(result.goal_type)
+  ) {
+    return { success: false, error: rpcErrorMessage(result?.code) };
   }
-
-  const goalRow = goal as PriorityGoalRow;
-  const validationError = goalPriorityError(goalRow.status, goalRow.goal_type);
-
-  if (validationError) {
-    return { success: false, error: validationError };
-  }
-
-  const { data: profile, error: profileReadError } = await supabase
-    .from("jarvis_profiles")
-    .select("today_priority_goal_id")
-    .eq("user_id", parsedUserId)
-    .maybeSingle();
-
-  if (profileReadError) {
-    return { success: false, error: "Could not update Today's Priority. Try again." };
-  }
-
-  if (!profile) {
-    return { success: false, error: "Profile not found." };
-  }
-
-  const profileRow = profile as PriorityProfileRow;
-
-  if (profileRow.today_priority_goal_id === parsedGoalId) {
-    return { success: true, goalId: parsedGoalId };
-  }
-
-  const { data: updated, error: updateError } = await supabase
-    .from("jarvis_profiles")
-    .update({
-      today_priority_goal_id: parsedGoalId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", parsedUserId)
-    .select("today_priority_goal_id")
-    .maybeSingle();
-
-  if (updateError || !updated) {
-    return { success: false, error: "Could not update Today's Priority. Try again." };
-  }
-
-  const updatedRow = updated as PriorityProfileRow;
 
   return {
     success: true,
-    goalId: updatedRow.today_priority_goal_id ?? parsedGoalId,
+    goalId: result.goal_id,
+    domain: result.domain,
+    goalType: result.goal_type,
   };
 }
 
-export async function clearJarvisTodayPriorityGoal(
+export async function clearJarvisGoalPriority(
   supabase: SupabaseClient,
   userId: unknown,
-): Promise<ClearTodayPriorityGoalResult> {
+  domain: unknown,
+  goalType: unknown,
+): Promise<ClearGoalPriorityResult> {
   const parsedUserId = parseAuthenticatedUserId(userId);
 
   if (!parsedUserId) {
-    return { success: false, error: "You must be signed in to update Today's Priority." };
+    return { success: false, error: RPC_ERROR_MESSAGES.unauthenticated };
   }
 
-  const { data: profile, error: profileReadError } = await supabase
-    .from("jarvis_profiles")
-    .select("today_priority_goal_id")
-    .eq("user_id", parsedUserId)
-    .maybeSingle();
-
-  if (profileReadError) {
-    return { success: false, error: "Could not update Today's Priority. Try again." };
+  if (!isJarvisGoalDomain(domain as string)) {
+    return { success: false, error: RPC_ERROR_MESSAGES.invalid_domain };
   }
 
-  if (!profile) {
-    return { success: false, error: "Profile not found." };
+  if (!isJarvisGoalType(goalType as string)) {
+    return { success: false, error: RPC_ERROR_MESSAGES.invalid_goal_type };
   }
 
-  const profileRow = profile as PriorityProfileRow;
+  const { data, error } = await supabase.rpc("clear_jarvis_goal_priority", {
+    p_domain: domain,
+    p_goal_type: goalType,
+  });
 
-  if (profileRow.today_priority_goal_id === null) {
-    return { success: true };
+  if (error) {
+    return { success: false, error: "Could not update Current Priority. Try again." };
   }
 
-  const { data: updated, error: updateError } = await supabase
-    .from("jarvis_profiles")
-    .update({
-      today_priority_goal_id: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", parsedUserId)
-    .select("today_priority_goal_id")
-    .maybeSingle();
+  const result = data as ClearGoalPriorityRpcResult | null;
 
-  if (updateError || !updated) {
-    return { success: false, error: "Could not update Today's Priority. Try again." };
+  if (!result?.success) {
+    return { success: false, error: rpcErrorMessage(result?.code) };
   }
 
   return { success: true };
+}
+
+/** @deprecated Use setJarvisGoalPriority */
+export const setJarvisTodayPriorityGoal = setJarvisGoalPriority;
+
+/** @deprecated Use clearJarvisGoalPriority */
+export async function clearJarvisTodayPriorityGoal(
+  supabase: SupabaseClient,
+  userId: unknown,
+  domain: JarvisGoalDomain = "personal",
+  goalType: JarvisGoalType = "short_term",
+): Promise<ClearGoalPriorityResult> {
+  return clearJarvisGoalPriority(supabase, userId, domain, goalType);
 }

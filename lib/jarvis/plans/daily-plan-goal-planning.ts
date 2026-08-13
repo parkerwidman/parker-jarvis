@@ -157,13 +157,17 @@ export function buildDailyPlanActionableIndex(input: {
   goalTasks: PlanningGoalTaskRecord[];
   todayPriorityGoalId: string | null;
 }) {
+  const priorityGoalIds = input.todayPriorityGoalId
+    ? new Set([input.todayPriorityGoalId])
+    : new Set<string>();
+
   return buildActionableGoalTaskIndex({
     goals: input.goals,
     levels: input.levels.filter((level) =>
       input.goals.some((goal) => goal.id === level.goal_id),
     ),
     goalTasks: input.goalTasks,
-    todayPriorityGoalId: input.todayPriorityGoalId,
+    priorityGoalIds,
   });
 }
 

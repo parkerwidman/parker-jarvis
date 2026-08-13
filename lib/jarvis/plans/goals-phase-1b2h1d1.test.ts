@@ -36,6 +36,7 @@ function goal(overrides?: Partial<DailyPlanGoalRecord>): DailyPlanGoalRecord {
     title: "Get off academic probation and get into Tippie",
     goal_type: "short_term",
     status: "active",
+    domain: "personal",
     ...overrides,
   };
 }
@@ -185,6 +186,7 @@ describe("Phase 1B2-H1D1 Daily Plan goal planning", () => {
       expect(prepared[0].goalContext).toEqual({
         goalId: GOAL_ID,
         goalTitle: "Get off academic probation and get into Tippie",
+        goalDomain: "personal",
         levelId: LEVEL_ONE,
         levelTitle: "Advisor process",
         isTodayPriority: true,

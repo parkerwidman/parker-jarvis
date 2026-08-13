@@ -10,7 +10,7 @@ type QueryCall = {
   orders: Array<[string, { ascending: boolean; nullsFirst?: boolean }]>;
 };
 
-function createGoalsSupabaseMock(goalType: string) {
+function createGoalsSupabaseMock(goalType: string, domain: "personal" | "melusi" = "personal") {
   const calls: QueryCall[] = [];
 
   function createChain(table: string, result: unknown) {
@@ -51,9 +51,9 @@ function createGoalsSupabaseMock(goalType: string) {
 
   const supabase = {
     from: vi.fn((table: string) => {
-      if (table === "jarvis_profiles") {
+      if (table === "jarvis_goal_priorities") {
         return createChain(table, {
-          data: { today_priority_goal_id: PRIORITY_GOAL_ID },
+          data: { goal_id: PRIORITY_GOAL_ID },
           error: null,
         });
       }
@@ -65,7 +65,9 @@ function createGoalsSupabaseMock(goalType: string) {
               id: PRIORITY_GOAL_ID,
               title: "Priority goal",
               description: null,
-              domain: "personal",
+              notes: null,
+              target_date: null,
+              domain,
               status: "active",
               sort_order: 0,
               completed_at: null,
@@ -99,6 +101,7 @@ function createGoalsSupabaseMock(goalType: string) {
               status: "todo",
               position: 1,
               notes: null,
+              due_at: null,
               blocked_at: null,
               blocked_reason: null,
               goal_level_id: "level-1",
@@ -126,22 +129,23 @@ describe("loadGoals", () => {
     ["long_term", "long_term"],
   ] as const)("A-C. requests only %s goals for the %s route", async (goalType, expected) => {
     const { supabase, calls } = createGoalsSupabaseMock(goalType);
-    await loadGoals(supabase as never, USER_ID, goalType);
+    await loadGoals(supabase as never, USER_ID, goalType, "personal");
 
     const goalQuery = calls.find((call) => call.table === "jarvis_goals");
     expect(goalQuery?.filters).toContainEqual(["goal_type", expected]);
     expect(goalQuery?.filters).toContainEqual(["user_id", USER_ID]);
+    expect(goalQuery?.filters).toContainEqual(["domain", "personal"]);
   });
 
-  it("O. marks the matching short-term goal as today's priority", async () => {
+  it("O. marks the matching short-term goal as current priority", async () => {
     const { supabase } = createGoalsSupabaseMock("short_term");
-    const data = await loadGoals(supabase as never, USER_ID, "short_term");
+    const data = await loadGoals(supabase as never, USER_ID, "short_term", "personal");
 
-    expect(data.todayPriorityGoalId).toBe(PRIORITY_GOAL_ID);
-    expect(data.goals[0]?.isTodayPriority).toBe(true);
+    expect(data.priorityGoalId).toBe(PRIORITY_GOAL_ID);
+    expect(data.goals[0]?.isCurrentPriority).toBe(true);
   });
 
-  it("Z. does not mark completed goals as today's priority even when profile id matches", async () => {
+  it("Z. does not mark completed goals as current priority even when priority id matches", async () => {
     const supabase = {
       from: vi.fn((table: string) => {
         const chain: Record<string, unknown> = {};
@@ -151,7 +155,7 @@ describe("loadGoals", () => {
         chain.in = vi.fn(() => chain);
         chain.order = vi.fn(() => chain);
         chain.maybeSingle = vi.fn(async () => ({
-          data: { today_priority_goal_id: PRIORITY_GOAL_ID },
+          data: { goal_id: PRIORITY_GOAL_ID },
           error: null,
         }));
         chain.then = (onFulfilled: (value: unknown) => unknown) =>
@@ -163,6 +167,8 @@ describe("loadGoals", () => {
                       id: PRIORITY_GOAL_ID,
                       title: "Completed priority",
                       description: null,
+                      notes: null,
+                      target_date: null,
                       domain: "personal",
                       status: "completed",
                       sort_order: 0,
@@ -181,19 +187,19 @@ describe("loadGoals", () => {
       }),
     };
 
-    const data = await loadGoals(supabase as never, USER_ID, "short_term");
+    const data = await loadGoals(supabase as never, USER_ID, "short_term", "personal");
 
-    expect(data.todayPriorityGoalId).toBe(PRIORITY_GOAL_ID);
-    expect(data.goals[0]?.isTodayPriority).toBe(false);
+    expect(data.priorityGoalId).toBe(PRIORITY_GOAL_ID);
+    expect(data.goals[0]?.isCurrentPriority).toBe(false);
   });
 
   it("T. performs read-only selects without insert/update/delete calls", async () => {
     const { supabase } = createGoalsSupabaseMock("short_term");
-    await loadGoals(supabase as never, USER_ID, "short_term");
+    await loadGoals(supabase as never, USER_ID, "short_term", "personal");
 
     expect(supabase.from).toHaveBeenCalled();
     for (const call of supabase.from.mock.calls) {
-      expect(["jarvis_profiles", "jarvis_goals", "jarvis_goal_levels", "tasks"]).toContain(
+      expect(["jarvis_goal_priorities", "jarvis_goals", "jarvis_goal_levels", "tasks"]).toContain(
         call[0],
       );
     }
@@ -208,7 +214,7 @@ describe("loadGoals", () => {
         chain.neq = vi.fn(() => chain);
         chain.order = vi.fn(() => chain);
         chain.maybeSingle = vi.fn(async () => ({
-          data: { today_priority_goal_id: null },
+          data: null,
           error: null,
         }));
         chain.then = (onFulfilled: (value: unknown) => unknown) =>
@@ -222,7 +228,8 @@ describe("loadGoals", () => {
       }),
     };
 
-    const data = await loadGoals(supabase as never, USER_ID, "short_term");
+    const data = await loadGoals(supabase as never, USER_ID, "short_term", "personal");
     expect(data.goals).toEqual([]);
+    expect(data.counts.all).toBe(0);
   });
 });

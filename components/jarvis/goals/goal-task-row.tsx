@@ -6,8 +6,13 @@ import {
   moveGoalTask,
   setGoalTaskBlockState,
   setGoalTaskCompletion,
+  setGoalTaskDueAt,
   setGoalTaskNotes,
 } from "@/app/goals/actions";
+import {
+  dueAtToDateInputValue,
+  formatTaskDueDateLabel,
+} from "@/lib/jarvis/goals/goal-dates";
 import type { GoalTaskView, JarvisGoalStatus, LevelState } from "@/lib/jarvis/goals/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
@@ -20,11 +25,23 @@ type GoalTaskRowProps = {
   taskIndex?: number;
   levelStructuralPending?: boolean;
   isEditing?: boolean;
+  variant?: "default" | "timeline";
 };
 
-type EditorMode = "none" | "notes" | "block" | "title" | "deleteConfirm";
+type EditorMode = "none" | "notes" | "block" | "title" | "dueDate" | "deleteConfirm";
 
-function statusLabel(status: GoalTaskView["status"]): string {
+function statusLabel(status: GoalTaskView["status"], variant: "default" | "timeline"): string {
+  if (variant === "timeline") {
+    switch (status) {
+      case "done":
+        return "COMPLETE";
+      case "in_progress":
+        return "CURRENT";
+      default:
+        return levelStateToChip(levelStateFromStatus(status));
+    }
+  }
+
   switch (status) {
     case "done":
       return "Done";
@@ -35,6 +52,30 @@ function statusLabel(status: GoalTaskView["status"]): string {
   }
 }
 
+function levelStateFromStatus(status: GoalTaskView["status"]): string {
+  return status === "done" ? "complete" : "pending";
+}
+
+function levelStateToChip(state: string): string {
+  return state === "complete" ? "COMPLETE" : "PENDING";
+}
+
+function timelineTaskStatus(task: GoalTaskView, levelState: LevelState): string {
+  if (task.isDone) {
+    return "COMPLETE";
+  }
+
+  if (levelState === "current" && task.isActionable) {
+    return "CURRENT";
+  }
+
+  if (levelState === "locked") {
+    return "PENDING";
+  }
+
+  return levelState === "current" ? "CURRENT" : "PENDING";
+}
+
 export function GoalTaskRow({
   task,
   levelState,
@@ -43,6 +84,7 @@ export function GoalTaskRow({
   taskIndex = 0,
   levelStructuralPending = false,
   isEditing = false,
+  variant = "default",
 }: GoalTaskRowProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -50,9 +92,11 @@ export function GoalTaskRow({
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [structuralError, setStructuralError] = useState<string | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode>("none");
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState(task.notes ?? "");
   const [blockReasonDraft, setBlockReasonDraft] = useState(task.blockedReason ?? "");
   const [titleDraft, setTitleDraft] = useState(task.title);
+  const [dueDateDraft, setDueDateDraft] = useState(dueAtToDateInputValue(task.dueAt));
   const [moveError, setMoveError] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
 
@@ -73,12 +117,20 @@ export function GoalTaskRow({
   const canEditTitle = true;
   const canDelete = isActiveGoal && levelTaskCount > 1;
   const showStructuralControls = isEditing;
+  const dueLabel = formatTaskDueDateLabel(task.dueAt);
+  const isTimeline = variant === "timeline";
 
   function closeStructuralEditor() {
-    if (editorMode === "title" || editorMode === "deleteConfirm" || editorMode === "block") {
+    if (
+      editorMode === "title" ||
+      editorMode === "deleteConfirm" ||
+      editorMode === "block" ||
+      editorMode === "dueDate"
+    ) {
       setEditorMode("none");
       setBlockReasonDraft(task.blockedReason ?? "");
       setTitleDraft(task.title);
+      setDueDateDraft(dueAtToDateInputValue(task.dueAt));
       setStructuralError(null);
       setMetadataError(null);
     }
@@ -97,6 +149,7 @@ export function GoalTaskRow({
     setNoteDraft(task.notes ?? "");
     setBlockReasonDraft(task.blockedReason ?? "");
     setTitleDraft(task.title);
+    setDueDateDraft(dueAtToDateInputValue(task.dueAt));
     setMetadataError(null);
     setStructuralError(null);
   }
@@ -137,6 +190,26 @@ export function GoalTaskRow({
       }
 
       refreshAfterMetadataMutation();
+    });
+  }
+
+  function handleSaveDueDate(clearDueDate = false) {
+    setStructuralError(null);
+
+    startTransition(async () => {
+      const result = await setGoalTaskDueAt(
+        task.id,
+        clearDueDate ? null : dueDateDraft || null,
+        clearDueDate,
+      );
+
+      if (!result.ok) {
+        setStructuralError(result.error);
+        return;
+      }
+
+      closeEditor();
+      router.refresh();
     });
   }
 
@@ -220,33 +293,46 @@ export function GoalTaskRow({
     });
   }
 
+  const rowClassName = isTimeline
+    ? `gd2-task-row gd2-task-row--${task.isDone ? "complete" : levelState}${
+        task.isBlocked ? " gd2-task-row--blocked" : ""
+      }`
+    : `goals-task-row${task.isDone ? " goals-task-row--done" : ""}${
+        task.isActionable ? " goals-task-row--actionable" : ""
+      }${task.isBlocked ? " goals-task-row--blocked" : ""}`;
+
+  const chipLabel = isTimeline
+    ? timelineTaskStatus(task, levelState)
+    : statusLabel(task.status, variant);
+
   return (
-    <li
-      className={`goals-task-row${
-        task.isDone ? " goals-task-row--done" : ""
-      }${task.isActionable ? " goals-task-row--actionable" : ""}${
-        task.isBlocked ? " goals-task-row--blocked" : ""
-      }`}
-    >
-      <button
-        type="button"
-        className={`goals-task-check${
-          task.isDone ? " goals-task-check--done" : ""
-        }${task.isActionable ? " goals-task-check--current" : ""}${
-          isInteractive ? " goals-task-check--interactive" : ""
-        }`}
-        aria-label={
-          task.isDone
-            ? `Reopen ${task.title}`
-            : canComplete
-              ? `Complete ${task.title}`
-              : `${task.title} locked until earlier levels finish`
-        }
-        aria-pressed={task.isDone}
-        disabled={!isInteractive}
-        onClick={handleToggle}
-      />
-      <div className="goals-task-body">
+    <li className={rowClassName}>
+      {!isTimeline ? (
+        <button
+          type="button"
+          className={`goals-task-check${
+            task.isDone ? " goals-task-check--done" : ""
+          }${task.isActionable ? " goals-task-check--current" : ""}${
+            isInteractive ? " goals-task-check--interactive" : ""
+          }`}
+          aria-label={
+            task.isDone
+              ? `Reopen ${task.title}`
+              : canComplete
+                ? `Complete ${task.title}`
+                : `${task.title} locked until earlier levels finish`
+          }
+          aria-pressed={task.isDone}
+          disabled={!isInteractive}
+          onClick={handleToggle}
+        />
+      ) : (
+        <div className="gd2-task-marker" aria-hidden="true">
+          <span className={`gd2-task-dot gd2-task-dot--${chipLabel.toLowerCase()}`} />
+        </div>
+      )}
+
+      <div className={isTimeline ? "gd2-task-body" : "goals-task-body"}>
         {editorMode === "title" ? (
           <div className="goals-task-editor">
             <input
@@ -277,20 +363,39 @@ export function GoalTaskRow({
             </div>
           </div>
         ) : (
-          <div className="goals-task-title-row">
-            <span className="goals-task-title">{task.title}</span>
+          <div className={isTimeline ? "gd2-task-title-row" : "goals-task-title-row"}>
+            <span className={isTimeline ? "gd2-task-title" : "goals-task-title"}>
+              {task.title}
+            </span>
             {task.isBlocked ? (
               <span className="goals-task-badge goals-task-badge--blocked">Blocked</span>
             ) : null}
+            {isTimeline ? (
+              <span className={`gd2-task-chip gd2-task-chip--${chipLabel.toLowerCase()}`}>
+                {chipLabel}
+              </span>
+            ) : null}
           </div>
         )}
-        <div className="goals-task-meta">
-          <span className="goals-task-status">{statusLabel(task.status)}</span>
-        </div>
+
+        {!isTimeline ? (
+          <div className="goals-task-meta">
+            <span className="goals-task-status">{chipLabel}</span>
+          </div>
+        ) : null}
+
+        {dueLabel ? (
+          <p className={isTimeline ? "gd2-task-due" : "goals-task-due"}>Due {dueLabel}</p>
+        ) : null}
+
         {task.isBlocked && task.blockedReason ? (
           <p className="goals-task-blocked-reason">{task.blockedReason}</p>
         ) : null}
-        {task.notes ? <p className="goals-task-notes-text">{task.notes}</p> : null}
+
+        {(isTimeline ? detailsOpen : true) && task.notes ? (
+          <p className={isTimeline ? "gd2-task-notes" : "goals-task-notes-text"}>{task.notes}</p>
+        ) : null}
+
         {editorMode === "notes" ? (
           <div className="goals-task-editor">
             <textarea
@@ -321,6 +426,48 @@ export function GoalTaskRow({
             </div>
           </div>
         ) : null}
+
+        {editorMode === "dueDate" ? (
+          <div className="goals-task-editor">
+            <label className="goals-settings-label">
+              Due date <span className="goals-builder-optional">optional</span>
+            </label>
+            <input
+              type="date"
+              className="goals-task-input"
+              value={dueDateDraft}
+              onChange={(event) => setDueDateDraft(event.target.value)}
+              disabled={isPending}
+            />
+            <div className="goals-task-editor-actions">
+              <button
+                type="button"
+                className="goals-task-action goals-task-action--primary"
+                disabled={isPending}
+                onClick={() => handleSaveDueDate(false)}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="goals-task-action"
+                disabled={isPending}
+                onClick={() => handleSaveDueDate(true)}
+              >
+                Clear date
+              </button>
+              <button
+                type="button"
+                className="goals-task-action"
+                disabled={isPending}
+                onClick={closeEditor}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {editorMode === "block" ? (
           <div className="goals-task-editor">
             <textarea
@@ -351,6 +498,7 @@ export function GoalTaskRow({
             </div>
           </div>
         ) : null}
+
         {editorMode === "deleteConfirm" ? (
           <div className="goals-task-editor">
             <p className="goals-task-delete-prompt">Delete this task?</p>
@@ -374,9 +522,32 @@ export function GoalTaskRow({
             </div>
           </div>
         ) : null}
-        {editorMode === "none" || editorMode === "notes" ? (
-          <div className="goals-task-actions">
-            {editorMode === "none" ? (
+
+        {editorMode === "none" || editorMode === "notes" || editorMode === "dueDate" ? (
+          <div className={isTimeline ? "gd2-task-actions" : "goals-task-actions"}>
+            {isTimeline && !isEditing ? (
+              <>
+                <button
+                  type="button"
+                  className="gd2-task-action"
+                  onClick={() => setDetailsOpen((value) => !value)}
+                >
+                  {detailsOpen ? "Hide details" : "View details"}
+                </button>
+                {canComplete || canReopen ? (
+                  <button
+                    type="button"
+                    className="gd2-task-action"
+                    disabled={!isInteractive}
+                    onClick={handleToggle}
+                  >
+                    {task.isDone ? "Reopen" : "Complete"}
+                  </button>
+                ) : null}
+              </>
+            ) : null}
+
+            {editorMode === "none" && (isEditing || !isTimeline) ? (
               <button
                 type="button"
                 className="goals-task-action goals-task-action--subtle"
@@ -390,6 +561,7 @@ export function GoalTaskRow({
                 {task.notes ? "Edit note" : "Add note"}
               </button>
             ) : null}
+
             {showStructuralControls ? (
               <>
                 {canMoveTasks ? (
@@ -428,6 +600,18 @@ export function GoalTaskRow({
                     Edit task
                   </button>
                 ) : null}
+                <button
+                  type="button"
+                  className="goals-task-action"
+                  disabled={structuralDisabled}
+                  onClick={() => {
+                    setStructuralError(null);
+                    setDueDateDraft(dueAtToDateInputValue(task.dueAt));
+                    setEditorMode("dueDate");
+                  }}
+                >
+                  {task.dueAt ? "Edit due date" : "Add due date"}
+                </button>
                 {canDelete ? (
                   <button
                     type="button"
@@ -483,6 +667,7 @@ export function GoalTaskRow({
             ) : null}
           </div>
         ) : null}
+
         {completionError ? <p className="goals-task-error">{completionError}</p> : null}
         {metadataError ? <p className="goals-task-error">{metadataError}</p> : null}
         {structuralError ? <p className="goals-task-error">{structuralError}</p> : null}

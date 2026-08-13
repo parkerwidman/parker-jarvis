@@ -3,15 +3,16 @@
 import Link from "next/link";
 
 import { buildFocusPriorityFromTask } from "@/lib/jarvis/dashboard/focus-timer";
-import { useCommandCenterMode } from "./command-center-mode-provider";
+import {
+  goalDomainMatchesWorkspace,
+  itemMatchesWorkspace,
+  workspaceLabel,
+} from "@/lib/jarvis/shell/jarvis-workspace";
+import { useJarvisWorkspace } from "@/components/jarvis/jarvis-workspace-provider";
+import type { FocusTask } from "@/lib/jarvis/dashboard/build-command-center-view";
 import { PriorityFocusControls } from "./priority-focus-controls";
 import { PriorityOrbital, resolvePriorityOrbitalVariant } from "./priority-orbital";
 import { usePersistentFocusTimer } from "./use-persistent-focus-timer";
-import {
-  itemMatchesMode,
-  modeLabel,
-} from "@/lib/jarvis/dashboard/command-center-mode";
-import type { FocusTask } from "@/lib/jarvis/dashboard/build-command-center-view";
 
 type PriorityStripProps = {
   focusTask: FocusTask | null;
@@ -19,10 +20,13 @@ type PriorityStripProps = {
 };
 
 export function PriorityStrip({ focusTask, headerStatus }: PriorityStripProps) {
-  const { mode } = useCommandCenterMode();
+  const { workspace: mode } = useJarvisWorkspace();
 
   const modeFocus =
-    focusTask && itemMatchesMode(focusTask.lifeAreaName, mode)
+    focusTask &&
+    (focusTask.goalContext?.goalDomain
+      ? goalDomainMatchesWorkspace(focusTask.goalContext.goalDomain, mode)
+      : itemMatchesWorkspace(focusTask.lifeAreaName, mode))
       ? focusTask
       : null;
 
@@ -34,7 +38,7 @@ export function PriorityStrip({ focusTask, headerStatus }: PriorityStripProps) {
 
   const defaultTitle =
     modeFocus?.title ??
-    `No ${modeLabel(mode).toLowerCase()} priority right now`;
+    `No ${workspaceLabel(mode).toLowerCase()} priority right now`;
   const title =
     timer.phase === "idle" ? defaultTitle : (timer.displayTitle ?? defaultTitle);
 

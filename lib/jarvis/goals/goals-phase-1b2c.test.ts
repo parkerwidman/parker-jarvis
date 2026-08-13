@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { GoalCard } from "@/components/jarvis/goals/goal-card";
+import { GoalCompactCard } from "@/components/jarvis/goals/goal-compact-card";
+import { GoalDetailPanel } from "@/components/jarvis/goals/goal-detail-panel";
 import { GoalsPage } from "@/components/jarvis/goals/goals-page";
 import { GOAL_PAGE_CONFIG, type GoalView } from "@/lib/jarvis/goals/types";
 
@@ -18,11 +20,14 @@ function sampleGoal(overrides: Partial<GoalView> = {}): GoalView {
     id: "11111111-1111-4111-8111-111111111111",
     title: "Launch beta",
     description: "Ship the first beta release.",
+    notes: null,
+    targetDate: null,
     domain: "personal",
     status: "active",
     sortOrder: 0,
     completedAt: null,
     progressPercent: 40,
+    isCurrentPriority: false,
     isTodayPriority: false,
     levels: [
       {
@@ -65,53 +70,57 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-describe("Jarvis goals phase 1B2C today's priority", () => {
+vi.mock("@/components/jarvis/command-center/mode-switcher", () => ({
+  ModeSwitcher: () => null,
+}));
+
+describe("Jarvis goals phase 1B2C current priority", () => {
   it("V. active Short Term non-priority shows Set action", () => {
     const html = renderToStaticMarkup(
       createElement(GoalCard, {
         goal: sampleGoal(),
-        showTodayPriority: true,
+        showCurrentPriority: true,
       }),
     );
 
-    expect(html).toContain("Set as Today&#x27;s Priority");
+    expect(html).toContain("Set as Current Priority");
     expect(html).not.toContain("Clear Priority");
   });
 
-  it("W. selected active Short Term shows TODAY'S PRIORITY badge", () => {
+  it("W. selected active Short Term shows CURRENT PRIORITY badge", () => {
     const html = renderToStaticMarkup(
       createElement(GoalCard, {
-        goal: sampleGoal({ isTodayPriority: true }),
-        showTodayPriority: true,
+        goal: sampleGoal({ isCurrentPriority: true, isTodayPriority: true }),
+        showCurrentPriority: true,
       }),
     );
 
     expect(html).toContain("goals-priority-badge");
-    expect(html).toContain("TODAY&#x27;S PRIORITY");
+    expect(html).toContain("CURRENT PRIORITY");
     expect(html).toContain("goals-card--priority");
   });
 
   it("X. selected goal shows Clear Priority", () => {
     const html = renderToStaticMarkup(
       createElement(GoalCard, {
-        goal: sampleGoal({ isTodayPriority: true }),
-        showTodayPriority: true,
+        goal: sampleGoal({ isCurrentPriority: true, isTodayPriority: true }),
+        showCurrentPriority: true,
       }),
     );
 
     expect(html).toContain("Clear Priority");
-    expect(html).not.toContain("Set as Today&#x27;s Priority");
+    expect(html).not.toContain("Set as Current Priority");
   });
 
   it("Y. completed Short Term has no Set action", () => {
     const html = renderToStaticMarkup(
       createElement(GoalCard, {
         goal: sampleGoal({ status: "completed", progressPercent: 100 }),
-        showTodayPriority: true,
+        showCurrentPriority: true,
       }),
     );
 
-    expect(html).not.toContain("Set as Today&#x27;s Priority");
+    expect(html).not.toContain("Set as Current Priority");
     expect(html).not.toContain("Clear Priority");
   });
 
@@ -121,9 +130,10 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
         goal: sampleGoal({
           status: "completed",
           progressPercent: 100,
+          isCurrentPriority: false,
           isTodayPriority: false,
         }),
-        showTodayPriority: true,
+        showCurrentPriority: true,
       }),
     );
 
@@ -132,23 +142,27 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
   });
 
   it.each(["three_month", "long_term"] as const)(
-    "AA/AB. %s page has no priority controls",
+    "AA/AB. %s dashboard exposes current priority in detail panel",
     (goalType) => {
-      const html = renderToStaticMarkup(
-        createElement(GoalsPage, {
-          data: {
-            goalType,
-            todayPriorityGoalId: sampleGoal().id,
-            goals: [sampleGoal({ isTodayPriority: true })],
-          },
-          goalType,
+      const goal = sampleGoal({ isCurrentPriority: true, isTodayPriority: true });
+      const cardHtml = renderToStaticMarkup(
+        createElement(GoalCompactCard, {
+          goal,
+          isSelected: true,
+          onSelect: () => {},
+        }),
+      );
+      const detailHtml = renderToStaticMarkup(
+        createElement(GoalDetailPanel, {
+          goal,
+          currentGoalType: goalType,
+          showCurrentPriority: true,
         }),
       );
 
-      expect(html).not.toContain("Set as Today&#x27;s Priority");
-      expect(html).not.toContain("Clear Priority");
-      expect(html).not.toContain("goals-priority-badge");
-      expect(GOAL_PAGE_CONFIG[goalType].showTodayPriority).toBe(false);
+      expect(cardHtml).toContain("CURRENT PRIORITY");
+      expect(detailHtml).toContain("Clear Current Priority");
+      expect(GOAL_PAGE_CONFIG[goalType].showCurrentPriority).toBe(true);
     },
   );
 
@@ -156,13 +170,17 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
     const personalHtml = renderToStaticMarkup(
       createElement(GoalCard, {
         goal: sampleGoal({ domain: "personal" }),
-        showTodayPriority: true,
+        showCurrentPriority: true,
       }),
     );
     const melusiHtml = renderToStaticMarkup(
       createElement(GoalCard, {
-        goal: sampleGoal({ domain: "melusi", isTodayPriority: true }),
-        showTodayPriority: true,
+        goal: sampleGoal({
+          domain: "melusi",
+          isCurrentPriority: true,
+          isTodayPriority: true,
+        }),
+        showCurrentPriority: true,
       }),
     );
 
@@ -177,10 +195,10 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
     const actionsSource = readSource("app/goals/actions.ts");
 
     expect(actionsSource).toMatch(
-      /setTodayPriorityGoal[\s\S]*requireAuthenticatedUser[\s\S]*setJarvisTodayPriorityGoal/,
+      /setTodayPriorityGoal[\s\S]*requireAuthenticatedUser[\s\S]*setJarvisGoalPriority/,
     );
     expect(actionsSource).toMatch(
-      /clearTodayPriorityGoal[\s\S]*requireAuthenticatedUser[\s\S]*clearJarvisTodayPriorityGoal/,
+      /clearTodayPriorityGoal[\s\S]*requireAuthenticatedUser[\s\S]*clearJarvisGoalPriority/,
     );
   });
 
@@ -189,18 +207,22 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
     const cardSource = readSource("components/jarvis/goals/goal-card.tsx");
 
     expect(actionsSource).toMatch(/export async function setTodayPriorityGoal\(\s*goalId: unknown/);
-    expect(actionsSource).toContain("setJarvisTodayPriorityGoal(supabase, userId, goalId)");
+    expect(actionsSource).toContain("setJarvisGoalPriority(supabase, userId, goalId)");
     expect(cardSource).toContain("setTodayPriorityGoal(goal.id)");
     expect(cardSource).not.toContain("userId");
   });
 
-  it("F. clear action accepts no client mutation argument", () => {
+  it("F. clear action accepts domain and goalType from client", () => {
     const actionsSource = readSource("app/goals/actions.ts");
     const cardSource = readSource("components/jarvis/goals/goal-card.tsx");
 
-    expect(actionsSource).toMatch(/export async function clearTodayPriorityGoal\(\)/);
-    expect(actionsSource).toContain("clearJarvisTodayPriorityGoal(supabase, userId)");
-    expect(cardSource).toContain("clearTodayPriorityGoal()");
+    expect(actionsSource).toMatch(
+      /export async function clearTodayPriorityGoal\(\s*domain: unknown,\s*goalType: unknown/,
+    );
+    expect(actionsSource).toContain(
+      "clearJarvisGoalPriority(supabase, userId, domain, goalType)",
+    );
+    expect(cardSource).toContain("clearTodayPriorityGoal(goal.domain, currentGoalType)");
   });
 
   it("AG. priority mutations do not read or write current_focus", () => {
@@ -213,7 +235,7 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
     expect(cardSource).not.toContain("current_focus");
   });
 
-  it("AH. no Command Center or Morning Brief integration", () => {
+  it("AH. no Command Center or Morning Brief integration in goal card", () => {
     const mutationSource = readSource(
       "lib/jarvis/goals/mutations/set-today-priority-goal.ts",
     );
@@ -226,13 +248,13 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
     }
   });
 
-  it("AD. phase 1B2A completion migration still clears priority on goal completion", () => {
+  it("AD. D4.1 migration clears priority rows on goal completion", () => {
     const migrationSource = readSource(
-      "supabase/migrations/20260809010000_add_jarvis_goal_task_completion_rpc.sql",
+      "supabase/migrations/20260812180000_add_jarvis_goals_d41_foundation.sql",
     );
 
-    expect(migrationSource).toContain("today_priority_goal_id");
-    expect(migrationSource).toMatch(/today_priority_goal_id\s*=\s*NULL/i);
+    expect(migrationSource).toContain("jarvis_goal_priorities");
+    expect(migrationSource).toMatch(/DELETE FROM public\.jarvis_goal_priorities/i);
   });
 
   it("AE. completion mutation does not duplicate profile clear on task completion", () => {
@@ -261,12 +283,12 @@ describe("Jarvis goals phase 1B2C today's priority", () => {
     expect(cardSource).not.toMatch(/optimistic/i);
   });
 
-  it("load-goals derives isTodayPriority only from id, status, and goal type", () => {
+  it("load-goals derives isCurrentPriority from active status and priority row", () => {
     const loadSource = readSource("lib/jarvis/goals/load-goals.ts");
 
-    expect(loadSource).toContain('goalType === "short_term"');
     expect(loadSource).toContain('goal.status === "active"');
-    expect(loadSource).toContain("todayPriorityGoalId === goal.id");
+    expect(loadSource).toContain("priorityGoalId === goal.id");
+    expect(loadSource).toContain("jarvis_goal_priorities");
     expect(loadSource).not.toContain("current_focus");
   });
 });

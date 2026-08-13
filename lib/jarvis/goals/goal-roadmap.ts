@@ -11,6 +11,7 @@ export type RawGoalTask = {
   status: string;
   position: number | null;
   notes: string | null;
+  due_at: string | null;
   blocked_at: string | null;
   blocked_reason: string | null;
   goal_level_id: string | null;
@@ -140,6 +141,7 @@ export function buildGoalTaskView(
     status: task.status as GoalTaskView["status"],
     position: task.position,
     notes: task.notes,
+    dueAt: task.due_at,
     blockedAt: task.blocked_at,
     blockedReason: task.blocked_reason,
     isBlocked: blocked,

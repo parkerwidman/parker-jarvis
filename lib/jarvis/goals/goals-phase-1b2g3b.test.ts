@@ -255,11 +255,11 @@ describe("Phase 1B2-G3B goal settings UI", () => {
     }
   });
 
-  it("G3B-15. goal card passes page goal type into settings", () => {
-    const cardSource = readSource("components/jarvis/goals/goal-card.tsx");
-    const pageSource = readSource("components/jarvis/goals/goals-page.tsx");
+  it("G3B-15. goal detail panel passes page goal type into settings", () => {
+    const detailSource = readSource("components/jarvis/goals/goal-detail-panel.tsx");
+    const dashboardSource = readSource("components/jarvis/goals/goals-dashboard.tsx");
 
-    expect(cardSource).toContain("currentGoalType");
-    expect(pageSource).toContain("currentGoalType={data.goalType}");
+    expect(detailSource).toContain("currentGoalType");
+    expect(dashboardSource).toContain("currentGoalType={data.goalType}");
   });
 });

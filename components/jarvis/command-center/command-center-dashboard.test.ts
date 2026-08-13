@@ -121,11 +121,15 @@ const SAMPLE_DATA = {
 
 function renderDashboard() {
   return renderToStaticMarkup(
-    createElement(CommandCenterDashboard, {
-      data: SAMPLE_DATA,
-      displayName: "Parker",
-      greeting: "Good morning",
-    }),
+    createElement(
+      CommandCenterModeProvider,
+      { initialWorkspace: "melusi" },
+      createElement(CommandCenterDashboard, {
+        data: SAMPLE_DATA,
+        displayName: "Parker",
+        greeting: "Good morning",
+      }),
+    ),
   );
 }
 
@@ -190,7 +194,7 @@ describe("CommandCenterDashboard morning brief removal", () => {
     expect(html).not.toContain("Go to Melusi");
     expect(modeSwitcherSource).toContain('setMode("personal")');
     expect(modeSwitcherSource).toContain('setMode("melusi")');
-    expect(modeSwitcherSource).toContain("useCommandCenterMode");
+    expect(modeSwitcherSource).toContain("useJarvisWorkspace");
   });
 
   it("preserves board, goals, inbox, calendar, and status rail sections", () => {
@@ -244,7 +248,7 @@ describe("ModeSwitcher", () => {
     const html = renderToStaticMarkup(
       createElement(
         CommandCenterModeProvider,
-        null,
+        { initialWorkspace: "melusi" },
         createElement(ModeSwitcher),
       ),
     );

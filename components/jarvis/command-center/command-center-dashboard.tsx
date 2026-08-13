@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import type { CommandCenterData } from "@/lib/jarvis/dashboard/load-command-center";
+import { useJarvisWorkspace } from "@/components/jarvis/jarvis-workspace-provider";
 import { CalendarPulse } from "./calendar-pulse";
-import { CommandCenterModeProvider, useCommandCenterMode } from "./command-center-mode-provider";
 import { CommandCenterStatusRail } from "./command-center-status-rail";
 import { CommandKanban } from "./command-kanban";
 import { GoalProgressPanel } from "./goal-progress-panel";
@@ -25,13 +25,11 @@ export function CommandCenterDashboard({
   greeting,
 }: CommandCenterDashboardProps) {
   return (
-    <CommandCenterModeProvider>
-      <CommandCenterDashboardInner
-        data={data}
-        displayName={displayName}
-        greeting={greeting}
-      />
-    </CommandCenterModeProvider>
+    <CommandCenterDashboardInner
+      data={data}
+      displayName={displayName}
+      greeting={greeting}
+    />
   );
 }
 
@@ -40,7 +38,7 @@ function CommandCenterDashboardInner({
   displayName,
   greeting,
 }: CommandCenterDashboardProps) {
-  const { mode } = useCommandCenterMode();
+  const { workspace: mode } = useJarvisWorkspace();
 
   const todayEventCount = useMemo(() => {
     return data.outlook.events.filter((event) => {

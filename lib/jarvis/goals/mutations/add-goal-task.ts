@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseTaskDueDateInput } from "../goal-dates";
 import { parseGoalLevelId } from "./goal-task-mutation-shared";
 
 export type AddGoalTaskResult =
@@ -44,6 +45,7 @@ export async function addJarvisGoalTask(
   supabase: SupabaseClient,
   levelId: unknown,
   title: unknown,
+  dueAt?: unknown,
 ): Promise<AddGoalTaskResult> {
   const parsedLevelId = parseGoalLevelId(levelId);
 
@@ -61,9 +63,19 @@ export async function addJarvisGoalTask(
     return { success: false, error: "Task title must be between 1 and 200 characters." };
   }
 
+  const parsedDueAt =
+    dueAt === undefined || dueAt === null || dueAt === ""
+      ? null
+      : parseTaskDueDateInput(dueAt);
+
+  if (dueAt !== undefined && dueAt !== null && dueAt !== "" && parsedDueAt === null) {
+    return { success: false, error: "Due date must use YYYY-MM-DD format." };
+  }
+
   const { data, error } = await supabase.rpc("add_jarvis_goal_task", {
     p_level_id: parsedLevelId,
     p_title: trimmedTitle,
+    p_due_at: parsedDueAt,
   });
 
   if (error) {
