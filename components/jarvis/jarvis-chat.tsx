@@ -7,8 +7,10 @@ import { useOptionalJarvisContext } from "@/components/jarvis/context/jarvis-con
 import type { AgentKey } from "@/lib/jarvis/agents/types";
 
 type Message = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  createdAt?: string;
 };
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -80,6 +82,10 @@ type JarvisChatProps = {
   promptChips?: PromptChip[];
   compactStatusLine?: string;
   deferCompactHistory?: boolean;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
+  messagesApiPath?: string;
+  onThreadIdChange?: (threadId: string, firstMessage: string) => void;
 };
 
 function JarvisCore({ size }: { size: "sm" | "md" | "lg" }) {
@@ -136,6 +142,10 @@ export function JarvisChat({
   promptChips,
   compactStatusLine,
   deferCompactHistory = false,
+  hasOlderMessages = false,
+  loadingOlderMessages: loadingOlderMessagesProp = false,
+  messagesApiPath,
+  onThreadIdChange,
 }: JarvisChatProps) {
   const isCompact = variant === "compact";
   const isEmbedded = variant === "embedded" || isCompact;
@@ -155,8 +165,13 @@ export function JarvisChat({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasOlder, setHasOlder] = useState(hasOlderMessages);
+  const [loadingOlder, setLoadingOlder] = useState(loadingOlderMessagesProp);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
+  const shouldStickToBottomRef = useRef(true);
+  const firstUserMessageRef = useRef<string | null>(null);
 
   const displayName = agentDisplayName ?? "Jarvis";
   const subtitle =
@@ -206,6 +221,28 @@ export function JarvisChat({
   }
 
   useEffect(() => {
+    setHasOlder(hasOlderMessages);
+  }, [hasOlderMessages, conversationKey]);
+
+  function updateStickToBottom() {
+    const container = messagesContainerRef.current;
+
+    if (!container) {
+      shouldStickToBottomRef.current = true;
+      return;
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    shouldStickToBottomRef.current = distanceFromBottom < 96;
+  }
+
+  useEffect(() => {
+    if (!shouldStickToBottomRef.current) {
+      return;
+    }
+
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
 
@@ -217,6 +254,10 @@ export function JarvisChat({
 
     sendingRef.current = true;
     const userMessage: Message = { role: "user", content: trimmed };
+
+    if (!threadId && !firstUserMessageRef.current) {
+      firstUserMessageRef.current = trimmed;
+    }
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
@@ -267,6 +308,13 @@ export function JarvisChat({
 
       if (typeof data.threadId === "string") {
         setThreadId(data.threadId);
+
+        if (!initialThreadId && onThreadIdChange) {
+          onThreadIdChange(
+            data.threadId,
+            firstUserMessageRef.current ?? trimmed,
+          );
+        }
       }
 
       setMessages((prev) => [
@@ -282,6 +330,80 @@ export function JarvisChat({
     } finally {
       setLoading(false);
       sendingRef.current = false;
+    }
+  }
+
+  async function loadOlderMessages() {
+    if (!messagesApiPath || !hasOlder || loadingOlder || messages.length === 0) {
+      return;
+    }
+
+    const oldestMessage = messages[0];
+
+    if (!oldestMessage?.id || !oldestMessage.createdAt) {
+      return;
+    }
+
+    const container = messagesContainerRef.current;
+    const previousScrollHeight = container?.scrollHeight ?? 0;
+
+    setLoadingOlder(true);
+
+    try {
+      const params = new URLSearchParams({
+        beforeId: oldestMessage.id,
+        beforeCreatedAt: oldestMessage.createdAt,
+      });
+
+      const response = await fetch(`${messagesApiPath}?${params.toString()}`);
+
+      if (!response.ok) {
+        throw new Error("Could not load older messages.");
+      }
+
+      const data = (await response.json()) as {
+        messages?: Array<{
+          id: string;
+          role: "user" | "assistant";
+          content: string;
+          createdAt: string;
+        }>;
+        hasOlder?: boolean;
+      };
+
+      const olderMessages = (data.messages ?? []).map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+      }));
+
+      setHasOlder(data.hasOlder === true);
+      setMessages((current) => {
+        const existingIds = new Set(current.map((message) => message.id).filter(Boolean));
+
+        const dedupedOlder = olderMessages.filter(
+          (message) => !existingIds.has(message.id),
+        );
+
+        return [...dedupedOlder, ...current];
+      });
+
+      requestAnimationFrame(() => {
+        if (!container) {
+          return;
+        }
+
+        container.scrollTop = container.scrollHeight - previousScrollHeight;
+      });
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load older messages.",
+      );
+    } finally {
+      setLoadingOlder(false);
     }
   }
 
@@ -351,21 +473,35 @@ export function JarvisChat({
           </div>
         </div>
       ) : (
-        messages.map((message, index) => (
-          <div
-            key={index}
-            className={
-              message.role === "user"
-                ? "jarvis-bubble jarvis-bubble--user"
-                : "jarvis-bubble jarvis-bubble--assistant"
-            }
-          >
-            {message.role === "assistant" ? (
-              <span className="jarvis-bubble-label">{displayName}</span>
-            ) : null}
-            <p className="jarvis-bubble-content">{message.content}</p>
-          </div>
-        ))
+        <>
+          {hasOlder ? (
+            <div className="jarvis-load-older-wrap">
+              <button
+                type="button"
+                className="jarvis-load-older"
+                onClick={() => void loadOlderMessages()}
+                disabled={loadingOlder}
+              >
+                {loadingOlder ? "Loading older messages…" : "Load older messages"}
+              </button>
+            </div>
+          ) : null}
+          {messages.map((message) => (
+            <div
+              key={message.id ?? `${message.role}:${message.content}`}
+              className={
+                message.role === "user"
+                  ? "jarvis-bubble jarvis-bubble--user"
+                  : "jarvis-bubble jarvis-bubble--assistant"
+              }
+            >
+              {message.role === "assistant" ? (
+                <span className="jarvis-bubble-label">{displayName}</span>
+              ) : null}
+              <p className="jarvis-bubble-content">{message.content}</p>
+            </div>
+          ))}
+        </>
       )}
 
       {loading ? (
@@ -504,9 +640,11 @@ export function JarvisChat({
             </div>
           </div>
           <div
+            ref={messagesContainerRef}
             className="jarvis-messages jarvis-messages--full-page"
             aria-live="polite"
             aria-label="Conversation"
+            onScroll={updateStickToBottom}
           >
             {messageContent}
           </div>

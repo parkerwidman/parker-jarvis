@@ -1,4 +1,5 @@
 import type { AgentConfig, AgentKey, MelusiThreadType } from "./types";
+import { MAIN_THREAD_TYPE } from "./types";
 
 export const MELUSI_PRODUCT_CONTEXT = `## Melusi business context
 
@@ -162,7 +163,7 @@ export const MAIN_JARVIS_AGENT: AgentConfig = {
   displayName: "Jarvis",
   description: "Parker's private personal AI assistant.",
   defaultRoute: "/",
-  supportedThreadTypes: [],
+  supportedThreadTypes: [MAIN_THREAD_TYPE],
   toolGroups: [
     "tasks",
     "projects",
@@ -231,7 +232,7 @@ export function parseThreadIdFromBody(body: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function getThreadTypeLabel(threadType: MelusiThreadType): string {
+export function getThreadTypeLabel(threadType: MelusiThreadType | typeof MAIN_THREAD_TYPE): string {
   switch (threadType) {
     case "command":
       return "Command";
@@ -239,6 +240,8 @@ export function getThreadTypeLabel(threadType: MelusiThreadType): string {
       return "Research";
     case "campaign":
       return "Campaign";
+    case MAIN_THREAD_TYPE:
+      return "Chat";
   }
 }
 

@@ -6,7 +6,10 @@ import type { AgentKey, AgentMessageRecord, MessageRole } from "./types";
 export const MAX_USER_MESSAGE_LENGTH = 4000;
 export const MAX_ASSISTANT_MESSAGE_LENGTH = 16000;
 export const MAX_MESSAGE_LENGTH = MAX_USER_MESSAGE_LENGTH;
-const MAX_HISTORY_MESSAGES = 20;
+export const RECENT_MESSAGES_LIMIT = 20;
+export const UI_MESSAGES_PAGE_SIZE = 50;
+
+const MAX_HISTORY_MESSAGES = RECENT_MESSAGES_LIMIT;
 
 type AgentMessageRow = {
   id: string;
@@ -142,16 +145,24 @@ export async function loadRecentThreadMessages(
   userId: string,
   threadId: string,
   limit = MAX_HISTORY_MESSAGES,
+  agentKey?: AgentKey,
 ): Promise<AgentMessageRecord[]> {
   const safeLimit = Math.min(Math.max(limit, 1), MAX_HISTORY_MESSAGES);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("agent_messages")
     .select("id, role, content, created_at")
     .eq("user_id", userId)
     .eq("thread_id", threadId)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(safeLimit);
+
+  if (agentKey) {
+    query = query.eq("agent_key", agentKey);
+  }
+
+  const { data, error } = await query;
 
   if (error || !data) {
     return [];

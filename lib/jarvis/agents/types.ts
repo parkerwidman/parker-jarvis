@@ -6,6 +6,17 @@ export const MELUSI_THREAD_TYPES = ["command", "research", "campaign"] as const;
 
 export type MelusiThreadType = (typeof MELUSI_THREAD_TYPES)[number];
 
+export const MAIN_THREAD_TYPE = "chat" as const;
+
+export type MainThreadType = typeof MAIN_THREAD_TYPE;
+
+export const AGENT_THREAD_TYPES = [
+  ...MELUSI_THREAD_TYPES,
+  MAIN_THREAD_TYPE,
+] as const;
+
+export type AgentThreadType = (typeof AGENT_THREAD_TYPES)[number];
+
 export const THREAD_STATUSES = ["active", "archived"] as const;
 
 export type ThreadStatus = (typeof THREAD_STATUSES)[number];
@@ -18,7 +29,7 @@ export type AgentThreadRecord = {
   id: string;
   userId: string;
   agentKey: AgentKey;
-  threadType: MelusiThreadType;
+  threadType: AgentThreadType;
   title: string;
   status: ThreadStatus;
   createdAt: string;
@@ -54,7 +65,7 @@ export type AgentConfig = {
   displayName: string;
   description: string;
   defaultRoute: string;
-  supportedThreadTypes: readonly MelusiThreadType[];
+  supportedThreadTypes: readonly AgentThreadType[];
   toolGroups: readonly ToolCapabilityGroup[];
 };
 
@@ -67,6 +78,14 @@ export function isAgentKey(value: string): value is AgentKey {
 
 export function isMelusiThreadType(value: string): value is MelusiThreadType {
   return (MELUSI_THREAD_TYPES as readonly string[]).includes(value);
+}
+
+export function isMainThreadType(value: string): value is MainThreadType {
+  return value === MAIN_THREAD_TYPE;
+}
+
+export function isAgentThreadType(value: string): value is AgentThreadType {
+  return (AGENT_THREAD_TYPES as readonly string[]).includes(value);
 }
 
 export function isThreadStatus(value: string): value is ThreadStatus {

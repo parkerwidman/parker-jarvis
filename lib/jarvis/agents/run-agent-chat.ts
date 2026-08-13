@@ -35,6 +35,7 @@ import {
   resolveMelusiThreadForMessage,
   validateThreadAgentConsistency,
 } from "./agent-thread-tools";
+import { resolveMainThreadForMessage } from "@/lib/jarvis/conversations/main-conversation-tools";
 import { getToolsForAgent } from "./tool-definitions";
 import { executeJarvisTool } from "./tool-executor";
 import {
@@ -86,7 +87,7 @@ export async function runAgentChat(
     }
 
     activeThreadId = threadResult.thread.id;
-    melusiThreadType = threadResult.thread.threadType;
+    melusiThreadType = threadResult.thread.threadType as MelusiThreadType;
 
     const userPersist = await persistAgentMessage(
       supabase,
@@ -98,6 +99,45 @@ export async function runAgentChat(
     );
 
     if (!userPersist.success) {
+      return { success: false, error: userPersist.error, status: 400 };
+    }
+  } else if (agentKey === "main") {
+    const threadResult = await resolveMainThreadForMessage(
+      supabase,
+      userId,
+      threadId,
+      message,
+    );
+
+    if (!threadResult.success) {
+      return { success: false, error: threadResult.error, status: 404 };
+    }
+
+    if (!validateThreadAgentConsistency(threadResult.thread, agentKey)) {
+      return { success: false, error: "Conversation not found.", status: 404 };
+    }
+
+    activeThreadId = threadResult.thread.id;
+
+    const userPersist = await persistAgentMessage(
+      supabase,
+      userId,
+      activeThreadId,
+      agentKey,
+      "user",
+      message,
+    );
+
+    if (!userPersist.success) {
+      if (!threadId) {
+        await supabase
+          .from("agent_threads")
+          .delete()
+          .eq("id", activeThreadId)
+          .eq("user_id", userId)
+          .eq("agent_key", "main");
+      }
+
       return { success: false, error: userPersist.error, status: 400 };
     }
   }
@@ -139,11 +179,13 @@ export async function runAgentChat(
   let historyMessages: Array<{ role: "user" | "assistant"; content: string }> =
     [];
 
-  if (agentKey === "melusi" && activeThreadId) {
+  if (activeThreadId) {
     const recentMessages = await loadRecentThreadMessages(
       supabase,
       userId,
       activeThreadId,
+      undefined,
+      agentKey,
     );
 
     historyMessages = buildConversationInput(recentMessages, message);
@@ -203,8 +245,8 @@ export async function runAgentChat(
     for (const call of functionCalls) {
       const executionContext =
         agentKey === "main"
-          ? createInteractiveMainJarvisContext(call.call_id)
-          : createMelusiInteractiveContext(call.call_id);
+          ? createInteractiveMainJarvisContext(call.call_id, activeThreadId)
+          : createMelusiInteractiveContext(call.call_id, activeThreadId);
 
       const toolOutput = await executeJarvisTool(
         supabase,
@@ -250,7 +292,7 @@ export async function runAgentChat(
   const finalReply =
     replyText.length > 0 ? replyText : EMPTY_FINAL_REPLY;
 
-  if (agentKey === "melusi" && activeThreadId) {
+  if (activeThreadId) {
     const assistantPersist = await persistAgentMessage(
       supabase,
       userId,

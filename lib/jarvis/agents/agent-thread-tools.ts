@@ -8,6 +8,7 @@ import {
 import type {
   AgentKey,
   AgentThreadRecord,
+  AgentThreadType,
   MelusiThreadType,
   ThreadStatus,
 } from "./types";
@@ -32,7 +33,7 @@ function mapThreadRow(row: AgentThreadRow): AgentThreadRecord {
     id: row.id,
     userId: row.user_id,
     agentKey: row.agent_key as AgentKey,
-    threadType: row.thread_type as MelusiThreadType,
+    threadType: row.thread_type as AgentThreadType,
     title: row.title,
     status: row.status as ThreadStatus,
     createdAt: row.created_at,
