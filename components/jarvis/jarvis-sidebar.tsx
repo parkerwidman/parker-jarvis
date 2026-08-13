@@ -39,6 +39,7 @@ const NAV_SECTIONS: SidebarSection[] = [
     links: [
       { href: "/finance", label: "Finance", icon: "finance" },
       { href: "/fitness", label: "Fitness", icon: "fitness" },
+      { href: "/schedule", label: "Schedule", icon: "schedule" },
     ],
   },
   {
