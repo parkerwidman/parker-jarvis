@@ -160,6 +160,12 @@ export type FinanceCommandCenterTransaction = {
   personalOrBusiness: FinancePersonalOrBusiness;
 };
 
+export type FinanceConnectionStatusLabel =
+  | "connected"
+  | "syncing"
+  | "needs_attention"
+  | "no_connections";
+
 export type FinanceCommandCenterData = {
   timezone: string;
   currentMonthLabel: string;
@@ -179,8 +185,30 @@ export type FinanceCommandCenterData = {
   linkedPlaidAccountCount: number;
   latestSuccessfulPlaidSyncAt: string | null;
   anyConnectionNeedsAttention: boolean;
+  anyConnectionSyncInProgress: boolean;
+  connectionStatus: FinanceConnectionStatusLabel;
   excludeBusinessFromPersonal: boolean;
 };
+
+export function resolveFinanceConnectionStatus(input: {
+  connectedPlaidConnectionCount: number;
+  anyConnectionNeedsAttention: boolean;
+  anyConnectionSyncInProgress: boolean;
+}): FinanceConnectionStatusLabel {
+  if (input.connectedPlaidConnectionCount === 0) {
+    return "no_connections";
+  }
+
+  if (input.anyConnectionNeedsAttention) {
+    return "needs_attention";
+  }
+
+  if (input.anyConnectionSyncInProgress) {
+    return "syncing";
+  }
+
+  return "connected";
+}
 
 export type LoadFinanceCommandCenterResult =
   | { success: true; data: FinanceCommandCenterData }
@@ -469,20 +497,26 @@ function buildRecentTransactions(
     }));
 }
 
-function summarizePlaidConnections(
+export function summarizePlaidConnections(
   connections: Awaited<ReturnType<typeof loadSafePlaidConnections>>,
 ): {
   connectedPlaidConnectionCount: number;
   linkedPlaidAccountCount: number;
   latestSuccessfulPlaidSyncAt: string | null;
   anyConnectionNeedsAttention: boolean;
+  anyConnectionSyncInProgress: boolean;
 } {
   let linkedPlaidAccountCount = 0;
   let latestSuccessfulPlaidSyncAt: string | null = null;
   let anyConnectionNeedsAttention = false;
+  let anyConnectionSyncInProgress = false;
 
   for (const connection of connections) {
     linkedPlaidAccountCount += connection.linkedAccountsCount ?? 0;
+
+    if (connection.syncInProgress) {
+      anyConnectionSyncInProgress = true;
+    }
 
     if (
       connection.reconnectRequired ||
@@ -510,6 +544,7 @@ function summarizePlaidConnections(
     linkedPlaidAccountCount,
     latestSuccessfulPlaidSyncAt,
     anyConnectionNeedsAttention,
+    anyConnectionSyncInProgress,
   };
 }
 
@@ -685,6 +720,12 @@ export async function loadFinanceCommandCenter(
       linkedPlaidAccountCount: plaidSummary.linkedPlaidAccountCount,
       latestSuccessfulPlaidSyncAt: plaidSummary.latestSuccessfulPlaidSyncAt,
       anyConnectionNeedsAttention: plaidSummary.anyConnectionNeedsAttention,
+      anyConnectionSyncInProgress: plaidSummary.anyConnectionSyncInProgress,
+      connectionStatus: resolveFinanceConnectionStatus({
+        connectedPlaidConnectionCount: plaidSummary.connectedPlaidConnectionCount,
+        anyConnectionNeedsAttention: plaidSummary.anyConnectionNeedsAttention,
+        anyConnectionSyncInProgress: plaidSummary.anyConnectionSyncInProgress,
+      }),
       excludeBusinessFromPersonal: preferences.excludeBusinessFromPersonal,
     },
   };

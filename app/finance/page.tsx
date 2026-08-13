@@ -28,7 +28,7 @@ export default async function FinancePage() {
   ]);
 
   return (
-    <JarvisAppShell mainClassName="app-main--command-center">
+    <JarvisAppShell mainClassName="app-main--command-center cc2-shell">
       <JarvisPageContent className="jv-page-content--finance">
         <CommandCenterContextLayout>
           <FinanceCommandCenter
