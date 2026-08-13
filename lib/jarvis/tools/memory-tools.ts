@@ -128,44 +128,48 @@ export async function loadJarvisContext(
     memories: [],
   };
 
-  const { data: profile, error: profileError } = await supabase
-    .from("jarvis_profiles")
-    .select(PROFILE_SELECT)
-    .eq("user_id", userId)
-    .maybeSingle();
+  const [
+    { data: profile, error: profileError },
+    { data: lifeAreas, error: lifeAreasError },
+    { data: goals, error: goalsError },
+    { data: memories, error: memoriesError },
+  ] = await Promise.all([
+    supabase
+      .from("jarvis_profiles")
+      .select(PROFILE_SELECT)
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabase
+      .from("life_areas")
+      .select(LIFE_AREA_SELECT)
+      .eq("user_id", userId)
+      .eq("active", true),
+    supabase
+      .from("goals")
+      .select(GOAL_SELECT)
+      .eq("user_id", userId)
+      .in("status", ["active", "paused"]),
+    supabase
+      .from("memories")
+      .select(MEMORY_SELECT)
+      .eq("user_id", userId)
+      .eq("active", true)
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
 
   if (profileError) {
     return empty;
   }
 
-  const { data: lifeAreas, error: lifeAreasError } = await supabase
-    .from("life_areas")
-    .select(LIFE_AREA_SELECT)
-    .eq("user_id", userId)
-    .eq("active", true);
-
   if (lifeAreasError) {
     return { ...empty, profile };
   }
 
-  const { data: goals, error: goalsError } = await supabase
-    .from("goals")
-    .select(GOAL_SELECT)
-    .eq("user_id", userId)
-    .in("status", ["active", "paused"]);
-
   if (goalsError) {
     return { ...empty, profile, lifeAreas: lifeAreas ?? [] };
   }
-
-  const { data: memories, error: memoriesError } = await supabase
-    .from("memories")
-    .select(MEMORY_SELECT)
-    .eq("user_id", userId)
-    .eq("active", true)
-    .order("importance", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(50);
 
   if (memoriesError) {
     return {

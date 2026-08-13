@@ -28,8 +28,8 @@ import {
   logToolCallDiagnostic,
 } from "./agent-diagnostics";
 import { buildAgentInstructions } from "./instruction-builder";
-import { buildPendingScheduleActionSection } from "@/lib/jarvis/schedule/build-pending-schedule-section";
-import { loadActiveMainPendingScheduleAction } from "@/lib/jarvis/schedule/pending-schedule-actions";
+import { buildMainJarvisContext } from "@/lib/jarvis/context-engine/context-engine";
+import { scheduleConversationSummaryUpdate } from "@/lib/jarvis/context-engine/schedule-summary-update";
 import { detectScheduleConfirmationIntent } from "@/lib/jarvis/schedule/schedule-confirmation-intent";
 import {
   resolveMelusiThreadForMessage,
@@ -142,59 +142,69 @@ export async function runAgentChat(
     }
   }
 
-  const jarvisContext = await loadJarvisContext(supabase, userId);
-
-  let selectedRecordSection = "";
-
-  if (contextTarget) {
-    const selectedRecord = await loadAssistantContext(
-      supabase,
-      userId,
-      contextTarget,
-    );
-
-    if (selectedRecord.success) {
-      selectedRecordSection = buildSelectedRecordSection(
-        selectedRecord.context,
-      );
-    }
-  }
-
-  const instructions = buildAgentInstructions(
-    agentKey,
-    jarvisContext,
-    selectedRecordSection,
-    melusiThreadType,
-    agentKey === "main"
-      ? buildPendingScheduleActionSection({
-          pendingAction: await loadActiveMainPendingScheduleAction(
-            supabase,
-            userId,
-          ),
-          confirmationIntent: detectScheduleConfirmationIntent(message),
-        })
-      : "",
-  );
-
+  let instructions = "";
   let historyMessages: Array<{ role: "user" | "assistant"; content: string }> =
     [];
 
-  if (activeThreadId) {
-    const recentMessages = await loadRecentThreadMessages(
-      supabase,
+  if (agentKey === "main") {
+    const contextPackage = await buildMainJarvisContext(supabase, {
       userId,
-      activeThreadId,
-      undefined,
-      agentKey,
-    );
+      threadId: activeThreadId,
+      currentMessage: message,
+      contextTarget,
+      confirmationIntent: detectScheduleConfirmationIntent(message),
+    });
 
-    historyMessages = buildConversationInput(recentMessages, message);
+    instructions = contextPackage.instructions;
+    historyMessages = contextPackage.conversationInput;
 
     if (historyMessages.length === 0) {
       return { success: false, error: "Invalid message content.", status: 400 };
     }
   } else {
-    historyMessages = [{ role: "user", content: message.trim() }];
+    const jarvisContext = await loadJarvisContext(supabase, userId);
+
+    let selectedRecordSection = "";
+
+    if (contextTarget) {
+      const selectedRecord = await loadAssistantContext(
+        supabase,
+        userId,
+        contextTarget,
+      );
+
+      if (selectedRecord.success) {
+        selectedRecordSection = buildSelectedRecordSection(
+          selectedRecord.context,
+        );
+      }
+    }
+
+    instructions = buildAgentInstructions(
+      agentKey,
+      jarvisContext,
+      selectedRecordSection,
+      melusiThreadType,
+      "",
+    );
+
+    if (activeThreadId) {
+      const recentMessages = await loadRecentThreadMessages(
+        supabase,
+        userId,
+        activeThreadId,
+        undefined,
+        agentKey,
+      );
+
+      historyMessages = buildConversationInput(recentMessages, message);
+
+      if (historyMessages.length === 0) {
+        return { success: false, error: "Invalid message content.", status: 400 };
+      }
+    } else {
+      historyMessages = [{ role: "user", content: message.trim() }];
+    }
   }
 
   const input: OpenAI.Responses.ResponseInput = historyMessages.map((item) => ({
@@ -304,6 +314,10 @@ export async function runAgentChat(
 
     if (!assistantPersist.success) {
       return { success: false, error: assistantPersist.error, status: 500 };
+    }
+
+    if (agentKey === "main") {
+      scheduleConversationSummaryUpdate(supabase, userId, activeThreadId);
     }
 
     return {
