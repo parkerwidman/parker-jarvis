@@ -5,10 +5,12 @@ import {
   iterateLocalDatesInclusive,
   normalizeTimeForStorage,
 } from "@/lib/jarvis/schedule/schedule-datetime";
+import type { ScheduleBlockEditContext } from "@/lib/jarvis/schedule/schedule-mutation-types";
 import type {
   JarvisSchedule,
   ScheduleCategory,
   ScheduleOccurrence,
+  ScheduleOccurrenceSource,
 } from "@/lib/jarvis/schedule/schedule-types";
 
 const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -33,9 +35,18 @@ export type ScheduleWeekDay = {
 
 export type ScheduleBlockViewModel = {
   occurrenceKey: string;
+  scheduleId: string;
+  scheduleItemId: string | null;
+  overrideId: string | null;
+  source: ScheduleOccurrenceSource;
   date: string;
+  dayOfWeek: number;
+  weekdayLabel: string;
   title: string;
   category: ScheduleCategory;
+  notes: string | null;
+  localStartTime: string;
+  localEndTime: string | null;
   timeLabel: string;
   displayTimeLabel: string;
   ariaLabel: string;
@@ -302,9 +313,18 @@ export function buildScheduleWeekViewModel(input: {
 
     return {
       occurrenceKey: occurrence.occurrenceKey,
+      scheduleId: occurrence.scheduleId,
+      scheduleItemId: occurrence.scheduleItemId,
+      overrideId: occurrence.overrideId,
+      source: occurrence.source,
       date: occurrence.occurrenceDate,
+      dayOfWeek: occurrence.dayOfWeek,
+      weekdayLabel: formatWeekdayLabel(occurrence.occurrenceDate),
       title: occurrence.title,
       category: occurrence.category,
+      notes: occurrence.notes,
+      localStartTime: occurrence.localStartTime,
+      localEndTime: occurrence.localEndTime,
       timeLabel,
       displayTimeLabel:
         compact || dense
@@ -364,6 +384,34 @@ export function resolveSelectedScheduleId(
 
   return schedules[0]?.id ?? fallbackScheduleId;
 }
+
+function toTimeInputValue(localTime: string): string {
+  const normalized = normalizeTimeForStorage(localTime);
+  return normalized.slice(0, 5);
+}
+
+export function blockToEditContext(
+  block: ScheduleBlockViewModel,
+): ScheduleBlockEditContext {
+  return {
+    scheduleId: block.scheduleId,
+    scheduleItemId: block.scheduleItemId,
+    overrideId: block.overrideId,
+    source: block.source,
+    occurrenceKey: block.occurrenceKey,
+    weekdayLabel: block.weekdayLabel,
+    title: block.title,
+    category: block.category,
+    occurrenceDate: block.date,
+    dayOfWeek: block.dayOfWeek,
+    startTime: toTimeInputValue(block.localStartTime),
+    endTime: block.localEndTime ? toTimeInputValue(block.localEndTime) : null,
+    isOpenEnded: block.isOpenEnded,
+    notes: block.notes,
+  };
+}
+
+export { toTimeInputValue };
 
 export function scheduleContainsDate(
   schedule: Pick<JarvisSchedule, "startDate" | "endDate">,

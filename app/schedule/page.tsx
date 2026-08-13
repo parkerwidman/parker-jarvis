@@ -119,6 +119,7 @@ export default async function SchedulePage({ searchParams }: SchedulePageProps) 
     <JarvisAppShell mainClassName="app-main--command-center">
       <ScheduleDashboard
         schedules={schedules.length > 0 ? schedules : [foundation.schedule]}
+        selectedSchedule={range.data.schedule}
         selectedScheduleId={selectedScheduleId}
         todayLocal={todayLocal}
         viewModel={viewModel}

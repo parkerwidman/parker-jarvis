@@ -3,14 +3,19 @@ import { ScheduleTimeRail } from "@/components/schedule/schedule-time-rail";
 import {
   SCHEDULE_GRID_HEIGHT_PX,
   SCHEDULE_HOUR_HEIGHT_PX,
+  type ScheduleBlockViewModel,
   type ScheduleWeekViewModel,
 } from "@/lib/jarvis/schedule/schedule-week-view";
 
 type ScheduleWeekGridProps = {
   viewModel: ScheduleWeekViewModel;
+  onBlockSelect?: (block: ScheduleBlockViewModel) => void;
 };
 
-export function ScheduleWeekGrid({ viewModel }: ScheduleWeekGridProps) {
+export function ScheduleWeekGrid({
+  viewModel,
+  onBlockSelect,
+}: ScheduleWeekGridProps) {
   const hourLineCount =
     viewModel.hourLabels.length > 0 ? viewModel.hourLabels.length - 1 : 0;
 
@@ -56,7 +61,11 @@ export function ScheduleWeekGrid({ viewModel }: ScheduleWeekGridProps) {
                   </div>
 
                   {dayBlocks.map((block) => (
-                    <ScheduleBlock key={block.occurrenceKey} block={block} />
+                    <ScheduleBlock
+                      key={block.occurrenceKey}
+                      block={block}
+                      onSelect={onBlockSelect}
+                    />
                   ))}
                 </div>
               );

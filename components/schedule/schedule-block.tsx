@@ -1,3 +1,5 @@
+import type { KeyboardEvent } from "react";
+
 import { ScheduleCategoryIcon } from "@/lib/jarvis/schedule/schedule-category-icons";
 import {
   getScheduleCategoryClassName,
@@ -6,25 +8,45 @@ import type { ScheduleBlockViewModel } from "@/lib/jarvis/schedule/schedule-week
 
 type ScheduleBlockProps = {
   block: ScheduleBlockViewModel;
+  onSelect?: (block: ScheduleBlockViewModel) => void;
 };
 
-export function ScheduleBlock({ block }: ScheduleBlockProps) {
+export function ScheduleBlock({ block, onSelect }: ScheduleBlockProps) {
   const categoryClass = getScheduleCategoryClassName(block.category);
   const densityClass = block.dense
     ? " schedule-block--dense"
     : block.compact
       ? " schedule-block--compact"
       : "";
+  const interactiveClass = onSelect ? " schedule-block--interactive" : "";
+
+  function handleActivate() {
+    onSelect?.(block);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (!onSelect) {
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleActivate();
+    }
+  }
 
   return (
     <article
-      className={`schedule-block ${categoryClass}${densityClass}${block.hasConflict ? " schedule-block--conflict" : ""}`}
+      className={`schedule-block ${categoryClass}${densityClass}${interactiveClass}${block.hasConflict ? " schedule-block--conflict" : ""}`}
       style={{
         top: `${block.topPx}px`,
         height: `${block.heightPx}px`,
       }}
       aria-label={block.ariaLabel}
       title={block.hasConflict ? `${block.ariaLabel} (overlap)` : block.ariaLabel}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect ? handleActivate : undefined}
+      onKeyDown={handleKeyDown}
     >
       <div className="schedule-block-accent" aria-hidden="true" />
       <div className="schedule-block-body">
