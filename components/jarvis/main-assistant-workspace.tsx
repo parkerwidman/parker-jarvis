@@ -126,6 +126,7 @@ export function MainAssistantWorkspace({
           threadId={selectedThreadId}
           initialMessages={initialMessages}
           hasOlderMessages={initialHasOlderMessages}
+          richAssistantResponses
           messagesApiPath={
             selectedThreadId
               ? `/api/assistant/threads/${selectedThreadId}/messages`

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { JarvisContextChip } from "@/components/jarvis/context/jarvis-context-chip";
+import { JarvisMarkdownResponse } from "@/components/jarvis/jarvis-markdown-response";
 import { useOptionalJarvisContext } from "@/components/jarvis/context/jarvis-context-provider";
 import type { AgentKey } from "@/lib/jarvis/agents/types";
 
@@ -86,6 +87,7 @@ type JarvisChatProps = {
   loadingOlderMessages?: boolean;
   messagesApiPath?: string;
   onThreadIdChange?: (threadId: string, firstMessage: string) => void;
+  richAssistantResponses?: boolean;
 };
 
 function JarvisCore({ size }: { size: "sm" | "md" | "lg" }) {
@@ -146,6 +148,7 @@ export function JarvisChat({
   loadingOlderMessages: loadingOlderMessagesProp = false,
   messagesApiPath,
   onThreadIdChange,
+  richAssistantResponses = false,
 }: JarvisChatProps) {
   const isCompact = variant === "compact";
   const isEmbedded = variant === "embedded" || isCompact;
@@ -492,13 +495,19 @@ export function JarvisChat({
               className={
                 message.role === "user"
                   ? "jarvis-bubble jarvis-bubble--user"
-                  : "jarvis-bubble jarvis-bubble--assistant"
+                  : richAssistantResponses
+                    ? "jarvis-bubble jarvis-bubble--assistant jarvis-bubble--assistant-rich"
+                    : "jarvis-bubble jarvis-bubble--assistant"
               }
             >
               {message.role === "assistant" ? (
                 <span className="jarvis-bubble-label">{displayName}</span>
               ) : null}
-              <p className="jarvis-bubble-content">{message.content}</p>
+              {message.role === "assistant" && richAssistantResponses ? (
+                <JarvisMarkdownResponse content={message.content} />
+              ) : (
+                <p className="jarvis-bubble-content">{message.content}</p>
+              )}
             </div>
           ))}
         </>
