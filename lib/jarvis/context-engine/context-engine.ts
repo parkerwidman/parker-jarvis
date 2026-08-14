@@ -10,6 +10,10 @@ import {
   loadAssistantContext,
 } from "@/lib/jarvis/context/load-assistant-context";
 import { buildPendingScheduleActionSection } from "@/lib/jarvis/schedule/build-pending-schedule-section";
+import {
+  buildCompactPendingScheduleMarker,
+  resolvePendingSchedulePresentation,
+} from "@/lib/jarvis/schedule/pending-schedule-presentation";
 import { loadActiveMainPendingScheduleAction } from "@/lib/jarvis/schedule/pending-schedule-actions";
 import { loadJarvisContext } from "@/lib/jarvis/tools/memory-tools";
 import type { AgentMessageRecord } from "@/lib/jarvis/agents/types";
@@ -17,6 +21,7 @@ import {
   CONTEXT_BUDGETS,
   estimateTokens,
 } from "@/lib/jarvis/context-engine/context-budget";
+import { resolveTimeZone } from "@/lib/jarvis/dashboard/command-center-utils";
 import {
   buildMainInstructions,
   extractActiveEntitiesFromState,
@@ -159,12 +164,23 @@ export async function buildMainJarvisContext(
       ? buildSelectedRecordSection(selectedRecord.context)
       : "";
 
-  const pendingScheduleSection = buildPendingScheduleActionSection({
+  const pendingPresentation = resolvePendingSchedulePresentation({
     pendingAction,
     confirmationIntent: input.confirmationIntent,
+    currentMessage: input.currentMessage,
   });
 
-  const instructions = buildMainInstructions({
+  const pendingScheduleSection =
+    pendingPresentation === "full"
+      ? buildPendingScheduleActionSection({
+          pendingAction,
+          confirmationIntent: input.confirmationIntent,
+        })
+      : pendingPresentation === "compact" && pendingAction
+        ? buildCompactPendingScheduleMarker(pendingAction)
+        : "";
+
+  const { instructions, sectionEstimates } = buildMainInstructions({
     jarvisContext,
     conversationState,
     selectedRecordSection,
@@ -215,8 +231,10 @@ export async function buildMainJarvisContext(
     instructions,
     conversationInput,
     diagnostics,
+    sectionEstimates,
     conversationState,
     recentMessages: boundedRecent,
+    timeZone: resolveTimeZone(jarvisContext.profile?.timezone),
   };
 }
 

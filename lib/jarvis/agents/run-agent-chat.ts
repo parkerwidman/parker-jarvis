@@ -3,46 +3,33 @@ import "server-only";
 import OpenAI from "openai";
 import { toResponseInputItems } from "openai/lib/responses/ResponseInputItems";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  buildSelectedRecordSection,
-  loadAssistantContext,
-} from "@/lib/jarvis/context/load-assistant-context";
 import type { JarvisContextTarget } from "@/lib/jarvis/context/types";
-import { loadJarvisContext } from "@/lib/jarvis/tools/memory-tools";
+import { prepareAgentChatTurn } from "@/lib/jarvis/agents/agent-chat-setup";
 import {
-  buildConversationInput,
-  loadRecentThreadMessages,
+  buildEmptyFinalFallback,
+  createWriteAttemptSummary,
+  recordWriteAttempt,
+} from "@/lib/jarvis/agents/final-response-resolution";
+import { classifyToolExecutionSafety } from "./tool-execution-safety";
+import { extractResponseText, logAssistantError, logOpenAiResponseDiagnostic, logToolCallDiagnostic } from "./agent-diagnostics";
+import { executeToolSegmentsInOrder } from "./tool-execution-safety";
+import {
   MAX_MESSAGE_LENGTH,
   persistAgentMessage,
 } from "./agent-message-tools";
-import {
-  getAgentConfig,
-  parseAgentKeyFromBody,
-  parseThreadIdFromBody,
-} from "./agent-registry";
-import {
-  EMPTY_FINAL_REPLY,
-  extractResponseText,
-  logAssistantError,
-  logOpenAiResponseDiagnostic,
-  logToolCallDiagnostic,
-} from "./agent-diagnostics";
-import { buildAgentInstructions } from "./instruction-builder";
-import { buildMainJarvisContext } from "@/lib/jarvis/context-engine/context-engine";
-import { scheduleConversationSummaryUpdate } from "@/lib/jarvis/context-engine/schedule-summary-update";
-import { detectScheduleConfirmationIntent } from "@/lib/jarvis/schedule/schedule-confirmation-intent";
-import {
-  resolveMelusiThreadForMessage,
-  validateThreadAgentConsistency,
-} from "./agent-thread-tools";
-import { resolveMainThreadForMessage } from "@/lib/jarvis/conversations/main-conversation-tools";
-import { getToolsForAgent } from "./tool-definitions";
 import { executeJarvisTool } from "./tool-executor";
 import {
   createInteractiveMainJarvisContext,
   createMelusiInteractiveContext,
 } from "./tool-execution-context";
-import type { AgentKey, MelusiThreadType } from "./types";
+import { scheduleConversationSummaryUpdate } from "@/lib/jarvis/context-engine/schedule-summary-update";
+import {
+  JarvisRequestUsageCollector,
+  estimateToolResultTokens,
+  parseToolResultSuccess,
+} from "@/lib/jarvis/performance/model-usage";
+import { estimateTokens } from "@/lib/jarvis/context-engine/context-budget";
+import type { AgentKey } from "./types";
 
 const MAX_TOOL_ROUNDS = 5;
 
@@ -53,6 +40,7 @@ export type RunAgentChatParams = {
   agentKey: AgentKey;
   threadId: string | null;
   contextTarget: JarvisContextTarget | null;
+  requestId?: string;
 };
 
 export type RunAgentChatResult =
@@ -65,152 +53,31 @@ export async function runAgentChat(
   const { supabase, userId, message, agentKey, threadId, contextTarget } =
     params;
 
-  const agentConfig = getAgentConfig(agentKey);
-  const tools = getToolsForAgent(agentKey);
+  const preparedResult = await prepareAgentChatTurn({
+    supabase,
+    userId,
+    message,
+    agentKey,
+    threadId,
+    contextTarget,
+  });
 
-  let activeThreadId: string | null = threadId;
-  let melusiThreadType: MelusiThreadType | undefined;
-
-  if (agentKey === "melusi") {
-    const threadResult = await resolveMelusiThreadForMessage(
-      supabase,
-      userId,
-      threadId,
-    );
-
-    if (!threadResult.success) {
-      return { success: false, error: threadResult.error, status: 400 };
-    }
-
-    if (!validateThreadAgentConsistency(threadResult.thread, agentKey)) {
-      return { success: false, error: "Thread not found.", status: 404 };
-    }
-
-    activeThreadId = threadResult.thread.id;
-    melusiThreadType = threadResult.thread.threadType as MelusiThreadType;
-
-    const userPersist = await persistAgentMessage(
-      supabase,
-      userId,
-      activeThreadId,
-      agentKey,
-      "user",
-      message,
-    );
-
-    if (!userPersist.success) {
-      return { success: false, error: userPersist.error, status: 400 };
-    }
-  } else if (agentKey === "main") {
-    const threadResult = await resolveMainThreadForMessage(
-      supabase,
-      userId,
-      threadId,
-      message,
-    );
-
-    if (!threadResult.success) {
-      return { success: false, error: threadResult.error, status: 404 };
-    }
-
-    if (!validateThreadAgentConsistency(threadResult.thread, agentKey)) {
-      return { success: false, error: "Conversation not found.", status: 404 };
-    }
-
-    activeThreadId = threadResult.thread.id;
-
-    const userPersist = await persistAgentMessage(
-      supabase,
-      userId,
-      activeThreadId,
-      agentKey,
-      "user",
-      message,
-    );
-
-    if (!userPersist.success) {
-      if (!threadId) {
-        await supabase
-          .from("agent_threads")
-          .delete()
-          .eq("id", activeThreadId)
-          .eq("user_id", userId)
-          .eq("agent_key", "main");
-      }
-
-      return { success: false, error: userPersist.error, status: 400 };
-    }
+  if (!preparedResult.success) {
+    return {
+      success: false,
+      error: preparedResult.error,
+      status: preparedResult.status,
+    };
   }
 
-  let instructions = "";
-  let historyMessages: Array<{ role: "user" | "assistant"; content: string }> =
-    [];
+  const { prepared } = preparedResult;
+  const usage = new JarvisRequestUsageCollector(
+    params.requestId ?? crypto.randomUUID(),
+    agentKey,
+  );
+  usage.setMetadata(prepared.usageMetadata);
 
-  if (agentKey === "main") {
-    const contextPackage = await buildMainJarvisContext(supabase, {
-      userId,
-      threadId: activeThreadId,
-      currentMessage: message,
-      contextTarget,
-      confirmationIntent: detectScheduleConfirmationIntent(message),
-    });
-
-    instructions = contextPackage.instructions;
-    historyMessages = contextPackage.conversationInput;
-
-    if (historyMessages.length === 0) {
-      return { success: false, error: "Invalid message content.", status: 400 };
-    }
-  } else {
-    const jarvisContext = await loadJarvisContext(supabase, userId);
-
-    let selectedRecordSection = "";
-
-    if (contextTarget) {
-      const selectedRecord = await loadAssistantContext(
-        supabase,
-        userId,
-        contextTarget,
-      );
-
-      if (selectedRecord.success) {
-        selectedRecordSection = buildSelectedRecordSection(
-          selectedRecord.context,
-        );
-      }
-    }
-
-    instructions = buildAgentInstructions(
-      agentKey,
-      jarvisContext,
-      selectedRecordSection,
-      melusiThreadType,
-      "",
-    );
-
-    if (activeThreadId) {
-      const recentMessages = await loadRecentThreadMessages(
-        supabase,
-        userId,
-        activeThreadId,
-        undefined,
-        agentKey,
-      );
-
-      historyMessages = buildConversationInput(recentMessages, message);
-
-      if (historyMessages.length === 0) {
-        return { success: false, error: "Invalid message content.", status: 400 };
-      }
-    } else {
-      historyMessages = [{ role: "user", content: message.trim() }];
-    }
-  }
-
-  const input: OpenAI.Responses.ResponseInput = historyMessages.map((item) => ({
-    role: item.role,
-    content: item.content,
-  }));
+  const input: OpenAI.Responses.ResponseInput = [...prepared.input];
 
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
@@ -218,6 +85,8 @@ export async function runAgentChat(
 
   let response: OpenAI.Responses.Response;
   let toolRound = 1;
+  const writeAttempts = createWriteAttemptSummary();
+  let pendingToolResultTokens: number | undefined;
 
   try {
     response = await openai.responses.create({
@@ -225,8 +94,8 @@ export async function runAgentChat(
       store: false,
       reasoning: { effort: "low" },
       max_output_tokens: 8000,
-      instructions,
-      tools,
+      instructions: prepared.instructions,
+      tools: prepared.tools,
       input,
     });
   } catch (error) {
@@ -239,6 +108,8 @@ export async function runAgentChat(
   }
 
   logOpenAiResponseDiagnostic(toolRound, response);
+  usage.recordModelRound(response, toolRound, pendingToolResultTokens);
+  pendingToolResultTokens = undefined;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const functionCalls = response.output.filter(
@@ -252,26 +123,57 @@ export async function runAgentChat(
 
     input.push(...toResponseInputItems(response.output));
 
-    for (const call of functionCalls) {
-      const executionContext =
-        agentKey === "main"
-          ? createInteractiveMainJarvisContext(call.call_id, activeThreadId)
-          : createMelusiInteractiveContext(call.call_id, activeThreadId);
+    const executed = await executeToolSegmentsInOrder({
+      calls: functionCalls,
+      getToolName: (call) => call.name,
+      executeCall: async (call) => {
+        const executionContext =
+          agentKey === "main"
+            ? createInteractiveMainJarvisContext(
+                call.call_id,
+                prepared.activeThreadId,
+              )
+            : createMelusiInteractiveContext(call.call_id, prepared.activeThreadId);
 
-      const toolOutput = await executeJarvisTool(
-        supabase,
-        userId,
-        call,
-        contextTarget,
-        executionContext,
-      );
-      logToolCallDiagnostic(toolRound, call.name, toolOutput);
+        const startedAt = Date.now();
+        const toolOutput = await executeJarvisTool(
+          supabase,
+          userId,
+          call,
+          contextTarget,
+          executionContext,
+        );
+
+        usage.recordToolExecution({
+          round: toolRound,
+          toolName: call.name,
+          safety: classifyToolExecutionSafety(call.name),
+          resultTokensEstimated: estimateTokens(toolOutput),
+          success: parseToolResultSuccess(toolOutput),
+          durationMs: Date.now() - startedAt,
+        });
+
+        logToolCallDiagnostic(toolRound, call.name, toolOutput);
+        if (classifyToolExecutionSafety(call.name) === "write") {
+          recordWriteAttempt(writeAttempts, call.name, toolOutput);
+        }
+        return toolOutput;
+      },
+    });
+
+    for (const { call, result } of executed) {
       input.push({
         type: "function_call_output",
         call_id: call.call_id,
-        output: toolOutput,
+        output: result,
       });
     }
+
+    pendingToolResultTokens = estimateToolResultTokens(
+      executed.map(({ result }) => result),
+    );
+    usage.toolRoundCount += 1;
+    usage.toolCallCount += functionCalls.length;
 
     toolRound += 1;
 
@@ -281,8 +183,8 @@ export async function runAgentChat(
         store: false,
         reasoning: { effort: "low" },
         max_output_tokens: 8000,
-        instructions,
-        tools,
+        instructions: prepared.instructions,
+        tools: prepared.tools,
         input,
       });
     } catch (error) {
@@ -295,39 +197,41 @@ export async function runAgentChat(
     }
 
     logOpenAiResponseDiagnostic(toolRound, response);
+    usage.recordModelRound(response, toolRound, pendingToolResultTokens);
+    pendingToolResultTokens = undefined;
   }
 
   const replyText = extractResponseText(response);
 
   const finalReply =
-    replyText.length > 0 ? replyText : EMPTY_FINAL_REPLY;
+    replyText.length > 0
+      ? replyText
+      : buildEmptyFinalFallback(writeAttempts);
 
-  if (activeThreadId) {
-    const assistantPersist = await persistAgentMessage(
-      supabase,
-      userId,
-      activeThreadId,
-      agentKey,
-      "assistant",
-      finalReply,
-    );
+  usage.logIfEnabled();
 
-    if (!assistantPersist.success) {
-      return { success: false, error: assistantPersist.error, status: 500 };
-    }
+  const assistantPersist = await persistAgentMessage(
+    supabase,
+    userId,
+    prepared.activeThreadId,
+    agentKey,
+    "assistant",
+    finalReply,
+  );
 
-    if (agentKey === "main") {
-      scheduleConversationSummaryUpdate(supabase, userId, activeThreadId);
-    }
-
-    return {
-      success: true,
-      reply: finalReply,
-      threadId: activeThreadId,
-    };
+  if (!assistantPersist.success) {
+    return { success: false, error: assistantPersist.error, status: 500 };
   }
 
-  return { success: true, reply: finalReply };
+  if (agentKey === "main") {
+    scheduleConversationSummaryUpdate(supabase, userId, prepared.activeThreadId);
+  }
+
+  return {
+    success: true,
+    reply: finalReply,
+    threadId: prepared.activeThreadId,
+  };
 }
 
 export { MAX_MESSAGE_LENGTH };

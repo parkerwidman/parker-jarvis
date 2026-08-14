@@ -20,10 +20,10 @@ const baseContext: JarvisContext = {
 describe("MAIN_JARVIS_RESPONSE_PRESENTATION", () => {
   it("includes adaptive Markdown guidance for Main Jarvis only", () => {
     expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("Response presentation");
-    expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("For simple questions, answer simply");
-    expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("answer it first");
+    expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("Answer simply for simple questions");
+    expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("answer first");
     expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("Markdown");
-    expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("tables only when comparing");
+    expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain("tables only when comparison genuinely helps");
     expect(MAIN_JARVIS_RESPONSE_PRESENTATION).toContain(
       "Never display successful-action language unless the tool result confirms success",
     );
@@ -31,7 +31,7 @@ describe("MAIN_JARVIS_RESPONSE_PRESENTATION", () => {
   });
 
   it("is included in Main instructions but not Melusi instructions", () => {
-    const instructions = buildMainInstructions({
+    const { instructions } = buildMainInstructions({
       jarvisContext: baseContext,
       conversationState: null,
       selectedRecordSection: "",

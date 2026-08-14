@@ -6,15 +6,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AgentMessageRecord } from "@/lib/jarvis/agents/types";
 import { logAssistantError } from "@/lib/jarvis/agents/agent-diagnostics";
 import {
-  SUMMARY_RECENT_TAIL_MESSAGES,
-  SUMMARY_TRIGGER_NEW_MESSAGES,
-} from "@/lib/jarvis/context-engine/context-budget";
+  extractConversationSummaryUsage,
+  logConversationSummaryUsage,
+  recordConversationSummaryTrigger,
+} from "@/lib/jarvis/performance/model-usage";
 import {
   countMessagesAfterWatermark,
   isMessageAfterWatermark,
   loadConversationState,
   upsertConversationState,
 } from "@/lib/jarvis/context-engine/conversation-state";
+import {
+  SUMMARY_RECENT_TAIL_MESSAGES,
+  SUMMARY_TRIGGER_NEW_MESSAGES,
+} from "@/lib/jarvis/context-engine/context-budget";
 import type {
   ConversationStateRecord,
   StructuredSummaryResult,
@@ -204,6 +209,7 @@ function formatMessagesForSummary(messages: AgentMessageRecord[]): string {
 export async function generateStructuredSummary(input: {
   existingSummary: string;
   newMessages: AgentMessageRecord[];
+  conversationId?: string;
 }): Promise<StructuredSummaryResult | null> {
   if (input.newMessages.length === 0) {
     return null;
@@ -235,12 +241,21 @@ export async function generateStructuredSummary(input: {
     });
 
     const text = response.output_text?.trim() ?? "";
+    const conversationId = input.conversationId ?? "unknown";
+    const parsed = text ? parseStructuredSummaryResult(text) : null;
+    const success = parsed !== null;
 
-    if (!text) {
-      return null;
+    const summaryUsage = extractConversationSummaryUsage(
+      response,
+      conversationId,
+      success,
+    );
+
+    if (summaryUsage) {
+      logConversationSummaryUsage(summaryUsage);
     }
 
-    return parseStructuredSummaryResult(text);
+    return parsed;
   } catch (error) {
     logAssistantError("conversation summary generation", error);
     return null;
@@ -267,9 +282,12 @@ export async function maybeUpdateConversationSummary(
     return;
   }
 
+  recordConversationSummaryTrigger();
+
   const summary = await generateStructuredSummary({
     existingSummary: state?.rollingSummary ?? "",
     newMessages: split.compactionCandidates,
+    conversationId: threadId,
   });
 
   if (!summary) {

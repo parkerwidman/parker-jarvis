@@ -48,7 +48,7 @@ const conversationInput = [
 describe("context size comparison fixture", () => {
   it("reports exact representative estimated token counts", () => {
     const legacyInstructions = buildAgentInstructions("main", sampleContext);
-    const boundedInstructions = buildMainInstructions({
+    const { instructions: boundedInstructions } = buildMainInstructions({
       jarvisContext: sampleContext,
       conversationState: null,
       selectedRecordSection: "",

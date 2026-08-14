@@ -10,12 +10,20 @@ import {
   MAX_MESSAGE_LENGTH,
   runAgentChat,
 } from "@/lib/jarvis/agents/run-agent-chat";
+import {
+  createMainAgentChatStreamResponse,
+  createRequestId,
+  parseStreamRequested,
+} from "@/lib/jarvis/agents/run-agent-chat-stream";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
+  const requestReceivedAt = Date.now();
+  const requestId = createRequestId();
   const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
+  const authCompleteAt = Date.now();
 
   if (error || !data?.claims) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -59,6 +67,27 @@ export async function POST(request: Request) {
 
   const agentKey = parseAgentKeyFromBody(body);
   const threadId = parseThreadIdFromBody(body);
+  const streamRequested = parseStreamRequested(body);
+
+  if (streamRequested) {
+    if (agentKey !== "main") {
+      return NextResponse.json(
+        { error: "Streaming is only supported for Main Jarvis." },
+        { status: 400 },
+      );
+    }
+
+    return createMainAgentChatStreamResponse({
+      supabase,
+      userId,
+      message: message.trim(),
+      threadId,
+      contextTarget,
+      requestId,
+      requestReceivedAt,
+      authCompleteAt,
+    });
+  }
 
   try {
     const result = await runAgentChat({
@@ -68,6 +97,7 @@ export async function POST(request: Request) {
       agentKey,
       threadId,
       contextTarget,
+      requestId,
     });
 
     if (!result.success) {

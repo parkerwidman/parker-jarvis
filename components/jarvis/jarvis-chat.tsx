@@ -4,15 +4,25 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { JarvisContextChip } from "@/components/jarvis/context/jarvis-context-chip";
 import { JarvisMarkdownResponse } from "@/components/jarvis/jarvis-markdown-response";
+import {
+  consumeJarvisAssistantStream,
+  createStreamDeltaBatcher,
+} from "@/lib/jarvis/streaming/client-stream";
+import {
+  type ChatMessage,
+  type ChatMessageInput,
+  chatMessagesEqual,
+  createCompletedAssistantMessage,
+  createOptimisticUserMessage,
+  createStreamingAssistantClientId,
+  createClientMessageId,
+  getMessageRenderKey,
+  normalizeChatMessages,
+} from "@/lib/jarvis/streaming/chat-message-identity";
 import { useOptionalJarvisContext } from "@/components/jarvis/context/jarvis-context-provider";
 import type { AgentKey } from "@/lib/jarvis/agents/types";
 
-type Message = {
-  id?: string;
-  role: "user" | "assistant";
-  content: string;
-  createdAt?: string;
-};
+type Message = ChatMessage;
 
 const EMPTY_MESSAGES: Message[] = [];
 
@@ -23,36 +33,12 @@ function getConversationKey(
   return `${agentKey}:${threadId ?? "ephemeral"}`;
 }
 
-function normalizeMessages(messages: Message[]): Message[] {
-  return messages.flatMap((message) => {
-    if (message.role !== "user" && message.role !== "assistant") {
-      return [];
-    }
-
-    if (typeof message.content !== "string") {
-      return [];
-    }
-
-    const content = message.content.trim();
-
-    if (content.length === 0) {
-      return [];
-    }
-
-    return [{ role: message.role, content }];
-  });
+function normalizeMessages(messages: ChatMessageInput[]): Message[] {
+  return normalizeChatMessages(messages);
 }
 
 function messagesEqual(left: Message[], right: Message[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every(
-    (message, index) =>
-      message.role === right[index]?.role &&
-      message.content === right[index]?.content,
-  );
+  return chatMessagesEqual(left, right);
 }
 
 type PromptChip = {
@@ -75,7 +61,7 @@ type JarvisChatProps = {
   userName?: string;
   agentKey?: AgentKey;
   threadId?: string | null;
-  initialMessages?: Message[];
+  initialMessages?: ChatMessageInput[];
   agentDisplayName?: string;
   agentSubtitle?: string;
   expandHref?: string;
@@ -86,7 +72,11 @@ type JarvisChatProps = {
   hasOlderMessages?: boolean;
   loadingOlderMessages?: boolean;
   messagesApiPath?: string;
-  onThreadIdChange?: (threadId: string, firstMessage: string) => void;
+  onThreadIdChange?: (
+    threadId: string,
+    firstMessage: string,
+    options?: { streaming?: boolean },
+  ) => void;
   richAssistantResponses?: boolean;
 };
 
@@ -170,11 +160,19 @@ export function JarvisChat({
   const [error, setError] = useState<string | null>(null);
   const [hasOlder, setHasOlder] = useState(hasOlderMessages);
   const [loadingOlder, setLoadingOlder] = useState(loadingOlderMessagesProp);
+  const [streamingAssistantContent, setStreamingAssistantContent] = useState<
+    string | null
+  >(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false);
   const shouldStickToBottomRef = useRef(true);
   const firstUserMessageRef = useRef<string | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const generationIdRef = useRef(0);
+  const streamingContentRef = useRef("");
+  const streamingAssistantClientIdRef = useRef<string | null>(null);
+  const useMainStreaming = richAssistantResponses && agentKey === "main";
 
   const displayName = agentDisplayName ?? "Jarvis";
   const subtitle =
@@ -247,7 +245,7 @@ export function JarvisChat({
     }
 
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, streamingAssistantContent]);
 
   async function sendMessage(text: string) {
     const trimmed = text.trim();
@@ -256,7 +254,17 @@ export function JarvisChat({
     }
 
     sendingRef.current = true;
-    const userMessage: Message = { role: "user", content: trimmed };
+    const generationId = generationIdRef.current + 1;
+    generationIdRef.current = generationId;
+    streamAbortRef.current?.abort();
+    const streamAbort = new AbortController();
+    streamAbortRef.current = streamAbort;
+
+    const userMessage = createOptimisticUserMessage(trimmed);
+    const streamingAssistantClientId = useMainStreaming
+      ? createStreamingAssistantClientId(generationId)
+      : null;
+    streamingAssistantClientIdRef.current = streamingAssistantClientId;
 
     if (!threadId && !firstUserMessageRef.current) {
       firstUserMessageRef.current = trimmed;
@@ -266,31 +274,111 @@ export function JarvisChat({
     setInput("");
     setLoading(true);
     setError(null);
+    setStreamingAssistantContent(null);
+    streamingContentRef.current = "";
 
     if (isCompact) {
       setIsExpanded(true);
     }
 
-    try {
-      const requestBody: {
-        message: string;
-        agentKey?: AgentKey;
-        threadId?: string;
-        context?: { type: string; id: string };
-      } = {
-        message: trimmed,
-        agentKey,
+    const requestBody: {
+      message: string;
+      agentKey?: AgentKey;
+      threadId?: string;
+      context?: { type: string; id: string };
+      stream?: boolean;
+    } = {
+      message: trimmed,
+      agentKey,
+      stream: useMainStreaming ? true : undefined,
+    };
+
+    if (threadId) {
+      requestBody.threadId = threadId;
+    }
+
+    if (jarvisContext?.target) {
+      requestBody.context = {
+        type: jarvisContext.target.type,
+        id: jarvisContext.target.id,
       };
+    }
 
-      if (threadId) {
-        requestBody.threadId = threadId;
-      }
+    const isActiveGeneration = () => generationIdRef.current === generationId;
 
-      if (jarvisContext?.target) {
-        requestBody.context = {
-          type: jarvisContext.target.type,
-          id: jarvisContext.target.id,
-        };
+    try {
+      if (useMainStreaming) {
+        const deltaBatcher = createStreamDeltaBatcher(
+          (content) => {
+            if (!isActiveGeneration()) {
+              return;
+            }
+
+            streamingContentRef.current = content;
+            setStreamingAssistantContent(content);
+            if (content.length > 0) {
+              setLoading(false);
+            }
+          },
+          () => streamingContentRef.current,
+        );
+
+        const response = await fetch("/api/assistant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+          signal: streamAbort.signal,
+        });
+
+        const streamResult = await consumeJarvisAssistantStream(response, {
+          onThread: (nextThreadId) => {
+            if (!isActiveGeneration()) {
+              return;
+            }
+
+            setThreadId(nextThreadId);
+
+            if (!initialThreadId && onThreadIdChange) {
+              onThreadIdChange(
+                nextThreadId,
+                firstUserMessageRef.current ?? trimmed,
+                { streaming: true },
+              );
+            }
+          },
+          onDelta: (delta) => {
+            deltaBatcher.append(delta);
+          },
+          onReset: () => {
+            deltaBatcher.reset();
+          },
+        });
+
+        deltaBatcher.flushNow();
+
+        if (!isActiveGeneration()) {
+          return;
+        }
+
+        if (!streamResult.success) {
+          throw new Error(streamResult.message);
+        }
+
+        streamingContentRef.current = streamResult.reply;
+        setStreamingAssistantContent(streamResult.reply);
+        setStreamingAssistantContent(null);
+        streamingAssistantClientIdRef.current = null;
+        setMessages((prev) => [
+          ...prev,
+          createCompletedAssistantMessage({
+            clientId:
+              streamingAssistantClientId ??
+              createStreamingAssistantClientId(generationId),
+            content: streamResult.reply,
+          }),
+        ]);
+
+        return;
       }
 
       const response = await fetch("/api/assistant", {
@@ -322,17 +410,33 @@ export function JarvisChat({
 
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: data.reply ?? "" },
+        createCompletedAssistantMessage({
+          clientId: createClientMessageId(),
+          content: data.reply ?? "",
+        }),
       ]);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+
+      if (!isActiveGeneration()) {
+        return;
+      }
+
+      setStreamingAssistantContent(null);
+      streamingContentRef.current = "";
+      streamingAssistantClientIdRef.current = null;
       setError(
         err instanceof Error
           ? err.message
           : "Something went wrong. Please try again.",
       );
     } finally {
-      setLoading(false);
-      sendingRef.current = false;
+      if (isActiveGeneration()) {
+        setLoading(false);
+        sendingRef.current = false;
+      }
     }
   }
 
@@ -376,6 +480,7 @@ export function JarvisChat({
 
       const olderMessages = (data.messages ?? []).map((message) => ({
         id: message.id,
+        clientId: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
@@ -491,7 +596,7 @@ export function JarvisChat({
           ) : null}
           {messages.map((message) => (
             <div
-              key={message.id ?? `${message.role}:${message.content}`}
+              key={getMessageRenderKey(message)}
               className={
                 message.role === "user"
                   ? "jarvis-bubble jarvis-bubble--user"
@@ -510,10 +615,20 @@ export function JarvisChat({
               )}
             </div>
           ))}
+          {streamingAssistantContent !== null &&
+          streamingAssistantClientIdRef.current ? (
+            <div
+              key={streamingAssistantClientIdRef.current}
+              className="jarvis-bubble jarvis-bubble--assistant jarvis-bubble--assistant-rich"
+            >
+              <span className="jarvis-bubble-label">{displayName}</span>
+              <JarvisMarkdownResponse content={streamingAssistantContent} />
+            </div>
+          ) : null}
         </>
       )}
 
-      {loading ? (
+      {loading && streamingAssistantContent === null ? (
         <p className="jarvis-thinking" aria-live="polite">
           <span className="jarvis-thinking-dots" aria-hidden="true">
             <span />

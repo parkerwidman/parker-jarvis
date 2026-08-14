@@ -52,12 +52,22 @@ export type MainContextEngineInput = {
   confirmationIntent: ScheduleConfirmationIntent;
 };
 
+export type MainInstructionSectionEstimates = {
+  estimatedCoreInstructionTokens: number;
+  estimatedWorkingStateTokens: number;
+  estimatedPersonalContextTokens: number;
+  estimatedSelectedRecordTokens: number;
+  estimatedPendingActionTokens: number;
+};
+
 export type MainContextEngineOutput = {
   instructions: string;
   conversationInput: Array<{ role: "user" | "assistant"; content: string }>;
   diagnostics: ContextEngineDiagnostics;
+  sectionEstimates: MainInstructionSectionEstimates;
   conversationState: ConversationStateRecord | null;
   recentMessages: AgentMessageRecord[];
+  timeZone: string;
 };
 
 export type SummaryUpdateInput = {

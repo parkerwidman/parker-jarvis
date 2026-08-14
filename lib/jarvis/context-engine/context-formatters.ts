@@ -3,6 +3,7 @@ import type { TrustedAssistantContext } from "@/lib/jarvis/context/load-assistan
 import type {
   ConversationActiveEntity,
   ConversationStateRecord,
+  MainInstructionSectionEstimates,
 } from "@/lib/jarvis/context-engine/context-types";
 import {
   CONTEXT_BUDGETS,
@@ -363,7 +364,10 @@ export function buildMainInstructions(input: {
   selectedMemories: Memory[];
   activeEntities: ConversationActiveEntity[];
   sectionsTrimmed: string[];
-}): string {
+}): {
+  instructions: string;
+  sectionEstimates: MainInstructionSectionEstimates;
+} {
   const coreSections = [
     BASE_MAIN_JARVIS_INSTRUCTIONS,
     MAIN_JARVIS_RESPONSE_PRESENTATION,
@@ -402,7 +406,16 @@ export function buildMainInstructions(input: {
     input.pendingScheduleSection,
   ].filter((section) => section.length > 0);
 
-  return sections.join("");
+  return {
+    instructions: sections.join(""),
+    sectionEstimates: {
+      estimatedCoreInstructionTokens: estimateTokens(coreSections.join("")),
+      estimatedWorkingStateTokens: estimateTokens(trimmedOptional.workingStateSection),
+      estimatedPersonalContextTokens: estimateTokens(trimmedOptional.personalContextSection),
+      estimatedSelectedRecordTokens: estimateTokens(trimmedOptional.selectedRecordSection),
+      estimatedPendingActionTokens: estimateTokens(input.pendingScheduleSection),
+    },
+  };
 }
 
 export function extractActiveEntitiesFromState(

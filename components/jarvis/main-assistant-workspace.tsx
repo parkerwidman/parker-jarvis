@@ -74,8 +74,18 @@ export function MainAssistantWorkspace({
   );
 
   const handleThreadIdChange = useCallback(
-    (threadId: string, firstMessage: string) => {
-      router.replace(buildAssistantHref(threadId, initialContext));
+    (
+      threadId: string,
+      firstMessage: string,
+      options?: { streaming?: boolean },
+    ) => {
+      const href = buildAssistantHref(threadId, initialContext);
+
+      if (options?.streaming) {
+        window.history.replaceState(window.history.state, "", href);
+      } else {
+        router.replace(href);
+      }
 
       setConversations((current) => {
         const existing = current.find((conversation) => conversation.id === threadId);
