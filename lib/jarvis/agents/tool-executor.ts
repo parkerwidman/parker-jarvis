@@ -16,8 +16,10 @@ import {
   proposeTask,
 } from "@/lib/jarvis/tools/action-request-tools";
 import {
+  saveMemoryWithEmbeddingIndex,
+} from "@/lib/jarvis/memory/save-memory-with-embedding";
+import {
   createGoal,
-  saveMemory,
   updateJarvisProfile,
 } from "@/lib/jarvis/tools/memory-tools";
 import {
@@ -294,14 +296,23 @@ export async function executeJarvisTool(
             currentFocus: nullableString(args.currentFocus),
           }),
         );
-      case "save_memory":
-        return JSON.stringify(
-          await saveMemory(supabase, userId, {
-            content: String(args.content ?? ""),
-            category: String(args.category ?? ""),
-            importance: Number(args.importance),
-          }),
-        );
+      case "save_memory": {
+        const saved = await saveMemoryWithEmbeddingIndex(supabase, userId, {
+          content: String(args.content ?? ""),
+          category: String(args.category ?? ""),
+          importance: Number(args.importance),
+        });
+
+        if (!saved.success) {
+          return JSON.stringify(saved);
+        }
+
+        return JSON.stringify({
+          success: true,
+          memory: saved.memory,
+          embeddingIndexed: saved.embeddingIndexed,
+        });
+      }
       case "create_goal":
         return JSON.stringify(
           await createGoal(supabase, userId, {

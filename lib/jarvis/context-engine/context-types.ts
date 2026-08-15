@@ -42,6 +42,9 @@ export type ContextEngineDiagnostics = {
   conversationInputEstimatedTokens: number;
   estimatedContextTokens: number;
   sectionsTrimmed: string[];
+  memoryRetrievalMode?: "lexical" | "hybrid";
+  memoryEmbeddingCalled?: boolean;
+  memorySemanticCandidates?: number;
 };
 
 export type MainContextEngineInput = {
@@ -50,6 +53,7 @@ export type MainContextEngineInput = {
   currentMessage: string;
   contextTarget: JarvisContextTarget | null;
   confirmationIntent: ScheduleConfirmationIntent;
+  requestId?: string;
 };
 
 export type MainInstructionSectionEstimates = {

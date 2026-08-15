@@ -107,6 +107,35 @@ function scoreMemory(
   return overlap * 4 + confirmedBoost + importanceBoost;
 }
 
+export type RankedLexicalMemory = {
+  memory: Memory;
+  score: number;
+  overlap: number;
+};
+
+export function rankLexicalMemories(input: {
+  memories: Memory[];
+  terms: Set<string>;
+}): RankedLexicalMemory[] {
+  return input.memories
+    .map((memory) => ({
+      memory,
+      score: scoreMemory(memory, input.terms),
+      overlap: computeLexicalOverlap(memory, input.terms),
+    }))
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (right.memory.importance !== left.memory.importance) {
+        return right.memory.importance - left.memory.importance;
+      }
+
+      return right.memory.created_at.localeCompare(left.memory.created_at);
+    });
+}
+
 export function selectRelevantMemories(input: {
   memories: Memory[];
   currentMessage: string;
@@ -122,25 +151,13 @@ export function selectRelevantMemories(input: {
   });
   const maxCount = input.maxCount ?? MAX_INJECTED_MEMORIES;
 
-  const ranked = candidates
-    .map((memory) => ({
-      memory,
-      score: scoreMemory(memory, terms),
-    }))
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score;
-      }
-
-      if (right.memory.importance !== left.memory.importance) {
-        return right.memory.importance - left.memory.importance;
-      }
-
-      return right.memory.created_at.localeCompare(left.memory.created_at);
-    });
+  const ranked = rankLexicalMemories({
+    memories: candidates,
+    terms,
+  });
 
   const relevant = ranked
-    .filter((entry) => computeLexicalOverlap(entry.memory, terms) >= 1)
+    .filter((entry) => entry.overlap >= 1)
     .map((entry) => entry.memory);
 
   if (relevant.length > 0) {

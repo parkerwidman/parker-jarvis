@@ -16,6 +16,7 @@ import {
 } from "@/lib/jarvis/schedule/pending-schedule-presentation";
 import { loadActiveMainPendingScheduleAction } from "@/lib/jarvis/schedule/pending-schedule-actions";
 import { loadJarvisContext } from "@/lib/jarvis/tools/memory-tools";
+import { retrieveMainMemories } from "@/lib/jarvis/memory/retrieve-main-memories";
 import type { AgentMessageRecord } from "@/lib/jarvis/agents/types";
 import {
   CONTEXT_BUDGETS,
@@ -29,7 +30,6 @@ import {
 import {
   collectRelevanceTerms,
   selectRelevantGoals,
-  selectRelevantMemories,
 } from "@/lib/jarvis/context-engine/memory-relevance-bridge";
 import {
   isMessageAfterWatermark,
@@ -149,12 +149,16 @@ export async function buildMainJarvisContext(
     activeEntities,
   });
 
-  const { selected: selectedMemories, considered: memoriesConsidered } =
-    selectRelevantMemories({
-      memories: jarvisContext.memories,
+  const { selected: selectedMemories, considered: memoriesConsidered, diagnostics: memoryDiagnostics } =
+    await retrieveMainMemories({
+      supabase,
+      userId: input.userId,
       currentMessage: input.currentMessage,
       rollingSummary: conversationState?.rollingSummary ?? "",
       activeEntities,
+      unresolvedQuestions: conversationState?.unresolvedQuestions ?? [],
+      contextTarget: input.contextTarget,
+      requestId: input.requestId,
     });
 
   const selectedGoals = selectRelevantGoals(jarvisContext.goals, relevanceTerms);
@@ -225,6 +229,9 @@ export async function buildMainJarvisContext(
     estimatedContextTokens:
       estimateTokens(instructions) + conversationInputEstimatedTokens,
     sectionsTrimmed,
+    memoryRetrievalMode: memoryDiagnostics.retrievalMode,
+    memoryEmbeddingCalled: memoryDiagnostics.embeddingCalled,
+    memorySemanticCandidates: memoryDiagnostics.semanticCandidates,
   };
 
   return {

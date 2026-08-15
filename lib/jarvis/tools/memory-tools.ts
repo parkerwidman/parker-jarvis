@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import {
+  MEMORY_CANDIDATE_LIMIT,
+} from "@/lib/jarvis/context-engine/context-budget";
+
 const VALID_PRIORITIES = new Set(["low", "medium", "high"]);
 
 const VALID_MEMORY_CATEGORIES = new Set([
@@ -117,6 +121,27 @@ function trimOrNull(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+export async function loadLexicalMemoryCandidates(
+  supabase: SupabaseClient,
+  userId: string,
+  limit = MEMORY_CANDIDATE_LIMIT,
+): Promise<Memory[]> {
+  const { data, error } = await supabase
+    .from("memories")
+    .select(MEMORY_SELECT)
+    .eq("user_id", userId)
+    .eq("active", true)
+    .order("importance", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return [];
+  }
+
+  return data ?? [];
+}
+
 export async function loadJarvisContext(
   supabase: SupabaseClient,
   userId: string,
@@ -156,7 +181,7 @@ export async function loadJarvisContext(
       .eq("active", true)
       .order("importance", { ascending: false })
       .order("created_at", { ascending: false })
-      .limit(50),
+      .limit(MEMORY_CANDIDATE_LIMIT),
   ]);
 
   if (profileError) {
