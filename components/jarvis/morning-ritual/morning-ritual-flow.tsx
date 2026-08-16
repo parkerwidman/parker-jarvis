@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 
+import { continueToJarvisFromRitual } from "@/app/wake/actions";
 import {
   SIGNED_URL_REFRESH_BUFFER_SECONDS,
   isSignedUrlStale,
@@ -688,6 +689,16 @@ export function MorningRitualFlow({ entry }: MorningRitualFlowProps) {
         >
           Sign in
         </button>
+        <form action={continueToJarvisFromRitual} className={styles.continueToJarvisForm}>
+          <input type="hidden" name="ritualDate" value={entry.ritualDate} />
+          <button
+            type="submit"
+            className={styles.continueToJarvisButton}
+            data-testid="continue-to-jarvis-button"
+          >
+            Continue to Jarvis
+          </button>
+        </form>
       </div>
     </>
   );

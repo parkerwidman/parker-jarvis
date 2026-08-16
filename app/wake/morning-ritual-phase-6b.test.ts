@@ -353,9 +353,9 @@ describe("Morning Ritual phase 6B orchestration", () => {
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualFlow");
-    expect(homeSource).toContain('ritualEntry === "complete"');
-    expect(homeSource).toContain("resolveMorningRitualRootRoute");
-    expect(loginSource).toContain('redirect("/wake")');
+    expect(readFileSync(resolve(import.meta.dirname, "../../lib/jarvis/rituals/morning-ritual-bypass.ts"), "utf8")).toContain('ritualEntry === "complete"');
+    expect(homeSource).toContain("shouldRedirectHomeToWake");
+    expect(loginSource).toContain('redirect("/")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("MorningRitualFlow");
   });

@@ -187,7 +187,7 @@ describe("Sleep screen phase 6B production flow", () => {
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualGate");
-    expect(loginSource).toContain('redirect("/wake")');
+    expect(loginSource).toContain('redirect("/")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("FullMorningRitual");
   });

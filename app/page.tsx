@@ -6,9 +6,13 @@ import { loadCommandCenter } from "@/lib/jarvis/dashboard/load-command-center";
 import { getGreeting } from "@/lib/jarvis/dashboard/command-center-utils";
 import {
   loadMorningRitualEntry,
-  resolveMorningRitualRootRoute,
 } from "@/lib/jarvis/rituals/load-morning-ritual-entry";
+import {
+  MORNING_RITUAL_BYPASS_COOKIE,
+  shouldRedirectHomeToWake,
+} from "@/lib/jarvis/rituals/morning-ritual-bypass";
 import { createClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 type HomeProps = {
@@ -42,11 +46,18 @@ export default async function Home({ searchParams }: HomeProps) {
     redirect("/wake");
   }
 
-  if (ritualEntry === "complete") {
-    if (entry.ritualStatus !== "completed") {
-      redirect("/wake");
-    }
-  } else if (resolveMorningRitualRootRoute(entry) === "wake") {
+  const cookieStore = await cookies();
+  const bypassRitualDate =
+    cookieStore.get(MORNING_RITUAL_BYPASS_COOKIE)?.value ?? null;
+
+  if (
+    shouldRedirectHomeToWake({
+      entry,
+      ritualDate: entry.ritualDate,
+      ritualEntry,
+      bypassRitualDate,
+    })
+  ) {
     redirect("/wake");
   }
 

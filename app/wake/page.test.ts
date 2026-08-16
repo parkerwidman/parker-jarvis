@@ -125,18 +125,18 @@ describe("WakePage", () => {
 });
 
 describe("Morning Ritual phase 2 safety boundaries", () => {
-  it("redirects successful login to /wake", () => {
+  it("redirects successful login to /", () => {
     const source = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
 
-    expect(source).toContain('redirect("/wake")');
-    expect(source).not.toContain('redirect("/")');
+    expect(source).toContain('redirect("/")');
+    expect(source).not.toContain('redirect("/wake")');
   });
 
   it("gates root bare entry through playback readiness and ritual state", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
 
     expect(source).toContain("loadMorningRitualEntry");
-    expect(source).toContain("resolveMorningRitualRootRoute");
+    expect(source).toContain("shouldRedirectHomeToWake");
     expect(source).toContain('redirect("/wake")');
     expect(source).toContain('redirect("/login")');
   });
@@ -155,9 +155,14 @@ describe("Morning Ritual phase 2 safety boundaries", () => {
 
   it("does not gate root / through wake without readiness or ritual state", () => {
     const source = readFileSync(HOME_PAGE_PATH, "utf8");
+    const bypassPath = resolve(
+      import.meta.dirname,
+      "../../lib/jarvis/rituals/morning-ritual-bypass.ts",
+    );
+    const bypassSource = readFileSync(bypassPath, "utf8");
 
-    expect(source).toContain('ritualEntry === "complete"');
-    expect(source).toContain("resolveMorningRitualRootRoute");
+    expect(bypassSource).toContain('ritualEntry === "complete"');
+    expect(source).toContain("shouldRedirectHomeToWake");
     expect(source).toMatch(/redirect\("\/wake"\)/);
   });
 

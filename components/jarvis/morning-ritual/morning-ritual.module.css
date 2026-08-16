@@ -213,6 +213,41 @@
   opacity: 0.55;
 }
 
+.continueToJarvisForm {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.continueToJarvisButton {
+  min-height: 44px;
+  width: min(100%, 280px);
+  padding: 14px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--mr-text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.continueToJarvisButton:hover {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 0 18px rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 480px) {
+  .continueToJarvisButton {
+    width: 100%;
+    max-width: 320px;
+  }
+}
+
 .readinessMessage,
 .ritualErrorMessage,
 .completionPendingMessage {

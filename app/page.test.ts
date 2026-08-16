@@ -10,6 +10,7 @@ const {
   loadMorningRitualEntryMock,
   loadCommandCenterMock,
   redirectMock,
+  cookiesGetMock,
 } = vi.hoisted(() => ({
   createClientMock: vi.fn(),
   loadMorningRitualEntryMock: vi.fn(),
@@ -17,6 +18,7 @@ const {
   redirectMock: vi.fn((url: string) => {
     throw new Error(`REDIRECT:${url}`);
   }),
+  cookiesGetMock: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -25,6 +27,12 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: createClientMock,
+}));
+
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: cookiesGetMock,
+  })),
 }));
 
 vi.mock("@/lib/jarvis/rituals/load-morning-ritual-entry", async (importOriginal) => {
@@ -72,6 +80,11 @@ const WELCOME_PATH = resolve(
 const FLOW_PATH = resolve(
   ROOT,
   "components/jarvis/morning-ritual/morning-ritual-flow.tsx",
+);
+const WAKE_ACTIONS_PATH = resolve(import.meta.dirname, "wake/actions.ts");
+const BYPASS_PATH = resolve(
+  ROOT,
+  "lib/jarvis/rituals/morning-ritual-bypass.ts",
 );
 const CLEANUP_PATH = resolve(
   ROOT,
@@ -148,6 +161,7 @@ describe("Home daily entry gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuthenticatedClient();
+    cookiesGetMock.mockReturnValue(undefined);
     loadMorningRitualEntryMock.mockResolvedValue(COMPLETED_ENTRY);
     loadCommandCenterMock.mockResolvedValue({
       preferredName: "Alex",
@@ -220,6 +234,34 @@ describe("Home daily entry gate", () => {
     await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
     expect(redirectMock).toHaveBeenCalledWith("/wake");
     expect(loadCommandCenterMock).not.toHaveBeenCalled();
+  });
+
+  it("allows / when same-day bypass cookie matches ritual date", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({
+        ritualDate: "2026-08-15",
+        playbackReadiness: "ready",
+      }),
+    );
+    cookiesGetMock.mockReturnValue({ value: "2026-08-15" });
+
+    await callHome();
+
+    expect(loadCommandCenterMock).toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
+  it("redirects / to /wake when bypass cookie is stale", async () => {
+    loadMorningRitualEntryMock.mockResolvedValue(
+      createEntry({
+        ritualDate: "2026-08-15",
+        playbackReadiness: "ready",
+      }),
+    );
+    cookiesGetMock.mockReturnValue({ value: "2026-08-14" });
+
+    await expect(callHome()).rejects.toThrow("REDIRECT:/wake");
+    expect(redirectMock).toHaveBeenCalledWith("/wake");
   });
 
   it("E: renders Command Center when yesterday ready and today missing", async () => {
@@ -363,8 +405,8 @@ describe("Daily entry routing safety boundaries", () => {
 
     expect(source).toContain("loadCommandCenter");
     expect(source).toContain("CommandCenterDashboard");
-    expect(source).toContain('ritualEntry === "complete"');
-    expect(source).toContain("resolveMorningRitualRootRoute");
+    expect(source).toContain("shouldRedirectHomeToWake");
+    expect(readFileSync(BYPASS_PATH, "utf8")).toContain('ritualEntry === "complete"');
   });
 
   it("validated bypass renders RitualEntryUrlCleanup", () => {
@@ -436,12 +478,33 @@ describe("Daily entry routing safety boundaries", () => {
     expect(welcomeSource).not.toMatch(/new Audio/);
   });
 
-  it("successful login redirects to /wake", () => {
+  it("successful login redirects to /", () => {
     const loginSource = readFileSync(LOGIN_ACTIONS_PATH, "utf8");
 
-    expect(loginSource).toContain('redirect("/wake")');
-    expect(loginSource).not.toContain('redirect("/")');
+    expect(loginSource).toContain('redirect("/")');
+    expect(loginSource).not.toContain('redirect("/wake")');
     expect(loginSource).toContain('redirect("/login?error=Could not sign in")');
+  });
+
+  it("Continue to Jarvis bypass does not mutate ritual completion", () => {
+    const wakeActionsSource = readFileSync(WAKE_ACTIONS_PATH, "utf8");
+    const flowSource = readFileSync(FLOW_PATH, "utf8");
+
+    expect(wakeActionsSource).toContain("MORNING_RITUAL_BYPASS_COOKIE");
+    expect(wakeActionsSource).not.toMatch(/completeDailyRitual/);
+    expect(wakeActionsSource).not.toMatch(/completeMorningRitual/);
+    expect(flowSource).toContain("continueToJarvisFromRitual");
+    expect(flowSource).toContain('data-testid="continue-to-jarvis-button"');
+    expect(flowSource).toContain("shouldRevealEnterJarvis");
+  });
+
+  it("root routing respects daily bypass helper", () => {
+    const homeSource = readFileSync(HOME_PAGE_PATH, "utf8");
+    const bypassSource = readFileSync(BYPASS_PATH, "utf8");
+
+    expect(homeSource).toContain("shouldRedirectHomeToWake");
+    expect(homeSource).toContain("MORNING_RITUAL_BYPASS_COOKIE");
+    expect(bypassSource).toContain("isMorningRitualBypassActive");
   });
 
   it("/wake unauthenticated still redirects /login", () => {

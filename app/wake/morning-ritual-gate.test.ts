@@ -165,7 +165,7 @@ describe("MorningRitualGate phase 3 visuals", () => {
 
     expect(homeSource).toContain("loadCommandCenter");
     expect(homeSource).not.toContain("MorningRitualGate");
-    expect(loginSource).toContain('redirect("/wake")');
+    expect(loginSource).toContain('redirect("/")');
     expect(briefingSource).toContain("BriefingPlayer");
     expect(briefingSource).not.toContain("MorningRitualGate");
   });
