@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { completeMorningRitual } from "@/lib/jarvis/rituals/morning-ritual-service";
 import { isValidBriefingDate } from "@/lib/jarvis/audio/storage-path";
+import { applyMorningRitualBypassCookie } from "@/lib/jarvis/rituals/morning-ritual-bypass";
+import { completeMorningRitual } from "@/lib/jarvis/rituals/morning-ritual-service";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -99,11 +100,13 @@ export async function POST(request: NextRequest) {
     return jsonResponse({ error: "unavailable" }, 503);
   }
 
-  return jsonResponse(
+  const response = jsonResponse(
     {
       result: result.result,
       ritual: result.ritual,
     },
     200,
   );
+  applyMorningRitualBypassCookie(response.cookies, result.ritual.ritualDate);
+  return response;
 }

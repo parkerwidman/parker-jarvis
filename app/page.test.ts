@@ -82,6 +82,10 @@ const FLOW_PATH = resolve(
   "components/jarvis/morning-ritual/morning-ritual-flow.tsx",
 );
 const WAKE_ACTIONS_PATH = resolve(import.meta.dirname, "wake/actions.ts");
+const COMPLETE_ROUTE_PATH = resolve(
+  import.meta.dirname,
+  "api/rituals/morning/complete/route.ts",
+);
 const BYPASS_PATH = resolve(
   ROOT,
   "lib/jarvis/rituals/morning-ritual-bypass.ts",
@@ -292,6 +296,15 @@ describe("Home daily entry gate", () => {
     expect(loadCommandCenterMock).not.toHaveBeenCalled();
   });
 
+  it("keeps completed / on Command Center when same-day bypass matches", async () => {
+    cookiesGetMock.mockReturnValue({ value: "2026-08-07" });
+
+    await callHome();
+
+    expect(loadCommandCenterMock).toHaveBeenCalled();
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+
   it("H: renders Command Center when completed and ritualEntry=complete", async () => {
     await callHome({ ritualEntry: "complete" });
 
@@ -490,12 +503,15 @@ describe("Daily entry routing safety boundaries", () => {
     const wakeActionsSource = readFileSync(WAKE_ACTIONS_PATH, "utf8");
     const flowSource = readFileSync(FLOW_PATH, "utf8");
 
-    expect(wakeActionsSource).toContain("MORNING_RITUAL_BYPASS_COOKIE");
+    expect(wakeActionsSource).toContain("applyMorningRitualBypassCookie");
     expect(wakeActionsSource).not.toMatch(/completeDailyRitual/);
     expect(wakeActionsSource).not.toMatch(/completeMorningRitual/);
     expect(flowSource).toContain("continueToJarvisFromRitual");
     expect(flowSource).toContain('data-testid="continue-to-jarvis-button"');
     expect(flowSource).toContain("shouldRevealEnterJarvis");
+    expect(readFileSync(COMPLETE_ROUTE_PATH, "utf8")).toContain(
+      "applyMorningRitualBypassCookie",
+    );
   });
 
   it("root routing respects daily bypass helper", () => {

@@ -18,7 +18,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { continueToJarvisFromRitual } from "@/app/wake/actions";
-import { MORNING_RITUAL_BYPASS_COOKIE } from "@/lib/jarvis/rituals/morning-ritual-bypass";
+import {
+  getMorningRitualBypassCookieOptions,
+  MORNING_RITUAL_BYPASS_COOKIE,
+} from "@/lib/jarvis/rituals/morning-ritual-bypass";
 
 describe("continueToJarvisFromRitual", () => {
   beforeEach(() => {
@@ -36,11 +39,7 @@ describe("continueToJarvisFromRitual", () => {
     expect(cookiesSetMock).toHaveBeenCalledWith(
       MORNING_RITUAL_BYPASS_COOKIE,
       "2026-08-15",
-      expect.objectContaining({
-        path: "/",
-        httpOnly: true,
-        sameSite: "lax",
-      }),
+      getMorningRitualBypassCookieOptions(),
     );
     expect(redirectMock).toHaveBeenCalledWith("/");
   });
