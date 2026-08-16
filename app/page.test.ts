@@ -81,7 +81,10 @@ const FLOW_PATH = resolve(
   ROOT,
   "components/jarvis/morning-ritual/morning-ritual-flow.tsx",
 );
-const WAKE_ACTIONS_PATH = resolve(import.meta.dirname, "wake/actions.ts");
+const BYPASS_ROUTE_PATH = resolve(
+  import.meta.dirname,
+  "api/rituals/morning/bypass/route.ts",
+);
 const COMPLETE_ROUTE_PATH = resolve(
   import.meta.dirname,
   "api/rituals/morning/complete/route.ts",
@@ -500,13 +503,14 @@ describe("Daily entry routing safety boundaries", () => {
   });
 
   it("Continue to Jarvis bypass does not mutate ritual completion", () => {
-    const wakeActionsSource = readFileSync(WAKE_ACTIONS_PATH, "utf8");
+    const bypassRouteSource = readFileSync(BYPASS_ROUTE_PATH, "utf8");
     const flowSource = readFileSync(FLOW_PATH, "utf8");
 
-    expect(wakeActionsSource).toContain("applyMorningRitualBypassCookie");
-    expect(wakeActionsSource).not.toMatch(/completeDailyRitual/);
-    expect(wakeActionsSource).not.toMatch(/completeMorningRitual/);
-    expect(flowSource).toContain("continueToJarvisFromRitual");
+    expect(bypassRouteSource).toContain("applyMorningRitualBypassCookie");
+    expect(bypassRouteSource).not.toMatch(/completeDailyRitual/);
+    expect(bypassRouteSource).not.toMatch(/completeMorningRitual/);
+    expect(flowSource).toContain('action="/api/rituals/morning/bypass"');
+    expect(flowSource).toContain('method="POST"');
     expect(flowSource).toContain('data-testid="continue-to-jarvis-button"');
     expect(flowSource).toContain("shouldRevealEnterJarvis");
     expect(readFileSync(COMPLETE_ROUTE_PATH, "utf8")).toContain(

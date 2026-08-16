@@ -128,6 +128,7 @@ describe("POST /api/rituals/morning/complete", () => {
     const response = await POST(buildRequest({ briefingDate: BRIEFING_DATE }));
     const bypassCookie = response.cookies.get(MORNING_RITUAL_BYPASS_COOKIE);
     const expectedOptions = getMorningRitualBypassCookieOptions();
+    const setCookieHeader = response.headers.get("set-cookie");
 
     expect(response.status).toBe(200);
     expect(bypassCookie?.value).toBe("2026-08-07");
@@ -135,6 +136,9 @@ describe("POST /api/rituals/morning/complete", () => {
     expect(bypassCookie?.httpOnly).toBe(expectedOptions.httpOnly);
     expect(bypassCookie?.sameSite).toBe(expectedOptions.sameSite);
     expect(bypassCookie?.maxAge).toBe(expectedOptions.maxAge);
+    expect(setCookieHeader).toContain(
+      `${MORNING_RITUAL_BYPASS_COOKIE}=2026-08-07`,
+    );
   });
 
   it("sets the same-day bypass cookie when the ritual is already completed", async () => {
