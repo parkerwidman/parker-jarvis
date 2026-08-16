@@ -81,9 +81,9 @@ const FLOW_PATH = resolve(
   ROOT,
   "components/jarvis/morning-ritual/morning-ritual-flow.tsx",
 );
-const BYPASS_ROUTE_PATH = resolve(
-  import.meta.dirname,
-  "api/rituals/morning/bypass/route.ts",
+const CLIENT_BYPASS_PATH = resolve(
+  ROOT,
+  "lib/jarvis/rituals/set-morning-ritual-bypass-cookie.ts",
 );
 const COMPLETE_ROUTE_PATH = resolve(
   import.meta.dirname,
@@ -447,11 +447,27 @@ describe("Daily entry routing safety boundaries", () => {
     expect(homeSource).not.toContain("router.replace");
   });
 
-  it("Enter Jarvis navigates to /?ritualEntry=complete", () => {
+  it("Enter Jarvis sets the browser bypass cookie before navigating", () => {
     const flowSource = readFileSync(FLOW_PATH, "utf8");
 
-    expect(flowSource).toContain('router.push("/?ritualEntry=complete")');
-    expect(flowSource).not.toContain('router.push("/")');
+    expect(flowSource).toContain("setMorningRitualBypassCookieInBrowser(entry.ritualDate)");
+    expect(flowSource).toMatch(
+      /setMorningRitualBypassCookieInBrowser\(entry\.ritualDate\);\s*router\.push\("\/\?ritualEntry=complete"\)/,
+    );
+  });
+
+  it("Continue to Jarvis sets the browser bypass cookie before navigating", () => {
+    const flowSource = readFileSync(FLOW_PATH, "utf8");
+    const clientBypassSource = readFileSync(CLIENT_BYPASS_PATH, "utf8");
+
+    expect(flowSource).toContain("setMorningRitualBypassCookieInBrowser(entry.ritualDate)");
+    expect(flowSource).toMatch(
+      /setMorningRitualBypassCookieInBrowser\(entry\.ritualDate\);\s*router\.push\("\/"\)/,
+    );
+    expect(flowSource).toContain('data-testid="continue-to-jarvis-button"');
+    expect(flowSource).not.toContain("/api/rituals/morning/bypass");
+    expect(clientBypassSource).toContain("document.cookie");
+    expect(clientBypassSource).not.toContain("HttpOnly");
   });
 
   it("Enter Jarvis still requires completion acknowledged and audio ended", () => {
@@ -460,6 +476,12 @@ describe("Daily entry routing safety boundaries", () => {
     expect(flowSource).toContain("shouldRevealEnterJarvis");
     expect(flowSource).toContain("completionAcknowledged");
     expect(flowSource).toContain("audioEnded");
+    expect(flowSource).toMatch(
+      /const requestCompletion = useCallback[\s\S]*completeMorningRitualRequest[\s\S]*const handleEnterJarvis = useCallback/,
+    );
+    expect(flowSource).toMatch(
+      /const handleEnterJarvis = useCallback[\s\S]*setMorningRitualBypassCookieInBrowser\(entry\.ritualDate\);\s*router\.push\("\/\?ritualEntry=complete"\)/,
+    );
   });
 
   it("completed /wake still renders Welcome Back", () => {
@@ -480,11 +502,13 @@ describe("Daily entry routing safety boundaries", () => {
     expect(welcomeSource).toContain("setTimeout");
   });
 
-  it("Welcome Back destination is /?ritualEntry=complete via replace", () => {
+  it("Welcome Back sets the browser bypass cookie before navigating", () => {
     const welcomeSource = readFileSync(WELCOME_PATH, "utf8");
 
-    expect(welcomeSource).toContain('router.replace("/?ritualEntry=complete")');
-    expect(welcomeSource).not.toContain('router.push("/")');
+    expect(welcomeSource).toContain("setMorningRitualBypassCookieInBrowser(ritualDate)");
+    expect(welcomeSource).toMatch(
+      /setMorningRitualBypassCookieInBrowser\(ritualDate\);\s*router\.replace\("\/\?ritualEntry=complete"\)/,
+    );
   });
 
   it("Welcome Back never fetches or plays audio", () => {
@@ -503,19 +527,13 @@ describe("Daily entry routing safety boundaries", () => {
   });
 
   it("Continue to Jarvis bypass does not mutate ritual completion", () => {
-    const bypassRouteSource = readFileSync(BYPASS_ROUTE_PATH, "utf8");
     const flowSource = readFileSync(FLOW_PATH, "utf8");
+    const completeRouteSource = readFileSync(COMPLETE_ROUTE_PATH, "utf8");
 
-    expect(bypassRouteSource).toContain("applyMorningRitualBypassCookie");
-    expect(bypassRouteSource).not.toMatch(/completeDailyRitual/);
-    expect(bypassRouteSource).not.toMatch(/completeMorningRitual/);
-    expect(flowSource).toContain('action="/api/rituals/morning/bypass"');
-    expect(flowSource).toContain('method="POST"');
-    expect(flowSource).toContain('data-testid="continue-to-jarvis-button"');
-    expect(flowSource).toContain("shouldRevealEnterJarvis");
-    expect(readFileSync(COMPLETE_ROUTE_PATH, "utf8")).toContain(
-      "applyMorningRitualBypassCookie",
-    );
+    expect(flowSource).not.toMatch(/completeDailyRitual/);
+    expect(flowSource).not.toMatch(/completeMorningRitual\(/);
+    expect(completeRouteSource).toContain("completeMorningRitual");
+    expect(completeRouteSource).not.toContain("setMorningRitualBypassCookieInBrowser");
   });
 
   it("root routing respects daily bypass helper", () => {

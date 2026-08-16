@@ -297,10 +297,13 @@ describe("Morning Ritual phase 6B orchestration", () => {
     });
   });
 
-  it("welcome back navigates to /?ritualEntry=complete after flash and never preloads audio", () => {
+  it("welcome back sets the browser bypass cookie before navigating after flash", () => {
     const welcomeSource = readFileSync(WELCOME_PATH, "utf8");
 
-    expect(welcomeSource).toContain('router.replace("/?ritualEntry=complete")');
+    expect(welcomeSource).toContain("setMorningRitualBypassCookieInBrowser(ritualDate)");
+    expect(welcomeSource).toMatch(
+      /setMorningRitualBypassCookieInBrowser\(ritualDate\);\s*router\.replace\("\/\?ritualEntry=complete"\)/,
+    );
     expect(welcomeSource).not.toContain("fetchMorningRitualSignedAudioUrl");
     expect(welcomeSource).not.toMatch(/HTMLAudioElement|new Audio/);
   });

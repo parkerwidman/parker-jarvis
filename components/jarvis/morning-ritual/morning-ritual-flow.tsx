@@ -34,6 +34,9 @@ import {
   shouldRevealEnterJarvis,
 } from "@/lib/jarvis/morning-ritual/morning-ritual-playback";
 import { SLEEP_STARFIELD } from "@/lib/jarvis/morning-ritual/starfield";
+import {
+  setMorningRitualBypassCookieInBrowser,
+} from "@/lib/jarvis/rituals/set-morning-ritual-bypass-cookie";
 import type { MorningRitualEntry } from "@/lib/jarvis/rituals/load-morning-ritual-entry";
 
 import { FullMorningRitual } from "./full-morning-ritual";
@@ -602,8 +605,14 @@ export function MorningRitualFlow({ entry }: MorningRitualFlowProps) {
   }, [requestCompletion]);
 
   const handleEnterJarvis = useCallback(() => {
+    setMorningRitualBypassCookieInBrowser(entry.ritualDate);
     router.push("/?ritualEntry=complete");
-  }, [router]);
+  }, [entry.ritualDate, router]);
+
+  const handleContinueToJarvis = useCallback(() => {
+    setMorningRitualBypassCookieInBrowser(entry.ritualDate);
+    router.push("/");
+  }, [entry.ritualDate, router]);
 
   const signInEnabled = canStartMorningRitual({
     playbackReadiness: entry.playbackReadiness,
@@ -688,20 +697,14 @@ export function MorningRitualFlow({ entry }: MorningRitualFlowProps) {
         >
           Sign in
         </button>
-        <form
-          action="/api/rituals/morning/bypass"
-          method="POST"
-          className={styles.continueToJarvisForm}
+        <button
+          type="button"
+          className={styles.continueToJarvisButton}
+          data-testid="continue-to-jarvis-button"
+          onClick={handleContinueToJarvis}
         >
-          <input type="hidden" name="ritualDate" value={entry.ritualDate} />
-          <button
-            type="submit"
-            className={styles.continueToJarvisButton}
-            data-testid="continue-to-jarvis-button"
-          >
-            Continue to Jarvis
-          </button>
-        </form>
+          Continue to Jarvis
+        </button>
       </div>
     </>
   );

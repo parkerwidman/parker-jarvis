@@ -16,7 +16,10 @@ export function MorningRitualGate({ entry }: MorningRitualGateProps) {
       data-ritual-status={entry.ritualStatus}
     >
       {entry.ritualState === "welcome_back" ? (
-        <WelcomeBackScreenWithBackground displayName={entry.displayName} />
+        <WelcomeBackScreenWithBackground
+          displayName={entry.displayName}
+          ritualDate={entry.ritualDate}
+        />
       ) : (
         <MorningRitualFlow entry={entry} />
       )}

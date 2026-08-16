@@ -1,11 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  getMorningRitualBypassCookieOptions,
-  MORNING_RITUAL_BYPASS_COOKIE,
-} from "@/lib/jarvis/rituals/morning-ritual-bypass";
-
 const { createClientMock, completeMorningRitualMock } = vi.hoisted(() => ({
   createClientMock: vi.fn(),
   completeMorningRitualMock: vi.fn(),
@@ -120,61 +115,5 @@ describe("POST /api/rituals/morning/complete", () => {
     expect(body.result).toBe("completed");
     expect(body).not.toHaveProperty("redirect");
     expect(body.ritual).not.toHaveProperty("userId");
-  });
-
-  it("sets the same-day bypass cookie after successful completion", async () => {
-    mockAuthenticatedClient();
-
-    const response = await POST(buildRequest({ briefingDate: BRIEFING_DATE }));
-    const bypassCookie = response.cookies.get(MORNING_RITUAL_BYPASS_COOKIE);
-    const expectedOptions = getMorningRitualBypassCookieOptions();
-    const setCookieHeader = response.headers.get("set-cookie");
-
-    expect(response.status).toBe(200);
-    expect(bypassCookie?.value).toBe("2026-08-07");
-    expect(bypassCookie?.path).toBe(expectedOptions.path);
-    expect(bypassCookie?.httpOnly).toBe(expectedOptions.httpOnly);
-    expect(bypassCookie?.sameSite).toBe(expectedOptions.sameSite);
-    expect(bypassCookie?.maxAge).toBe(expectedOptions.maxAge);
-    expect(setCookieHeader).toContain(
-      `${MORNING_RITUAL_BYPASS_COOKIE}=2026-08-07`,
-    );
-  });
-
-  it("sets the same-day bypass cookie when the ritual is already completed", async () => {
-    mockAuthenticatedClient();
-    completeMorningRitualMock.mockResolvedValue({
-      success: true,
-      result: "already_completed",
-      ritual: {
-        ritualDate: "2026-08-07",
-        timezone: "America/Chicago",
-        status: "completed",
-        briefingDate: BRIEFING_DATE,
-        startedAt: "2026-08-07T08:00:00.000Z",
-        completedAt: "2026-08-07T08:30:00.000Z",
-      },
-    });
-
-    const response = await POST(buildRequest({ briefingDate: BRIEFING_DATE }));
-
-    expect(response.status).toBe(200);
-    expect(response.cookies.get(MORNING_RITUAL_BYPASS_COOKIE)?.value).toBe(
-      "2026-08-07",
-    );
-  });
-
-  it("does not set a bypass cookie when completion fails", async () => {
-    mockAuthenticatedClient();
-    completeMorningRitualMock.mockResolvedValue({
-      success: false,
-      error: "Daily ritual has not been started.",
-      code: "not_started",
-    });
-
-    const response = await POST(buildRequest({ briefingDate: BRIEFING_DATE }));
-
-    expect(response.status).toBe(404);
-    expect(response.cookies.get(MORNING_RITUAL_BYPASS_COOKIE)).toBeUndefined();
   });
 });

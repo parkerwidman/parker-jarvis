@@ -162,6 +162,24 @@ describe("MorningRitualFlow session safeguards", () => {
 });
 
 describe("MorningRitualFlow source invariants", () => {
+  it("sets the browser bypass cookie before Continue to Jarvis navigation", () => {
+    const source = readFileSync(FLOW_PATH, "utf8");
+
+    expect(source).toContain("handleContinueToJarvis");
+    expect(source).toMatch(
+      /setMorningRitualBypassCookieInBrowser\(entry\.ritualDate\);\s*router\.push\("\/"\)/,
+    );
+  });
+
+  it("sets the browser bypass cookie before Enter Jarvis navigation", () => {
+    const source = readFileSync(FLOW_PATH, "utf8");
+
+    expect(source).toContain("handleEnterJarvis");
+    expect(source).toMatch(
+      /setMorningRitualBypassCookieInBrowser\(entry\.ritualDate\);\s*router\.push\("\/\?ritualEntry=complete"\)/,
+    );
+  });
+
   it("locks playback session and clears refresh timer when sign in begins", () => {
     const source = readFileSync(FLOW_PATH, "utf8");
 

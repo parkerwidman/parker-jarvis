@@ -1,11 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
-  applyMorningRitualBypassCookie,
-  getMorningRitualBypassCookieOptions,
   isMorningRitualBypassActive,
   isValidRitualDate,
-  MORNING_RITUAL_BYPASS_COOKIE,
   shouldRedirectHomeToWake,
 } from "@/lib/jarvis/rituals/morning-ritual-bypass";
 
@@ -57,24 +54,6 @@ describe("morning ritual bypass", () => {
         bypassRitualDate: "2026-08-14",
       }),
     ).toBe(true);
-  });
-
-  it("sets the same-day bypass cookie for a valid ritual date", () => {
-    const cookieStore = { set: vi.fn() };
-
-    expect(applyMorningRitualBypassCookie(cookieStore, "2026-08-15")).toBe(true);
-    expect(cookieStore.set).toHaveBeenCalledWith(
-      MORNING_RITUAL_BYPASS_COOKIE,
-      "2026-08-15",
-      getMorningRitualBypassCookieOptions(),
-    );
-  });
-
-  it("does not set a bypass cookie for an invalid ritual date", () => {
-    const cookieStore = { set: vi.fn() };
-
-    expect(applyMorningRitualBypassCookie(cookieStore, "08-15-2026")).toBe(false);
-    expect(cookieStore.set).not.toHaveBeenCalled();
   });
 
   it("does not send a completed same-day ritual back to /wake when bypass matches", () => {
